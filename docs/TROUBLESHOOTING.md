@@ -1,95 +1,43 @@
-# 🚀 Installation and Connection Issues
+# Troubleshooting / 故障排查
 
-## Quick Diagnosis
+BrowserClaw 由本地构建的三部分组成：扩展（MV3）、原生宿主（native-server）、MCP 端点（127.0.0.1:12306）。以下按现象排查，全部基于本仓库实际实现。
 
-Run the diagnostic tool to identify common issues:
+## 1. MCP 客户端连不上 127.0.0.1:12306
 
-```bash
-mcp-chrome-bridge doctor
-```
+1. 确认原生宿主进程存活：宿主由 Chrome 扩展通过 Native Messaging 拉起，Chrome 未运行时宿主不存在是正常的。
+2. 确认端口监听：`netstat -ano | findstr 12306`。
+3. 确认 token：请求头 `Authorization: Bearer <token>`，token 在 `~/.chrome-mcp/bridge-token`（宿主首次启动自动生成）。401/403 检查该文件。
+4. `CHROME_MCP_HOST` / `CHROME_MCP_PORT` 可覆盖默认 127.0.0.1:12306（见 app/native-server/src/constant/index.ts）。
 
-To automatically fix common issues:
+## 2. 扩展 SW 未连接宿主
 
-```bash
-mcp-chrome-bridge doctor --fix
-```
+1. chrome://extensions → BrowserClaw → service worker 控制台查 `[NativeHost]` 日志。
+2. 首次使用需在 popup 里连接；storage.session 的 `agentControlEnabled=false` 会拦截所有工具调用。
+3. 扩展重载后 Native Messaging 连接断开，宿主需重启。
 
-## Export Report for GitHub Issues
+## 3. 工具调用报错速查
 
-If you need to open an issue, export a diagnostic report:
+| 报错 | 原因与处理 |
+| --- | --- |
+| Cannot access a chrome:// URL | 受限页面，换普通页面 |
+| executeScript timeout ... renderer not acking | 页面有原生弹窗或 renderer 卡死，先 chrome_handle_dialog |
+| CDP_DISPATCH_TIMEOUT | 目标 tab 在后台且批量竞速超时，激活 tab 或重试 |
+| Security check failed: Domain changed | 上次截图域名与当前 tab 不一致，重新截图 |
+| Tool X is not exposed under the ... profile | 当前 profile 隐藏了该工具，用 chrome_tool_docs 查参数或改回 full |
+| Tool X is not a BrowserClaw tool | 工具名不存在，tools/list 查看当前 46 个 |
 
-```bash
-# Print Markdown report to terminal (copy/paste into GitHub Issue)
-mcp-chrome-bridge report
-
-# Write to a file
-mcp-chrome-bridge report --output mcp-report.md
-
-# Copy directly to clipboard
-mcp-chrome-bridge report --copy
-```
-
-By default, usernames, paths, and tokens are redacted. Use `--no-redact` if you're comfortable sharing full paths.
-
-## If Connection Fails After Clicking the Connect Button on the Extension
-
-1. **Run the diagnostic tool first**
+## 4. 构建问题
 
 ```bash
-mcp-chrome-bridge doctor
+pnpm install
+pnpm --filter chrome-mcp-shared build   # shared 必须最先构建，否则 TS7016 满天飞
+pnpm build                              # 三包全量
 ```
 
-This will check installation, manifest, permissions, and Node.js path.
+- 扩展产物：app/chrome-extension/.output/chrome-mv3，改码后需在 chrome://extensions 重载扩展。
+- native-server 构建：`pnpm --filter mcp-chrome-bridge build`。
 
-2. **Check if mcp-chrome-bridge is installed successfully**, ensure it's globally installed
+## 5. 日志位置
 
-```bash
-mcp-chrome-bridge -V
-```
-
-<img width="612" alt="Screenshot 2025-06-11 15 09 57" src="https://github.com/user-attachments/assets/59458532-e6e1-457c-8c82-3756a5dbb28e" />
-
-2. **Check if the manifest file is in the correct directory**
-
-Windows path: C:\Users\xxx\AppData\Roaming\Google\Chrome\NativeMessagingHosts
-
-Mac path: /Users/xxx/Library/Application\ Support/Google/Chrome/NativeMessagingHosts
-
-If the npm package is installed correctly, a file named `com.chromemcp.nativehost.json` should be generated in this directory
-
-3. **Check logs**
-   Logs are now stored in user-writable directories:
-
-- **macOS**: `~/Library/Logs/mcp-chrome-bridge/`
-- **Windows**: `%LOCALAPPDATA%\mcp-chrome-bridge\logs\`
-- **Linux**: `~/.local/state/mcp-chrome-bridge/logs/`
-
-<img width="804" alt="Screenshot 2025-06-11 15 09 41" src="https://github.com/user-attachments/assets/ce7b7c94-7c84-409a-8210-c9317823aae1" />
-
-4. **Check if you have execution permissions**
-   You need to check your installation path (if unclear, open the manifest file in step 2, the path field shows the installation directory). For example, if the Mac installation path is as follows:
-
-`xxx/node_modules/mcp-chrome-bridge/dist/run_host.sh`
-
-Check if this script has execution permissions. Run to fix:
-
-```bash
-mcp-chrome-bridge fix-permissions
-```
-
-5. **Node.js not found**
-   If you use a Node version manager (nvm, volta, asdf, fnm), the wrapper script may not find Node.js. Set the `CHROME_MCP_NODE_PATH` environment variable:
-
-```bash
-export CHROME_MCP_NODE_PATH=/path/to/your/node
-```
-
-Or run `mcp-chrome-bridge doctor --fix` to write the current Node path.
-
-## Log Locations
-
-Wrapper logs are now stored in user-writable locations:
-
-- **macOS**: `~/Library/Logs/mcp-chrome-bridge/`
-- **Windows**: `%LOCALAPPDATA%\mcp-chrome-bridge\logs\`
-- **Linux**: `~/.local/state/mcp-chrome-bridge/logs/`
+- 扩展 SW：chrome://extensions → service worker 控制台（NativeHost / Screenshot Tool 前缀）。
+- 宿主：随宿主进程 stdout；trace 文件默认写系统临时目录（performance 工具显式 saveToDownloads 才写 Downloads）。

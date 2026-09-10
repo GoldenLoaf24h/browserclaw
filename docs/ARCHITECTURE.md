@@ -88,7 +88,7 @@ graph LR
     Shared --> ChromeExtension[app/chrome-extension]
     ChromeExtension --> WXT[WXT MV3 Engine]
     ChromeExtension --> Blink[Blink DOM / DevTools Protocol]
-    NativeServer --> Fastify[Fastify 4.x]
+NativeServer --> Fastify[Fastify 5.x]
     NativeServer --> MCPCore[@modelcontextprotocol/sdk]
 ```
 
@@ -108,7 +108,7 @@ sequenceDiagram
     participant CDP as CDP Session Manager
     participant InPage as Target Tab (Inpage Engine)
 
-    Agent->>Fastify: POST /mcp/message (tools/call: chrome_click)
+    Agent->>Fastify: POST /mcp (tools/call: chrome_click_element)
     Note over Fastify: Validates CHROME_MCP_TOKEN Bearer
     Fastify->>Host: Dispatch Native Message
     Host->>SW: Standard IO Framed Message (4-byte length prefix)
