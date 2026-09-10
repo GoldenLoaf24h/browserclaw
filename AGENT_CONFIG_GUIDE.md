@@ -21,7 +21,7 @@
 编译产物中自带全自动注册脚本，只需在宿主机执行一次：
 - **Windows (PowerShell / CMD)**：
   ```cmd
-  cd D:\workspace\mcp-chrome-master\mcp-chrome-master\app\native-server\dist
+  cd <repo-root>\app\native-server\dist
   run_host.bat
   ```
 - **macOS / Linux (Bash / Zsh)**：
@@ -38,7 +38,7 @@
 3. 点击左上角的 **“加载已解压的扩展程序” (Load unpacked)**。
 4. 选择扩展的构建输出目录：
    ```
-   D:\workspace\mcp-chrome-master\mcp-chrome-master\app\chrome-extension\.output\chrome-mv3
+   <repo-root>\app\chrome-extension\.output\chrome-mv3
    ```
 5. 加载完成后，浏览器工具栏会出现插件图标。
 
@@ -85,7 +85,7 @@
     "mcp-chrome": {
       "command": "node",
       "args": [
-        "D:\\workspace\\mcp-chrome-master\\mcp-chrome-master\\app\\native-server\\dist\\cli.js",
+        "<repo-root>\\app\\native-server\\dist\\cli.js",
         "--stdio"
       ]
     }
@@ -104,7 +104,7 @@
     "mcp-chrome": {
       "command": "node",
       "args": [
-        "D:/workspace/mcp-chrome-master/mcp-chrome-master/app/native-server/dist/cli.js",
+        "<repo-root>/app/native-server/dist/cli.js",
         "--stdio"
       ]
     }
@@ -123,7 +123,7 @@
     "mcp-chrome": {
       "command": "node",
       "args": [
-        "D:/workspace/mcp-chrome-master/mcp-chrome-master/app/native-server/dist/cli.js",
+        "<repo-root>/app/native-server/dist/cli.js",
         "--stdio"
       ]
     }

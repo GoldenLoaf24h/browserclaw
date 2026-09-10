@@ -1,121 +1,26 @@
-# Project: mcp-chrome Modernization & browser-use Engine Integration
+# BrowserClaw 项目说明 / Project Notes
 
-## Architecture
-The `mcp-chrome` system is a pnpm monorepo consisting of:
-1. `packages/shared` (`chrome-mcp-shared`): Shared TypeScript types, message protocols, tool definitions (`TOOL_SCHEMAS`), and security annotations.
-2. `app/native-server` (`mcp-chrome-bridge`): Node.js native bridge application supporting:
-   - MCP transports: Multi-session HTTP/SSE (`/sse`, `/messages`, `/mcp`) and stdio (`mcp-server-stdio`).
-   - Chrome Native Messaging host / WebSocket bridge communicating with the Chrome extension.
-   - Session Manager (`McpSessionManager`) providing isolated MCP protocol Server instances per client session.
-3. `app/chrome-extension` (`chrome-mcp-server`): WXT-based Chrome extension providing:
-   - Background service worker: CDP session manager, tool dispatcher, native messaging host connection, heartbeat/health check.
-   - Content scripts: browser-use DOM indexing engine (`dom-indexer.ts`) performing 6-stage pruning, viewport visibility, hierarchical occlusion checking, and compact 1-based index assignment.
-   - Popup UI: Connection status and controls.
-4. `test/`: Automated E2E and integration test suites verifying communication stability, DOM pruning, index interactions, and batch pipelines.
+## 定位
 
-## Feature Inventory
-Every feature from the user request and survey is enumerated below with its assigned milestone:
+BrowserClaw 是一个面向 AI agent 的 Chrome 浏览器自动化 MCP 服务器。与无头浏览器方案不同，它运行在用户日常使用的 Chrome 里（保留登录态、Cookie、扩展环境），通过 Native Messaging + CDP 把浏览器能力暴露为 schema 校验过的 MCP 工具。
 
-| # | Feature | Description | Milestone | Source |
-|---|---------|-------------|-----------|--------|
-| 1 | Multi-client HTTP/SSE Concurrency | `McpSessionManager` creates isolated `Server` instances per session/client; no singleton collisions between Claude Code, Hermes, etc. | M1 | ORIGINAL_REQUEST §R1 |
-| 2 | ERR_HTTP_HEADERS_SENT Elimination | Proper Fastify `reply.hijack()` and defensive headers-sent checks before streaming raw SSE responses. | M1 | ORIGINAL_REQUEST §R1 |
-| 3 | stdio Clean Termination (<1s) | stdio EOF/close listeners, parent PID watchdog, and force-exit timers ensuring zero zombie processes. | M1 | ORIGINAL_REQUEST §R1 |
-| 4 | Chrome Extension Handshake Self-Healing | 2-way handshake, active 2s ping/pong, port conflict recovery, and HTTP `/ping` verification recovering in <3s. | M1 | ORIGINAL_REQUEST §R1 |
-| 5 | MCP Tool Security Annotations | Comprehensive `annotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) across all MCP tools. | M1 | ORIGINAL_REQUEST §R1 |
-| 6 | File Upload & file:// Protocol Support | CDP `DOM.setFileInputFiles` for file inputs (including hidden/dialog) and Windows file path normalization for `file://`. | M1 | ORIGINAL_REQUEST §R1 |
-| 7 | Index-Based Element Interaction | Assign compact 1-based indices to interactive DOM elements; tools `chrome_interact_index` and `chrome_fill_index`. | M2 | ORIGINAL_REQUEST §R2 |
-| 8 | DOM Pruning & Visibility Filtering | 6-stage pruning, viewport boundary check (1000px), containment culling, and occlusion filtering (>85% token reduction on 1000+ nodes). | M2 | ORIGINAL_REQUEST §R2 |
-| 9 | Batch Action Execution Pipeline | `chrome_batch_actions` executing compound action lists with static/runtime page-change guards and partial failure reporting. | M2 | ORIGINAL_REQUEST §R2 |
-| 10 | Structured Markdown & Visual Bounding Boxes | `chrome_get_markdown` clean content extraction and optional element bounding box visual overlay. | M2 | ORIGINAL_REQUEST §R2 |
-| 11 | Monorepo Build & Typecheck Cleanliness | Filter out `@chrome-mcp/wasm-simd` from root `typecheck`; ensure `pnpm build` and `pnpm typecheck` exit with code 0. | M3 | ORIGINAL_REQUEST §R3 |
-| 12 | Automated Unit & Integration Tests | Comprehensive automated tests for session manager, stdio shutdown, DOM pruning, batch actions, and tools (`pnpm test`). | M3 | ORIGINAL_REQUEST §R3 |
-| 13 | Final E2E Acceptance & Adversarial Hardening | 100% pass of E2E opaque-box test suite (Tiers 1-4) plus Tier 5 adversarial edge-case hardening. | M4 | ORIGINAL_REQUEST Acceptance |
+## 包结构（pnpm monorepo）
 
-## Milestones
-| # | Name | Scope | Dependencies | Status |
-|---|------|-------|-------------|--------|
-| M1 | Underlying Service Stability & Concurrency | Multi-session McpSessionManager, HTTP hijack fix, stdio <1s exit, extension self-healing handshake, tool annotations, file upload CDP handler | none | IN_PROGRESS |
-| M2 | browser-use High-Efficiency Interaction Engine | Content script DOM pruner & indexer, `chrome_read_dom`, `chrome_interact_index`, `chrome_fill_index`, `chrome_batch_actions`, `chrome_get_markdown` | M1 | PLANNED |
-| M3 | Monorepo Build, Typecheck & Automated Test Suites | Fix `pnpm typecheck` filter, configure root `pnpm test`, add unit and integration test suites for M1 & M2 | M1, M2 | PLANNED |
-| M4 | Final E2E Verification & Adversarial Coverage Hardening | Run and pass 100% of E2E test suite (Tiers 1-4) published by E2E Testing Track + Tier 5 adversarial coverage hardening | M3, TEST_READY.md | PLANNED |
+1. `packages/shared`（npm 名 chrome-mcp-shared）——唯一事实源：46 个工具 schema（TOOL_SCHEMAS）、tool-profiles（core/crawl/full）、UnifiedLocatorOptions 坐标契约、错误格式化。
+2. `app/native-server`（npm 名 mcp-chrome-bridge）——Fastify 原生宿主：MCP stdio/HTTP 双传输、McpSessionManager（每会话隔离 Server 实例，10 分钟空闲回收）、bridge-token 认证、性能 trace 分析。
+3. `app/chrome-extension`（npm 名 chrome-mcp-server）——WXT + Vue 3 MV3 扩展：后台 SW 承载工具执行器与 CDP 会话管理；dom-indexer 提供 DOM 剪枝索引、inpage-engine 以隔离世界注入 20 个页面内入口；popup 提供连接与控制开关。
 
-## Interface Contracts
+## 关键设计
 
-### Session Management (`app/native-server/src/mcp/session-manager.ts`)
-```typescript
-export interface SessionTransport {
-  sessionId: string;
-  transport: Transport;
-  server: Server;
-  createdAt: number;
-  lastActiveAt: number;
-}
+- **工具面 = schema 面**：toolsMap 由 TOOL_SCHEMAS 声明推导，未声明的内部执行器不可调用（tool-surface-parity 测试钉死）。
+- **Profile 分层**：core（28）/ crawl（12）/ full（46），隐藏工具经 chrome_tool_docs 按类别发现。
+- **坐标管线**：unified-locator 四级降级（ref → selector → text/role → coordinate），coordinateSpace 显式声明，缩放只发生在显式 screenshot 模式。
+- **视觉管线**：截图零落盘（>450KB 自动降质内联缩略图），右/下边缘黑边采样自愈重拍，screenshot-ring-buffer 容量 1。
+- **反自动化合规**：CDP Input 原生可信事件、dwellMs 按压时长、batch/burst 低延迟序列。
 
-export class McpSessionManager {
-  createSession(transport: Transport): Promise<{ sessionId: string; server: Server }>;
-  getSession(sessionId: string): SessionTransport | undefined;
-  closeSession(sessionId: string): Promise<void>;
-  cleanupStaleSessions(maxIdleMs: number): void;
-}
-```
+## 质量门
 
-### browser-use DOM Indexer (`app/chrome-extension/entrypoints/content/dom-indexer.ts`)
-```typescript
-export interface IndexedElement {
-  index: number;
-  tagName: string;
-  role?: string;
-  text?: string;
-  attributes: Record<string, string>;
-  rect: { x: number; y: number; width: number; height: number };
-  isVisible: boolean;
-  isInteractive: boolean;
-  backendNodeId?: number;
-}
-
-export interface PrunedDOMTreeResult {
-  treeString: string;
-  elementCount: number;
-  interactiveCount: number;
-  compressionRatio: number; // e.g. 0.88 = 88% reduction
-  indexMap: Record<number, { selector?: string; backendNodeId?: number; frameId?: string }>;
-}
-```
-
-### Batch Action Schema (`packages/shared/src/tools.ts`)
-```typescript
-export interface BatchActionItem {
-  type: 'click' | 'fill' | 'hover' | 'scroll' | 'press_key' | 'wait';
-  index?: number;
-  text?: string;
-  key?: string;
-  x?: number;
-  y?: number;
-  durationMs?: number;
-}
-
-export interface BatchActionResult {
-  success: boolean;
-  completedActions: number;
-  totalActions: number;
-  results: Array<{ actionIndex: number; success: boolean; error?: string; output?: any }>;
-  interruptedReason?: string;
-}
-```
-
-## Code Layout
-- `packages/shared/src/`:
-  - `tools.ts`: Tool schemas with MCP annotations, including index & batch action tools.
-  - `types.ts`: Shared data structures.
-- `app/native-server/src/`:
-  - `mcp/session-manager.ts`: Multi-session MCP server manager.
-  - `mcp/mcp-server-stdio.ts`: stdio transport with clean exit hooks.
-  - `server/index.ts`: Fastify HTTP/SSE routes with `reply.hijack()` and safe error streaming.
-- `app/chrome-extension/`:
-  - `entrypoints/content/dom-indexer.ts`: 6-stage DOM pruning, occlusion filtering, index assignment.
-  - `entrypoints/background/tools/browser/`: browser-use tools (`read-dom.ts`, `interact-index.ts`, `batch-actions.ts`, `upload-file.ts`).
-  - `entrypoints/background/native-host.ts`: 2-way handshake and self-healing.
-- `test/`:
-  - `e2e/`: Opaque-box E2E test suites (Tiers 1-4).
-  - `integration/`: Multi-session concurrency, stdio exit, and DOM pruning benchmark tests.
+- 扩展 vitest 77 项（schema 契约、payload、profile、回归）
+- 仓库 node:test 129 项（boost-features / boost-phase1-phase4 / p0-p1-hardening）
+- E2E 4 层 153 项（node --experimental-strip-types test/e2e/runner.ts）
+- vue-tsc + native-server tsc 双类型检查
