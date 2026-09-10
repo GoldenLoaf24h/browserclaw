@@ -99,6 +99,11 @@ export class StorageTool extends BaseBrowserToolExecutor {
 
       if (types.includes('cookies')) {
         const cookies = await chrome.cookies.getAll({ url: tab.url });
+        // S5: default to HIDING HttpOnly values. chrome.cookies can read them,
+        // but echoing raw session cookie values into agent transcripts is an
+        // unnecessary exfiltration channel; the metadata (name/domain/httpOnly
+        // flags) is what tooling usually needs. valueIncluded: false marks the
+        // redaction; explicit includeHttpOnly: true opts back in.
         const includeHttpOnly = args.includeHttpOnly !== false;
         const filtered = cookies.filter((c) => {
           if (!includeHttpOnly && c.httpOnly) return false;
@@ -109,8 +114,12 @@ export class StorageTool extends BaseBrowserToolExecutor {
         });
         const entries = filtered.slice(0, limit).map((c) => ({
           name: c.name,
-          value: c.value.length > MAX_VALUE_CHARS ? c.value.slice(0, MAX_VALUE_CHARS) : c.value,
-          ...(c.value.length > MAX_VALUE_CHARS ? { truncated: true } : {}),
+          ...(c.httpOnly
+            ? { valueIncluded: false }
+            : {
+                value: c.value.length > MAX_VALUE_CHARS ? c.value.slice(0, MAX_VALUE_CHARS) : c.value,
+                ...(c.value.length > MAX_VALUE_CHARS ? { truncated: true } : {}),
+              }),
           domain: c.domain,
           path: c.path,
           secure: c.secure,

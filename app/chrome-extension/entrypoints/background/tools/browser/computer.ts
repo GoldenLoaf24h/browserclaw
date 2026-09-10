@@ -12,6 +12,7 @@ import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { screenshotRingBuffer } from '@/utils/screenshot-ring-buffer';
 import { compressImage } from '@/utils/image-utils';
 import { parseUnifiedCoordinate, type PolymorphicCoordinate } from '@/utils/coordinate-parser';
+import { sessionTabAffinity } from '@/utils/session-tab-affinity';
 
 type MouseButton = 'left' | 'right' | 'middle';
 
@@ -221,6 +222,11 @@ class ComputerTool extends BaseBrowserToolExecutor {
     if (!params.action) return createErrorResponse('Action parameter is required');
 
     try {
+      // D3: snapshot BEFORE resolveAffinityTab (fallback binds the fallback
+      // tab, so post-resolution checks always pass).
+      const computerHadPreexistingBinding = sessionTabAffinity.hasBinding(
+        args.sessionId || args.sessionContext,
+      );
       const tab = await this.resolveAffinityTab({
         tabId: args.tabId,
         windowId: args.windowId,
@@ -229,10 +235,29 @@ class ComputerTool extends BaseBrowserToolExecutor {
       if (!tab.id)
         return createErrorResponse(ERROR_MESSAGES.TAB_NOT_FOUND + ': Active tab has no ID');
 
+      // D3 (TESTING-NOTES #19): warn when the target fell back to the active
+      // tab so agent input landing on the user's current page is visible.
+      const computerAffinityWarning = await (async () => {
+        if (typeof args.tabId === 'number') return undefined;
+        if (!computerHadPreexistingBinding) {
+          return `input routed to active tab (tabId=${tab.id}); pass explicit tabId to target another tab`;
+        }
+        return undefined;
+      })();
+
       // Execute the action and capture frame on success
       const result = await this.executeAction(params, tab);
-
-
+      if (computerAffinityWarning && result?.content?.[0]?.type === 'text') {
+        try {
+          const payload = JSON.parse(result.content[0].text as string);
+          if (payload && typeof payload === 'object' && payload.success !== false) {
+            payload.affinityWarning = computerAffinityWarning;
+            result.content[0].text = JSON.stringify(payload);
+          }
+        } catch {
+          // Non-JSON response text: leave untouched.
+        }
+      }
 
       return result;
     } catch (error) {

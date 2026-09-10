@@ -49,8 +49,6 @@ export default defineConfig({
       'tabGroups',
       'bookmarks',
       'history',
-      'clipboardRead',
-      'clipboardWrite',
       'cookies',
     ],
     host_permissions: ['<all_urls>'],
@@ -73,9 +71,11 @@ export default defineConfig({
       },
     ],
     content_security_policy: {
-      // Allow inline styles injected by Vite (compiled CSS) and data images used in UI thumbnails
+      // S1: 'unsafe-inline' removed from style-src - the built popup uses an
+      // external stylesheet (assets/*.css) and Vue patches style via
+      // CSSOM (style.setProperty), which does not need inline style elements.
       extension_pages:
-        "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;",
+        "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self'; img-src 'self' data: blob:;",
     },
   },
   vite: (env) => ({

@@ -5,6 +5,7 @@ import { executeInPage } from './in-page-engine';
 import { waitForPageSettle } from '@/utils/action-watchdog';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { raceCdp, DialogOpenedError, createDialogInterruptResponse } from '@/utils/race-cdp';
+import { sessionTabAffinity } from '@/utils/session-tab-affinity';
 
 export interface FillIndexParams {
   index: number;
@@ -29,6 +30,12 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
 
     const textToFill = args.text ?? args.value ?? '';
 
+    // D3: snapshot BEFORE resolveAffinityTab — its active-tab fallback binds
+    // the fallback tab, so a post-resolution check would always see a
+    // "valid" binding and never warn (verified by live testing).
+    const sidForWarning = args.sessionId || args.sessionContext;
+    const hadPreexistingBinding = sessionTabAffinity.hasBinding(sidForWarning);
+
     try {
       const tab = await this.resolveAffinityTab({
         tabId: args.tabId,
@@ -39,6 +46,14 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
         return createErrorResponse('No active tab found for chrome_fill_index');
       }
       const targetTabId: number = tab.id;
+
+      // D3 (TESTING-NOTES #19): surface active-tab fallback in the response.
+      const fillIdxAffinityWarning =
+        typeof args.tabId === 'number'
+          ? undefined
+          : hadPreexistingBinding
+            ? undefined
+            : `input routed to active tab (tabId=${targetTabId}); pass explicit tabId to target another tab`;
 
       let outcome: any = null;
       let filledViaCdp = false;
@@ -163,6 +178,10 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
       if (args.waitForSettle) {
         const settleResult = await waitForPageSettle(targetTabId, { timeoutMs: args.settleTimeoutMs });
         (outcome as any).settle = settleResult;
+      }
+
+      if (fillIdxAffinityWarning) {
+        (outcome as any).affinityWarning = fillIdxAffinityWarning;
       }
 
       return {

@@ -224,7 +224,9 @@ describe('dom-indexer regressions', () => {
         .readdirSync(dir)
         .filter((f: string) => f.endsWith('.js') && f !== 'inject-bridge.js');
 
-      expect(helpers.length).toBeGreaterThanOrEqual(9);
+      // interactive-elements-helper and inject-bridge were removed with the
+      // userscript/inject-script dead-code cleanup; 8 helpers remain shipped.
+      expect(helpers.length).toBeGreaterThanOrEqual(8);
       for (const helper of helpers) {
         const src = fs.readFileSync(`${dir}/${helper}`, 'utf-8');
         expect(src.includes('mcp_ping_'), `${helper} must answer the file-set ping`).toBe(true);

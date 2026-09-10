@@ -5,7 +5,57 @@ import { TOOL_MESSAGE_TYPES } from '@/common/message-types';
 import { TIMEOUTS, ERROR_MESSAGES } from '@/common/constants';
 import { resolveTargetLocation } from './unified-locator';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
+import { sessionTabAffinity } from '@/utils/session-tab-affinity';
+import { executeInPage } from './in-page-engine';
 import type { PolymorphicCoordinate } from '@/utils/coordinate-parser';
+
+/**
+ * D3 (TESTING-NOTES #19): resolveAffinityTab falls back to the user's ACTIVE
+ * tab when no explicit tabId and no session binding matches. The agent never
+ * knows its input landed on the page the user was viewing. Resolve the same
+ * way here and surface a warning when the fallback path was taken.
+ */
+async function resolveAffinityWarning(
+  args: { tabId?: number; sessionId?: string; sessionContext?: string },
+  resolvedTabId: number,
+  hadPreexistingBinding: boolean,
+): Promise<string | undefined> {
+  if (typeof args.tabId === 'number') return undefined;
+  const sid = args.sessionId || args.sessionContext;
+  // The fallback binding was established by resolveAffinityTab itself; only
+  // a binding that existed BEFORE the call proves the session was intentionally
+  // pinned to this tab.
+  if (!hadPreexistingBinding) {
+    return `input routed to active tab (tabId=${resolvedTabId}); pass explicit tabId to target another tab`;
+  }
+  if (!sid) {
+    return `input routed to active tab (tabId=${resolvedTabId}); pass explicit tabId to target another tab`;
+  }
+  return undefined;
+}
+
+/**
+ * D1: one-shot delivery probe around a CDP input dispatch. Hidden-tab
+ * throttling acks the command but drops the event, so success:true lied.
+ * Arming uses the in-page engine; failures degrade to undefined (no field).
+ */
+async function armDeliveryProbe(tabId: number, events: string[]): Promise<boolean> {
+  try {
+    await executeInPage({ tabId }, 'inPageArmDeliveryProbe', [events]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readDeliveryProbe(tabId: number): Promise<boolean | undefined> {
+  try {
+    const probe = (await executeInPage({ tabId }, 'inPageReadDeliveryProbe', [true]))?.[0]?.result;
+    return Boolean(probe?.delivered);
+  } catch {
+    return undefined;
+  }
+}
 
 interface Coordinates {
   x: number;
@@ -73,6 +123,9 @@ class ClickTool extends BaseBrowserToolExecutor {
     }
 
     try {
+      const clickHadPreexistingBinding = sessionTabAffinity.hasBinding(
+        args.sessionId || (args as any).sessionContext,
+      );
       // Resolve tab
       const tab = await this.resolveAffinityTab({
         tabId: args.tabId,
@@ -83,6 +136,8 @@ class ClickTool extends BaseBrowserToolExecutor {
         return createErrorResponse(ERROR_MESSAGES.TAB_NOT_FOUND + ': Active tab has no ID');
       }
       const tabId = tab.id;
+
+      const clickAffinityWarning = await resolveAffinityWarning(args, tabId, clickHadPreexistingBinding);
 
       let finalRef = args.ref;
       let finalSelector = selector;
@@ -129,6 +184,7 @@ class ClickTool extends BaseBrowserToolExecutor {
 
       if (loc.success) {
         let isTrusted = false;
+        let deliveryVerified: boolean | undefined;
         // CDP modifier bitmask (Alt=1, Ctrl=2, Meta=4, Shift=8). Without this the
         // primary CDP path silently dropped modifiers, so callers such as
         // chrome_computer left_click({modifiers:{shiftKey:true}}) produced
@@ -139,6 +195,7 @@ class ClickTool extends BaseBrowserToolExecutor {
           (modifiers?.metaKey ? 4 : 0) |
           (modifiers?.shiftKey ? 8 : 0);
         try {
+          const probeArmed = await armDeliveryProbe(tabId, ['mousedown', 'mouseup', 'click']);
           await cdpSessionManager.withSession(tabId, 'click-tool', async () => {
             await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
               type: 'mouseMoved',
@@ -177,6 +234,9 @@ class ClickTool extends BaseBrowserToolExecutor {
             }
             isTrusted = true;
           });
+          if (probeArmed) {
+            deliveryVerified = await readDeliveryProbe(tabId);
+          }
         } catch (cdpErr) {
           console.warn('[ClickTool] CDP click failed, falling back to content script:', cdpErr);
         }
@@ -195,6 +255,8 @@ class ClickTool extends BaseBrowserToolExecutor {
                   tagName: loc.tagName,
                   text: loc.text,
                   isTrusted: true,
+                  ...(clickAffinityWarning ? { affinityWarning: clickAffinityWarning } : {}),
+                  ...(deliveryVerified === undefined ? {} : { deliveryVerified }),
                   ...(loc.warning ? { warning: loc.warning } : {}),
                 }),
               },
@@ -317,6 +379,9 @@ class FillTool extends BaseBrowserToolExecutor {
     }
 
     try {
+      const fillHadPreexistingBinding = sessionTabAffinity.hasBinding(
+        args.sessionId || (args as any).sessionContext,
+      );
       const tab = await this.resolveAffinityTab({
         tabId: args.tabId,
         windowId: args.windowId,
@@ -326,6 +391,8 @@ class FillTool extends BaseBrowserToolExecutor {
         return createErrorResponse(ERROR_MESSAGES.TAB_NOT_FOUND + ': Active tab has no ID');
       }
       const tabId = tab.id;
+
+      const fillAffinityWarning = await resolveAffinityWarning(args, tabId, fillHadPreexistingBinding);
 
       let finalRef = ref;
       let finalSelector = selector;
@@ -373,7 +440,9 @@ class FillTool extends BaseBrowserToolExecutor {
 
       if (loc.success) {
         let isTrusted = false;
+        let deliveryVerified: boolean | undefined;
         try {
+          const probeArmed = await armDeliveryProbe(tabId, ['focus', 'input', 'change']);
           await cdpSessionManager.withSession(tabId, 'fill-tool', async () => {
             // Click to focus
             await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
@@ -440,6 +509,9 @@ class FillTool extends BaseBrowserToolExecutor {
             }
             isTrusted = true;
           });
+          if (probeArmed) {
+            deliveryVerified = await readDeliveryProbe(tabId);
+          }
         } catch (cdpErr) {
           console.warn('[FillTool] CDP fill failed, falling back to content script:', cdpErr);
         }
@@ -457,6 +529,8 @@ class FillTool extends BaseBrowserToolExecutor {
                   coordinates: { x: loc.x, y: loc.y },
                   tagName: loc.tagName,
                   isTrusted: true,
+                  ...(fillAffinityWarning ? { affinityWarning: fillAffinityWarning } : {}),
+                  ...(deliveryVerified === undefined ? {} : { deliveryVerified }),
                   ...(loc.warning ? { warning: loc.warning } : {}),
                 }),
               },

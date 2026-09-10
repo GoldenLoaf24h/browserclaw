@@ -212,8 +212,6 @@ export const STORAGE_KEYS = {
   NATIVE_SERVER_PORT: 'nativeServerPort',
   NATIVE_AUTO_CONNECT_ENABLED: 'nativeAutoConnectEnabled',
   USER_PREFERENCES: 'userPreferences',
-  USERSCRIPTS: 'userscripts',
-  USERSCRIPTS_DISABLED: 'userscripts_disabled',
   // Record & Replay storage keys
   RR_FLOWS: 'rr_flows',
   RR_RUNS: 'rr_runs',
@@ -223,14 +221,3 @@ export const STORAGE_KEYS = {
   // Persistent recording state (guards resume across navigations/service worker restarts)
   RR_RECORDING_STATE: 'rr_recording_state',
 } as const;
-
-// Notification Configuration
-export const NOTIFICATIONS = {
-  PRIORITY: 2,
-  TYPE: 'basic' as const,
-} as const;
-
-export enum ExecutionWorld {
-  ISOLATED = 'ISOLATED',
-  MAIN = 'MAIN',
-}

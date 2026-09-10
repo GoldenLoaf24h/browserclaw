@@ -23,6 +23,8 @@ import {
   inPageScrollToIndex,
   inPageScrollByIndex,
   inPageGetElementCoordinates,
+  inPageArmDeliveryProbe,
+  inPageReadDeliveryProbe,
   inPageGetFrameOrigin,
   inPageGetIndexCropRect,
   inPageGetAssetImage,
@@ -45,7 +47,11 @@ export default defineUnlistedScript(() => {
   // module-scope state (notably dom-indexer's safeClickPoint map, which then
   // reads back empty on the next tool call). Keyed on a version string rather
   // than a boolean so a rebuilt extension still replaces the old namespace.
-  const ENGINE_VERSION = '2026-09-10.1';
+  // Bump when entrypoints are added/changed: the guard replaces the whole
+  // namespace only when the version string differs, so a stale page-side
+  // engine (surviving extension reloads in the same tab) would otherwise keep
+  // missing newly registered entrypoints.
+  const ENGINE_VERSION = '2026-09-10.4';
   const g = globalThis as any;
   if (g.__MCP_INPAGE__ && g.__MCP_INPAGE_VERSION__ === ENGINE_VERSION) {
     return;
@@ -58,6 +64,8 @@ export default defineUnlistedScript(() => {
     inPageScrollToIndex,
     inPageScrollByIndex,
     inPageGetElementCoordinates,
+    inPageArmDeliveryProbe,
+    inPageReadDeliveryProbe,
     inPageGetFrameOrigin,
     inPageGetIndexCropRect,
     inPageGetAssetImage,

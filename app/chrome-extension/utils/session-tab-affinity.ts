@@ -36,6 +36,18 @@ export class SessionTabAffinityManager {
     return this.affinityMap.get(sessionId);
   }
 
+  /**
+   * Synchronous binding existence check for pre-resolution warning logic.
+   * resolveAffinityTab's active-tab fallback BINDS the fallback tab as a side
+   * effect, so a post-resolution binding check cannot distinguish "agent
+   * bound earlier" from "fallback just bound it" — the warning would never
+   * fire. Callers must snapshot BEFORE resolveAffinityTab.
+   */
+  public hasBinding(sessionId?: string): boolean {
+    if (!sessionId) return false;
+    return this.affinityMap.has(sessionId);
+  }
+
   public removeAffinity(sessionId: string): void {
     if (!sessionId) return;
     this.affinityMap.delete(sessionId);

@@ -177,10 +177,6 @@ console.log(r.content[0].text);
 
 | 名称 | 参数 | 说明 |
 | --- | --- | --- |
-| `chrome_get_interactive_elements` | `textQuery?` `selector?` `includeCoordinates?`(默认 true) `types?: string[]` | 拉取交互元素列表(文本模糊搜索 / CSS 过滤),返回 `{success, elements, count, query}` |
-| `chrome_inject_script` | 脚本内容相关参数 | 注入持久脚本 |
-| `chrome_send_command_to_inject_script` | — | 向已注入脚本发指令 |
-| `chrome_userscript` | — | 用户脚本管理 |
 | `chrome_network_debugger_start` / `chrome_network_debugger_stop` | — | 遗留:基于 Debugger 域的网络抓取 |
 | `chrome_network_capture_start` / `chrome_network_capture_stop` | — | 遗留:webRequest 网络捕获 |
 

@@ -25,8 +25,6 @@ export const CONTENT_MESSAGE_TYPES = {
   FILL_HELPER_PING: 'fill_helper_ping',
   KEYBOARD_HELPER_PING: 'keyboard_helper_ping',
   SCREENSHOT_HELPER_PING: 'screenshot_helper_ping',
-  INTERACTIVE_ELEMENTS_HELPER_PING: 'interactive_elements_helper_ping',
-  ACCESSIBILITY_TREE_HELPER_PING: 'chrome_read_page_ping',
   WAIT_HELPER_PING: 'wait_helper_ping',
 } as const;
 

@@ -5,10 +5,15 @@ import { cdpSessionManager } from '../../../../utils/cdp-session-manager';
 import { raceCdp, DialogOpenedError, createDialogInterruptResponse } from '../../../../utils/race-cdp';
 import { executeInPage } from './in-page-engine';
 import { waitForPageSettle } from '../../../../utils/action-watchdog';
+import {
+  inPageArmDeliveryProbe,
+  inPageReadDeliveryProbe,
+} from './dom-indexer';
 import { screenshotContextManager, scaleCoordinates } from '../../../../utils/screenshot-context';
 import { computeHumanizedPoints } from '../../../../utils/mouse-trajectory';
 import type { CdpEventObserver } from '../../../../utils/cdp-session-manager';
 import { parseUnifiedCoordinate, type PolymorphicCoordinate } from '../../../../utils/coordinate-parser';
+import { sessionTabAffinity } from '../../../../utils/session-tab-affinity';
 
 export interface InteractIndexParams {
   index?: number;
@@ -185,6 +190,11 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
     }
 
     try {
+      // D3: snapshot BEFORE resolveAffinityTab — its active-tab fallback binds
+      // the fallback tab, so post-resolution checks always pass (live-tested).
+      const interactHadPreexistingBinding = sessionTabAffinity.hasBinding(
+        args.sessionId || args.sessionContext,
+      );
       const tab = await this.resolveAffinityTab({
         tabId: args.tabId,
         windowId: args.windowId,
@@ -194,6 +204,17 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       if (!tabId) {
         return createErrorResponse('No active tab found for chrome_interact_index');
       }
+
+      // D3 (TESTING-NOTES #19): when no explicit tabId/session bound the
+      // target, resolveAffinityTab fell through to the user's ACTIVE tab -
+      // input silently landed on whatever page the user was viewing. Surface
+      // that fallback in the response so the agent can correct with an
+      // explicit tabId. Non-blocking for backward compatibility.
+      const explicitOrBound =
+        typeof args.tabId === 'number' || interactHadPreexistingBinding;
+      const affinityWarning = explicitOrBound
+        ? undefined
+        : `input routed to active tab (tabId=${tabId}); pass explicit tabId to target another tab`;
 
       // Helper to project screenshot-space or polymorphic coordinates to viewport space
       const isScreenshotSpace = args.coordinateSpace === 'screenshot';
@@ -207,10 +228,30 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         return { x: scaled.x, y: scaled.y };
       };
 
+      // D1: arm one-shot delivery probe BEFORE dispatch (TESTING-NOTES #27).
+      // Hidden-tab throttling acks CDP commands but drops the events; the
+      // probe records whether any trusted event actually reached the page.
+      let probeArmed = false;
+      const armProbe = async () => {
+        try {
+          await executeInPage({ tabId }, 'inPageArmDeliveryProbe', [
+            action === 'click' || action === 'double_click' || action === 'right_click'
+              ? ['mousedown', 'mouseup', 'click']
+              : action === 'drag'
+                ? ['mousedown', 'mousemove', 'mouseup']
+                : ['mousemove', 'mouseover'],
+          ]);
+          probeArmed = true;
+        } catch {
+          // Restricted page / renderer gone: dispatch below will error anyway.
+        }
+      };
+
       // Click sequence: CDP-dispatch a rapid burst of full clicks at the given
       // viewport points. One MCP round-trip, page-side interval down to ~35ms —
       // the only way to hit fast-moving canvas targets (rAF-animated hitboxes).
       if (hasPoints) {
+        await armProbe();
         const interval = Math.min(500, Math.max(5, args.intervalMs ?? 35));
         const scaledPoints = (args.points || []).map(projectCoord);
         let dispatched = 0;
@@ -248,12 +289,33 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             `click_sequence failed after ${dispatched} points: ${burstErr instanceof Error ? burstErr.message : String(burstErr)}`,
           );
         }
+        // D1: read back the delivery probe before returning. click_sequence is
+        // a native-CDP path, so delivered=false here means throttling ate the
+        // burst (TESTING-NOTES #27).
+        let burstDelivery: Record<string, unknown> = {};
+        if (probeArmed) {
+          try {
+            const probe = (await executeInPage({ tabId }, 'inPageReadDeliveryProbe', [true]))?.[0]?.result;
+            burstDelivery = probe?.delivered
+              ? { deliveryVerified: true }
+              : { deliveryVerified: false, deliveryHits: probe?.hits ?? [] };
+          } catch {
+            burstDelivery = {};
+          }
+        }
         return {
           content: [
             {
               type: 'text',
               text: JSON.stringify(
-                { success: true, action: 'click_sequence', pointsDispatched: dispatched, coordinates: scaledPoints },
+                {
+                  success: true,
+                  action: 'click_sequence',
+                  pointsDispatched: dispatched,
+                  coordinates: scaledPoints,
+                  ...(affinityWarning ? { affinityWarning } : {}),
+                  ...burstDelivery,
+                },
                 null,
                 2,
               ),
@@ -387,17 +449,32 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             if (holdMs > 0) {
               await new Promise((r) => setTimeout(r, holdMs));
             }
-            for (let i = 1; i <= dragSteps; i++) {
+            // D2 fix (TESTING-NOTES #43): after dragIntercepted fires, Chrome
+            // stops acking Input.dispatchMouseEvent entirely - the old loop
+            // kept blind-sending mouseMoved and hung 30s+. Bail out of the
+            // move loop the moment interception is observed; dispatchDragEvent
+            // below completes the HTML5 drag without any further input acks.
+            let dragIntercepted = false;
+            for (let i = 1; i <= dragSteps && !dragIntercepted; i++) {
               const curX = Math.round(x + (endPoint.x - x) * (i / dragSteps));
               const curY = Math.round(y + (endPoint.y - y) * (i / dragSteps));
-              await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
+              await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mouseMoved',
                 x: curX,
                 y: curY,
                 button: 'left',
                 buttons: 1,
                 modifiers: modifierMask,
+              }).catch((err) => {
+                if (String(err?.message || '').startsWith('CDP_DISPATCH_TIMEOUT')) {
+                  dragIntercepted = true;
+                  return undefined;
+                }
+                throw err;
               });
+              if (!dragIntercepted) {
+                dragIntercepted = Boolean(dragData);
+              }
               await new Promise((r) => setTimeout(r, 12));
             }
             const deadline = Date.now() + 300;
@@ -475,6 +552,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         // Main frame, visual coordinates, or same-origin subframe with compensated viewport coordinates:
         // Perform native CDP Mouse Event Dispatch (isTrusted=true)
         try {
+          await armProbe();
           await cdpSessionManager.withSession(tabId, 'interact-index', async () => {
             if (action === 'hover' || args.humanize === true) {
               await dispatchMouseMovement(tabId, x, y, modifierMask, args.humanize === true);
@@ -610,6 +688,23 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         settleResult = await waitForPageSettle(tabId, { timeoutMs: args.settleTimeoutMs });
       }
 
+      // D1: read back the delivery probe. Only meaningful when armed and the
+      // action used native CDP (synthetic fallback fires the same listeners
+      // synchronously, so a false there would be a probe artifact).
+      let deliveryVerified: boolean | undefined;
+      let deliveryHits: any[] | undefined;
+      if (probeArmed && usedNativeCDP) {
+        try {
+          const probe = (await executeInPage({ tabId }, 'inPageReadDeliveryProbe', [true]))?.[0]?.result;
+          deliveryVerified = Boolean(probe?.delivered);
+          if (!deliveryVerified) {
+            deliveryHits = probe?.hits ?? [];
+          }
+        } catch {
+          deliveryVerified = undefined;
+        }
+      }
+
       // Visibility: screenshot-context TTL silently expires after 5 minutes;
       // surface the remaining budget so stale coordinate projection is detected
       const ctxTtlMs = screenshotContextManager.getTtlRemaining(tabId);
@@ -641,6 +736,12 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 drag: action === 'drag' ? dragOutcome : undefined,
                 settle: settleResult,
                 screenshotCtxWarning,
+                ...(affinityWarning ? { affinityWarning } : {}),
+                ...(deliveryVerified === undefined
+                  ? {}
+                  : deliveryVerified
+                    ? { deliveryVerified: true }
+                    : { deliveryVerified: false, deliveryHits }),
               },
               null,
               2,

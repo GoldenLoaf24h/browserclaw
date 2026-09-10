@@ -548,7 +548,7 @@ Read localStorage, sessionStorage, and cookies for the current tab. Cookies incl
 - `types` — Which stores to read (default: all three)
 - `filter` — Only return entries whose key or value contains this substring (case-insensitive)
 - `limit` — Maximum entries returned per store (default 200)
-- `includeHttpOnly` — Include HttpOnly cookies (default true)
+- `includeHttpOnly` — Include HttpOnly cookies (default true). Their values are redacted (valueIncluded: false) regardless; set includeHttpOnly:false to drop the entries en
 - `tabId` — Target tab ID (optional)
 - `windowId` — Target window ID (optional)
 - `sessionId` — Session ID for tab affinity (optional)

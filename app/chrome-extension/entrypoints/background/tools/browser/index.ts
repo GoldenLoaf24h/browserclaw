@@ -12,14 +12,12 @@ export { networkCaptureStartTool, networkCaptureStopTool } from './network-captu
 export { keyboardTool } from './keyboard';
 export { historyTool } from './history';
 export { bookmarkSearchTool, bookmarkAddTool, bookmarkDeleteTool } from './bookmark';
-export { injectScriptTool, sendCommandToInjectScriptTool } from './inject-script';
 export { javascriptTool } from './javascript';
 export { consoleTool } from './console';
 export { fileUploadTool } from './file-upload';
 export { computerTool } from './computer';
 export { handleDialogTool } from './dialog';
 export { handleDownloadTool } from './download';
-export { userscriptTool } from './userscript';
 export {
   performanceStartTraceTool,
   performanceStopTraceTool,

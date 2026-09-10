@@ -1378,6 +1378,63 @@ export function inPageGetElementCoordinates(refOrIndex: number | string): {
 }
 
 /**
+ * Post-dispatch delivery verification for CDP Input events.
+ *
+ * Chrome throttles CDP input to occluded/hidden tabs: the command acks
+ * successfully but the renderer never records the event (TESTING-NOTES #27),
+ * producing phantom successes. document.elementFromPoint cannot detect this -
+ * layout is computed on demand even in hidden tabs - so verification uses
+ * one-shot capture listeners armed BEFORE dispatch: if no trusted event
+ * arrives, the input never reached the renderer.
+ */
+// Returns a marker because executeInPage's retrieve protocol throws on
+// undefined returns (its undefined sentinel means 'entrypoint vanished').
+export function inPageArmDeliveryProbe(events: string[]): { armed: true } {
+  const g = globalThis as any;
+  const prev = g.__MCP_DELIVERY_PROBE__;
+  if (prev && typeof prev.remove === 'function') {
+    try {
+      prev.remove();
+    } catch {}
+  }
+  const probe: any = { events, hits: [], armed: true, remove: () => {} };
+  const listener = (e: Event) => {
+    if (!probe.armed) return;
+    probe.hits.push({
+      type: e.type,
+      isTrusted: (e as any).isTrusted === true,
+      target: (e.target as Element | null | undefined)?.tagName?.toLowerCase?.(),
+    });
+    if (probe.hits.length > 8) probe.hits.shift();
+  };
+  probe.remove = () => {
+    for (const t of events) {
+      document.removeEventListener(t, listener, true);
+    }
+  };
+  for (const t of events) {
+    document.addEventListener(t, listener, true);
+  }
+  g.__MCP_DELIVERY_PROBE__ = probe;
+  return { armed: true };
+}
+
+export function inPageReadDeliveryProbe(
+  disarm?: boolean,
+): { delivered: boolean; hits: any[]; missing?: boolean } {
+  const probe = (globalThis as any).__MCP_DELIVERY_PROBE__;
+  if (!probe) return { delivered: false, hits: [], missing: true };
+  const hits = probe.hits.slice();
+  if (disarm !== false) {
+    probe.armed = false;
+    try {
+      probe.remove();
+    } catch {}
+  }
+  return { delivered: hits.length > 0, hits };
+}
+
+/**
  * Locate element coordinates and info using CSS or XPath selector.
  */
 export function inPageLocateBySelector(

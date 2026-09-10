@@ -70,14 +70,9 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
         'app/chrome-extension/entrypoints/background/tools/browser/console.ts',
         'utf-8',
       );
-      const injectScript = fs.readFileSync(
-        'app/chrome-extension/entrypoints/background/tools/browser/inject-script.ts',
-        'utf-8',
-      );
 
       assert.ok(webFetcher.includes('active: (args as any).background === false') || webFetcher.includes('active: background === false'));
       assert.ok(consoleTool.includes('active: background === false'));
-      assert.ok(injectScript.includes('active: (args as any).background === false') || injectScript.includes('active: background === false'));
     });
   });
 
