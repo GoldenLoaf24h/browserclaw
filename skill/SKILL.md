@@ -258,10 +258,12 @@ Extracts clean, readable Markdown from documentation, news, or articles without 
 
 Add `"fit": true` for content-only extraction: scopes to the main content region (`article` / `main` / `[role=main]`) and strips nav/header/footer/aside/form noise before conversion — the crawl4ai "fit markdown" equivalent, in-page.
 
-### D. Focus Isolation (Background Tab Protection)
-BrowserClaw protects the user's active window and typing focus:
-- New tabs are opened with `chrome.tabs.create({ active: false })`.
-- Input is dispatched via CDP `Input` domain, functioning seamlessly in the background without stealing OS focus.
+### D. Focus Isolation & Non-Disruptive Multi-Tab Operation (Zero User Interruption)
+BrowserClaw is specifically engineered to let agents work completely in the background without interrupting the user's foreground browsing:
+1. **Never switch the user's active tab**: In multi-tab workflows, **DO NOT call `chrome_switch_tab`** unless the user explicitly requested to switch their active tab view. Calling `chrome_switch_tab` forces Chrome to switch active tabs and steal focus from the user!
+2. **Direct `tabId` Targeting**: All core tools (`chrome_read_dom`, `chrome_interact_index`, `chrome_fill_index`, `chrome_screenshot`, `chrome_smart_scroll`, `chrome_batch_actions`, `chrome_computer`, `chrome_get_markdown`, etc.) accept an explicit `tabId`. Always pass the target `tabId` directly. BrowserClaw uses out-of-band CDP sessions to interact with background tabs without bringing them to the front or moving the user's cursor.
+3. **Background Navigation**: `chrome_navigate` opens new tabs in the background (`active: false`) by default. Never pass `background: false` unless the user explicitly asked to bring the tab into the foreground.
+4. **Session Tab Affinity**: When working across multiple turns, pass `sessionId` to bind your agent session to its target tab, preventing accidental fallback to the user's active tab.
 
 ### E. Session State Inspection (`chrome_storage`)
 Reads localStorage, sessionStorage, and cookies for the current tab in one call:

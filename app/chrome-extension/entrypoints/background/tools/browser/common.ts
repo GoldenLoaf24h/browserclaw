@@ -727,6 +727,8 @@ export const closeTabsTool = new CloseTabsTool();
 interface SwitchTabToolParams {
   tabId: number;
   windowId?: number;
+  background?: boolean;
+  focusWindow?: boolean;
 }
 
 /**
@@ -747,15 +749,19 @@ class SwitchTabTool extends BaseBrowserToolExecutor {
       // previously active tab). Activate unless the caller explicitly opts out
       // with background: true.
       // Default is "activate": only an explicit background:true opts out.
-      const keepBackground = (args as any).background === true;
+      const keepBackground = args.background === true;
       if (!keepBackground) {
         await chrome.tabs.update(tabId, { active: true });
-        const resolvedWindowId = windowId ?? (await chrome.tabs.get(tabId)).windowId;
-        if (resolvedWindowId !== undefined) {
-          try {
-            await chrome.windows.update(resolvedWindowId, { focused: true });
-          } catch (focusErr) {
-            console.warn('switch_tab: window focus failed (tab still activated):', focusErr);
+        // Only focus window if caller explicitly asked for it via focusWindow: true.
+        // Never steal OS desktop focus by default.
+        if (args.focusWindow === true) {
+          const resolvedWindowId = windowId ?? (await chrome.tabs.get(tabId)).windowId;
+          if (resolvedWindowId !== undefined) {
+            try {
+              await chrome.windows.update(resolvedWindowId, { focused: true });
+            } catch (focusErr) {
+              console.warn('switch_tab: window focus failed (tab still activated):', focusErr);
+            }
           }
         }
       }

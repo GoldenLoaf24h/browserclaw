@@ -58,6 +58,10 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
         switchTabBody.includes('active: true'),
         'SwitchTabTool must activate the target tab by default',
       );
+      assert.ok(
+        switchTabBody.includes('args.focusWindow === true'),
+        'SwitchTabTool must only focus window when caller explicitly sets focusWindow: true',
+      );
     });
 
     it('verifies auxiliary browser tools do not steal focus on tab creation', async () => {
@@ -73,6 +77,29 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
 
       assert.ok(webFetcher.includes('active: (args as any).background === false') || webFetcher.includes('active: background === false'));
       assert.ok(consoleTool.includes('active: background === false'));
+    });
+
+    it('verifies background default semantics in TOOL_SCHEMAS prevent focus stealing', async () => {
+      const switchTab = TOOL_SCHEMAS.find((t) => t.name === TOOL_NAMES.BROWSER.SWITCH_TAB);
+      assert.ok(switchTab?.inputSchema?.properties?.background, 'SWITCH_TAB schema must include background property');
+
+      const navigate = TOOL_SCHEMAS.find((t) => t.name === TOOL_NAMES.BROWSER.NAVIGATE);
+      assert.ok(
+        (navigate?.inputSchema?.properties?.background as any)?.description.includes('Default: true'),
+        'NAVIGATE schema background must indicate Default: true',
+      );
+
+      const computer = TOOL_SCHEMAS.find((t) => t.name === TOOL_NAMES.BROWSER.COMPUTER);
+      assert.ok(
+        (computer?.inputSchema?.properties?.background as any)?.description.includes('Default: true'),
+        'COMPUTER schema background must indicate Default: true',
+      );
+
+      const screenshot = TOOL_SCHEMAS.find((t) => t.name === TOOL_NAMES.BROWSER.SCREENSHOT);
+      assert.ok(
+        (screenshot?.inputSchema?.properties?.background as any)?.description.includes('Default: true'),
+        'SCREENSHOT schema background must indicate Default: true',
+      );
     });
   });
 

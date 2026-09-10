@@ -175,7 +175,7 @@ export const TOOL_SCHEMAS: Tool[] = [
         background: {
           type: 'boolean',
           description:
-            'Avoid focusing/activating tab/window for certain operations (best-effort). Default: false',
+            'Avoid focusing/activating tab/window for operations (best-effort). Default: true (runs quietly in background without stealing user focus)',
         },
         dwellMs: {
           type: 'number',
@@ -370,7 +370,7 @@ export const TOOL_SCHEMAS: Tool[] = [
         background: {
           type: 'boolean',
           description:
-            'Perform the operation without stealing focus (do not activate the tab or focus the window). Default: false',
+            'Perform the operation without stealing focus (do not activate the tab or focus the window). Default: true (set false only if user explicitly asks to bring tab to foreground)',
         },
         width: {
           type: 'number',
@@ -423,7 +423,7 @@ export const TOOL_SCHEMAS: Tool[] = [
         background: {
           type: 'boolean',
           description:
-            'Attempt capture without bringing tab/window to foreground. CDP-based capture is used for simple viewport captures. Default: false',
+            'Attempt capture without bringing tab/window to foreground. CDP-based capture is used for viewport captures. Default: true',
         },
         width: { type: 'number', description: 'Width in pixels (default: 800)' },
         height: { type: 'number', description: 'Height in pixels (default: 600)' },
@@ -540,6 +540,11 @@ export const TOOL_SCHEMAS: Tool[] = [
           type: 'number',
           description: 'The ID of the window where the tab is located.',
         },
+        background: {
+          type: 'boolean',
+          description:
+            'If true, binds session affinity only without activating the tab in the Chrome UI or stealing user focus. Default: false',
+        },
       },
       required: ['tabId'],
     },
@@ -567,7 +572,7 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         background: {
           type: 'boolean',
-          description: 'Do not activate tab/focus window while fetching (default: false)',
+          description: 'Do not activate tab/focus window while fetching (default: true)',
         },
         htmlContent: {
           type: 'boolean',
@@ -1167,7 +1172,7 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         background: {
           type: 'boolean',
-          description: 'Do not activate tab/focus window when capturing via CDP. Default: false',
+          description: 'Do not activate tab/focus window when capturing via CDP. Default: true',
         },
         includeExceptions: {
           type: 'boolean',

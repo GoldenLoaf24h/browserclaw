@@ -21,7 +21,7 @@ Navigate to a URL, refresh the current tab, or navigate browser history (back/fo
 - `newWindow` — Create a new window to navigate to the URL or not. Defaults to false
 - `tabId` — Target an existing tab by ID (if provided, navigate/refresh/back/forward that tab instead of the active tab).
 - `windowId` — Target an existing window by ID (when creating a new tab in existing window, or picking active tab if tabId is not provided).
-- `background` — Perform the operation without stealing focus (do not activate the tab or focus the window). Default: false
+- `background` — Perform the operation without stealing focus (do not activate the tab or focus the window). Default: true (set false only if user explicitly asks to b
 - `width` — Window width in pixels (default: 1280). When width or height is provided, a new window will be created.
 - `height` — Window height in pixels (default: 720). When width or height is provided, a new window will be created.
 - `refresh` — Refresh the current active tab instead of navigating to a URL. When true, the url parameter is ignored. Defaults to false
@@ -32,6 +32,7 @@ Switch to a specific browser tab
 
 - `tabId`（必填） — The ID of the tab to switch to.
 - `windowId` — The ID of the window where the tab is located.
+- `background` — If true, binds session affinity only without activating the tab in the Chrome UI or stealing user focus. Default: false
 
 ### `chrome_close_tabs`
 
@@ -102,7 +103,7 @@ Fetch content from a web page
 
 - `url` — URL to fetch content from. If not provided, uses the current active tab
 - `tabId` — Target an existing tab by ID (default: active tab).
-- `background` — Do not activate tab/focus window while fetching (default: false)
+- `background` — Do not activate tab/focus window while fetching (default: true)
 - `htmlContent` — Get the visible HTML content of the page. If true, textContent will be ignored (default: false)
 - `textContent` — Get the visible text content of the page with metadata. Ignored if htmlContent is true (default: true)
 - `selector` — CSS selector to get content from a specific element. If provided, only content from this element will be returned
@@ -296,7 +297,7 @@ Execute ultra-low latency rapid interaction sequences: high-frequency clicks (bu
 Use a mouse and keyboard to interact with a web browser, and take screenshots.
 
 - `tabId` — Target tab ID (default: active tab)
-- `background` — Avoid focusing/activating tab/window for certain operations (best-effort). Default: false
+- `background` — Avoid focusing/activating tab/window for operations (best-effort). Default: true (runs quietly in background without stealing user focus)
 - `dwellMs` — For click actions: milliseconds to hold the button down before release (0-2000). Use 50-150 for targets that reject instant clicks
 - `action:left_click|right_click|double_click|triple_click|left_click_drag|scroll|scroll_to|type|key|fill|fill_form|hover|wait|resize_page|zoom|screenshot`（必填） — Action to perform. There is no plain "click" — use left_click.
 - `ref` — Element ref/index from chrome_read_dom. For click/scroll/scroll_to/key/type and drag end when provided; takes precedence over coordinates.
@@ -333,7 +334,7 @@ Use a mouse and keyboard to interact with a web browser, and take screenshots.
 - `assetIndex` — View one visual asset listed by chrome_read_dom ([asset N] lines): returns the real image resource; falls back to a viewport crop when bytes are unava
 - `tabId` — Target tab ID to capture from (default: active tab).
 - `windowId` — Target window ID to pick active tab from when tabId is not provided.
-- `background` — Attempt capture without bringing tab/window to foreground. CDP-based capture is used for simple viewport captures. Default: false
+- `background` — Attempt capture without bringing tab/window to foreground. CDP-based capture is used for viewport captures. Default: true
 - `width` — Width in pixels (default: 800)
 - `height` — Height in pixels (default: 600)
 - `maxWidth` — Maximum width in pixels for compression (default: 1280)
@@ -395,7 +396,7 @@ Capture console output from a browser tab. Supports snapshot mode (default; one-
 - `url` — URL to navigate to and capture console from. If not provided, uses the current active tab
 - `tabId` — Target an existing tab by ID (default: active tab).
 - `windowId` — Target window ID to pick active tab when tabId is omitted.
-- `background` — Do not activate tab/focus window when capturing via CDP. Default: false
+- `background` — Do not activate tab/focus window when capturing via CDP. Default: true
 - `includeExceptions` — Include uncaught exceptions in the output (default: true)
 - `maxMessages` — Maximum number of console messages to capture in snapshot mode (default: 100). If limit is provided, it takes precedence.
 - `mode:snapshot|buffer` — Console capture mode: snapshot (default; waits ~2s for messages) or buffer (persistent per-tab buffer; reads from memory instantly).
