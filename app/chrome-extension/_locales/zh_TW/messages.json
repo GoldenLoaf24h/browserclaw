@@ -1,0 +1,260 @@
+{
+  "extensionName": {
+    "message": "chrome-mcp-server",
+    "description": "擴充功能名稱"
+  },
+  "extensionDescription": {
+    "message": "使用您自己的 Chrome 瀏覽器暴露瀏覽器功能",
+    "description": "擴充功能描述"
+  },
+  "nativeServerConfigLabel": {
+    "message": "原生伺服器設定",
+    "description": "本機伺服器設定的主要區段標題"
+  },
+  "statusLabel": {
+    "message": "狀態",
+    "description": "通用狀態標籤"
+  },
+  "runningStatusLabel": {
+    "message": "執行狀態",
+    "description": "伺服器執行狀態標籤"
+  },
+  "connectionStatusLabel": {
+    "message": "連線狀態",
+    "description": "連線狀態標籤"
+  },
+  "lastUpdatedLabel": {
+    "message": "最後更新：",
+    "description": "最後更新時間戳標籤"
+  },
+  "connectButton": {
+    "message": "連線",
+    "description": "連線按鈕文字"
+  },
+  "disconnectButton": {
+    "message": "中斷連線",
+    "description": "中斷連線按鈕文字"
+  },
+  "connectingStatus": {
+    "message": "連線中...",
+    "description": "連線狀態訊息"
+  },
+  "connectedStatus": {
+    "message": "已連線",
+    "description": "已連線狀態訊息"
+  },
+  "disconnectedStatus": {
+    "message": "已中斷",
+    "description": "已中斷狀態訊息"
+  },
+  "detectingStatus": {
+    "message": "偵測中...",
+    "description": "偵測狀態訊息"
+  },
+  "serviceRunningStatus": {
+    "message": "服務執行中 (連結埠: $PORT$)",
+    "description": "含連結埠號的服務執行狀態",
+    "placeholders": {
+      "port": {
+        "content": "$1",
+        "example": "12306"
+      }
+    }
+  },
+  "serviceNotConnectedStatus": {
+    "message": "服務未連線",
+    "description": "服務未連線狀態"
+  },
+  "connectedServiceNotStartedStatus": {
+    "message": "已連線，服務未啟動",
+    "description": "已連線但服務未啟動狀態"
+  },
+  "mcpServerConfigLabel": {
+    "message": "MCP 伺服器設定",
+    "description": "MCP 伺服器設定區段標籤"
+  },
+  "connectionPortLabel": {
+    "message": "連結埠",
+    "description": "連結埠輸入標籤"
+  },
+  "refreshStatusButton": {
+    "message": "重新整理狀態",
+    "description": "重新整理狀態按鈕提示"
+  },
+  "copyConfigButton": {
+    "message": "複製設定",
+    "description": "複製設定按鈕文字"
+  },
+  "retryButton": {
+    "message": "重試",
+    "description": "重試按鈕文字"
+  },
+  "cancelButton": {
+    "message": "取消",
+    "description": "取消按鈕文字"
+  },
+  "confirmButton": {
+    "message": "確認",
+    "description": "確認按鈕文字"
+  },
+  "saveButton": {
+    "message": "儲存",
+    "description": "儲存按鈕文字"
+  },
+  "closeButton": {
+    "message": "關閉",
+    "description": "關閉按鈕文字"
+  },
+  "resetButton": {
+    "message": "重設",
+    "description": "重設按鈕文字"
+  },
+  "initializingStatus": {
+    "message": "初始化中...",
+    "description": "初始化進度訊息"
+  },
+  "processingStatus": {
+    "message": "處理中...",
+    "description": "處理進度訊息"
+  },
+  "loadingStatus": {
+    "message": "載入中...",
+    "description": "載入進度訊息"
+  },
+  "clearingStatus": {
+    "message": "清除中...",
+    "description": "清除進度訊息"
+  },
+  "cleaningStatus": {
+    "message": "清理中...",
+    "description": "清理進度訊息"
+  },
+  "downloadingStatus": {
+    "message": "下載中...",
+    "description": "下載進度訊息"
+  },
+  "networkErrorMessage": {
+    "message": "網路連線錯誤，請檢查網路後再試一次",
+    "description": "網路連線錯誤訊息"
+  },
+  "permissionDeniedErrorMessage": {
+    "message": "權限被拒絕",
+    "description": "權限被拒絕錯誤訊息"
+  },
+  "timeoutErrorMessage": {
+    "message": "操作逾時",
+    "description": "逾時錯誤訊息"
+  },
+  "settingsTitle": {
+    "message": "設定",
+    "description": "設定對話框標題"
+  },
+  "aboutTitle": {
+    "message": "關於",
+    "description": "關於對話框標題"
+  },
+  "helpTitle": {
+    "message": "說明",
+    "description": "說明對話框標題"
+  },
+  "bookmarksBarLabel": {
+    "message": "書籤列",
+    "description": "書籤列資料夾名稱"
+  },
+  "newTabLabel": {
+    "message": "新分頁",
+    "description": "新分頁標籤"
+  },
+  "currentPageLabel": {
+    "message": "目前頁面",
+    "description": "目前頁面標籤"
+  },
+  "menuLabel": {
+    "message": "功能表",
+    "description": "功能表無障礙標籤"
+  },
+  "navigationLabel": {
+    "message": "導覽",
+    "description": "導覽無障礙標籤"
+  },
+  "mainContentLabel": {
+    "message": "主要內容",
+    "description": "主要內容無障礙標籤"
+  },
+  "languageSelectorLabel": {
+    "message": "語言",
+    "description": "語言選擇器標籤"
+  },
+  "themeLabel": {
+    "message": "主題",
+    "description": "主題選擇器標籤"
+  },
+  "lightTheme": {
+    "message": "淺色",
+    "description": "淺色主題選項"
+  },
+  "darkTheme": {
+    "message": "深色",
+    "description": "深色主題選項"
+  },
+  "autoTheme": {
+    "message": "自動",
+    "description": "自動主題選項"
+  },
+  "advancedSettingsLabel": {
+    "message": "進階設定",
+    "description": "進階設定區段標籤"
+  },
+  "debugModeLabel": {
+    "message": "偵錯模式",
+    "description": "偵錯模式切換標籤"
+  },
+  "verboseLoggingLabel": {
+    "message": "詳細日誌",
+    "description": "詳細日誌切換標籤"
+  },
+  "successNotification": {
+    "message": "操作已成功完成",
+    "description": "通用成功通知"
+  },
+  "warningNotification": {
+    "message": "警告：請在繼續前檢查",
+    "description": "通用警告通知"
+  },
+  "infoNotification": {
+    "message": "資訊",
+    "description": "通用資訊通知"
+  },
+  "configCopiedNotification": {
+    "message": "設定已複製到剪貼簿",
+    "description": "設定複製成功訊息"
+  },
+  "dataClearedNotification": {
+    "message": "資料清除成功",
+    "description": "資料清除成功訊息"
+  },
+  "bytesUnit": {
+    "message": "bytes",
+    "description": "位元組單位"
+  },
+  "kilobytesUnit": {
+    "message": "KB",
+    "description": "千位元組單位"
+  },
+  "megabytesUnit": {
+    "message": "MB",
+    "description": "百萬位元組單位"
+  },
+  "gigabytesUnit": {
+    "message": "GB",
+    "description": "十億位元組單位"
+  },
+  "itemsUnit": {
+    "message": "項目",
+    "description": "項目計數單位"
+  },
+  "pagesUnit": {
+    "message": "頁面",
+    "description": "頁面計數單位"
+  }
+}

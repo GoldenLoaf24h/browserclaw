@@ -1,0 +1,509 @@
+import { createErrorResponse, ToolResult } from '@/common/tool-handler';
+import { BaseBrowserToolExecutor } from '../base-browser';
+import { TOOL_NAMES } from 'chrome-mcp-shared';
+import { TOOL_MESSAGE_TYPES } from '@/common/message-types';
+import { TIMEOUTS, ERROR_MESSAGES } from '@/common/constants';
+import { resolveTargetLocation } from './unified-locator';
+import { cdpSessionManager } from '@/utils/cdp-session-manager';
+import type { PolymorphicCoordinate } from '@/utils/coordinate-parser';
+
+interface Coordinates {
+  x: number;
+  y: number;
+}
+
+interface ClickToolParams {
+  selector?: string; // CSS selector or XPath for the element to click
+  selectorType?: 'css' | 'xpath'; // Type of selector (default: 'css')
+  ref?: string; // Element ref from accessibility tree (window.__mcpElementMap)
+  index?: number; // Compact 1-based index from chrome_read_dom
+  text?: string; // Match target element by visible text
+  role?: string; // Match target element by ARIA role
+  coordinate?: Coordinates | PolymorphicCoordinate; // Preferred unified coordinate parameter
+  coordinates?: Coordinates | PolymorphicCoordinate; // Alias coordinates to click at (x, y relative to viewport)
+  coordinateSpace?: 'viewport' | 'screenshot'; // Space of coordinate/coordinates (default: viewport)
+  waitForNavigation?: boolean; // Whether to wait for navigation to complete after click
+  timeout?: number; // Timeout in milliseconds for waiting for the element or navigation
+  frameId?: number; // Target frame for ref/selector resolution
+  double?: boolean; // Perform double click when true
+  button?: 'left' | 'right' | 'middle';
+  bubbles?: boolean;
+  cancelable?: boolean;
+  modifiers?: { altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
+  tabId?: number; // target existing tab id
+  windowId?: number; // when no tabId, pick active tab from this window
+  sessionId?: string; // session affinity identifier
+  sessionContext?: string;
+}
+
+/**
+ * Tool for clicking elements on web pages
+ */
+class ClickTool extends BaseBrowserToolExecutor {
+  name = TOOL_NAMES.BROWSER.CLICK;
+
+  /**
+   * Execute click operation
+   */
+  async execute(args: ClickToolParams): Promise<ToolResult> {
+    const coordinates = args.coordinate || args.coordinates;
+    const {
+      selector,
+      selectorType = 'css',
+      waitForNavigation = false,
+      timeout = TIMEOUTS.DEFAULT_WAIT * 5,
+      frameId,
+      button,
+      bubbles,
+      cancelable,
+      modifiers,
+    } = args;
+
+    console.log(`Starting click operation with options:`, args);
+
+    const hasRef = Boolean(args.ref || args.index !== undefined);
+    const hasSelector = Boolean(selector);
+    const hasTextOrRole = Boolean(args.text || args.role);
+    const hasCoords = Boolean(coordinates);
+
+    if (!hasRef && !hasSelector && !hasTextOrRole && !hasCoords) {
+      return createErrorResponse(
+        ERROR_MESSAGES.INVALID_PARAMETERS + ': Provide ref, index, selector, text/role, or coordinate',
+      );
+    }
+
+    try {
+      // Resolve tab
+      const tab = await this.resolveAffinityTab({
+        tabId: args.tabId,
+        windowId: args.windowId,
+        sessionId: args.sessionId || (args as any).sessionContext,
+      });
+      if (!tab.id) {
+        return createErrorResponse(ERROR_MESSAGES.TAB_NOT_FOUND + ': Active tab has no ID');
+      }
+      const tabId = tab.id;
+
+      let finalRef = args.ref;
+      let finalSelector = selector;
+
+      // If selector is XPath, convert to ref first
+      if (selector && selectorType === 'xpath') {
+        await this.injectContentScript(tabId, ['inject-scripts/accessibility-tree-helper.js']);
+        try {
+          const resolved = await this.sendMessageToTab(
+            tabId,
+            {
+              action: TOOL_MESSAGE_TYPES.ENSURE_REF_FOR_SELECTOR,
+              selector,
+              isXPath: true,
+            },
+            frameId,
+          );
+          if (resolved && resolved.success && resolved.ref) {
+            finalRef = resolved.ref;
+            finalSelector = undefined; // Use ref instead of selector
+          } else {
+            return createErrorResponse(
+              `Failed to resolve XPath selector: ${resolved?.error || 'unknown error'}`,
+            );
+          }
+        } catch (error) {
+          return createErrorResponse(
+            `Error resolving XPath: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+
+      // Unified locator & CDP Input click dispatch (P1-4)
+      const loc = await resolveTargetLocation(tabId, {
+        ref: finalRef,
+        index: args.index,
+        selector: finalSelector,
+        selectorType,
+        text: args.text,
+        role: args.role,
+        coordinate: coordinates,
+        coordinateSpace: (args as any).coordinateSpace,
+      });
+
+      if (loc.success) {
+        let isTrusted = false;
+        // CDP modifier bitmask (Alt=1, Ctrl=2, Meta=4, Shift=8). Without this the
+        // primary CDP path silently dropped modifiers, so callers such as
+        // chrome_computer left_click({modifiers:{shiftKey:true}}) produced
+        // shiftKey=false on the page while the content-script fallback path worked.
+        const modifierMask =
+          (modifiers?.altKey ? 1 : 0) |
+          (modifiers?.ctrlKey ? 2 : 0) |
+          (modifiers?.metaKey ? 4 : 0) |
+          (modifiers?.shiftKey ? 8 : 0);
+        try {
+          await cdpSessionManager.withSession(tabId, 'click-tool', async () => {
+            await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
+              type: 'mouseMoved',
+              x: loc.x,
+              y: loc.y,
+              modifiers: modifierMask,
+            });
+            const clickCount = args.double ? 2 : 1;
+            const buttonName = button || 'left';
+            // `buttons` is the pressed-button bitmask (left=1, right=2, middle=4).
+            // CDP infers it inconsistently for mousePressed when modifiers are
+            // present, so state it explicitly.
+            const buttonsMask = buttonName === 'right' ? 2 : buttonName === 'middle' ? 4 : 1;
+            // CDP only synthesises dblclick when the press/release pairs carry
+            // clickCount 1 then 2; a single pair with clickCount:2 fires click
+            // alone on several renderers. Mirrors computer.ts double/triple path.
+            for (let i = 1; i <= clickCount; i++) {
+              await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
+                type: 'mousePressed',
+                x: loc.x,
+                y: loc.y,
+                button: buttonName,
+                buttons: buttonsMask,
+                clickCount: i,
+                modifiers: modifierMask,
+              });
+              await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
+                type: 'mouseReleased',
+                x: loc.x,
+                y: loc.y,
+                button: buttonName,
+                buttons: 0,
+                clickCount: i,
+                modifiers: modifierMask,
+              });
+            }
+            isTrusted = true;
+          });
+        } catch (cdpErr) {
+          console.warn('[ClickTool] CDP click failed, falling back to content script:', cdpErr);
+        }
+
+        if (isTrusted) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  message: 'Click operation successful (CDP Input)',
+                  clickMethod: loc.resolutionPath,
+                  resolutionPath: loc.resolutionPath,
+                  coordinates: { x: loc.x, y: loc.y },
+                  tagName: loc.tagName,
+                  text: loc.text,
+                  isTrusted: true,
+                  ...(loc.warning ? { warning: loc.warning } : {}),
+                }),
+              },
+            ],
+            isError: false,
+          };
+        }
+      }
+
+      await this.injectContentScript(tab.id, ['inject-scripts/click-helper.js']);
+
+      // Send click message to content script
+      const result = await this.sendMessageToTab(
+        tab.id,
+        {
+          action: TOOL_MESSAGE_TYPES.CLICK_ELEMENT,
+          selector: finalSelector,
+          coordinates,
+          ref: finalRef,
+          waitForNavigation,
+          timeout,
+          double: args.double === true,
+          button,
+          bubbles,
+          cancelable,
+          modifiers,
+        },
+        frameId,
+      );
+
+      // Determine actual click method used
+      let clickMethod: string;
+      if (coordinates) {
+        clickMethod = 'coordinates';
+      } else if (finalRef) {
+        clickMethod = 'ref';
+      } else if (finalSelector) {
+        clickMethod = 'selector';
+      } else {
+        clickMethod = 'unknown';
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: result.message || 'Click operation successful',
+              elementInfo: result.elementInfo,
+              navigationOccurred: result.navigationOccurred,
+              clickMethod,
+            }),
+          },
+        ],
+        isError: false,
+      };
+    } catch (error) {
+      console.error('Error in click operation:', error);
+      return createErrorResponse(
+        `Error performing click: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+}
+
+export const clickTool = new ClickTool();
+
+interface FillToolParams {
+  selector?: string;
+  selectorType?: 'css' | 'xpath'; // Type of selector (default: 'css')
+  ref?: string; // Element ref from accessibility tree
+  index?: number; // Compact 1-based index from chrome_read_dom
+  targetText?: string; // Target element by label or visible text
+  role?: string; // Target element by ARIA role
+  coordinate?: Coordinates | PolymorphicCoordinate; // Preferred unified coordinate parameter
+  coordinates?: Coordinates | PolymorphicCoordinate; // Alias coordinates to click and focus before typing
+  coordinateSpace?: 'viewport' | 'screenshot'; // Space of coordinate/coordinates (default: viewport)
+  // Unified text parameter (alias for value)
+  text?: string;
+  // Accept string | number | boolean for broader form input coverage
+  value?: string | number | boolean;
+  frameId?: number;
+  tabId?: number; // target existing tab id
+  windowId?: number; // when no tabId, pick active tab from this window
+  sessionId?: string; // session affinity identifier
+  sessionContext?: string;
+}
+
+/**
+ * Tool for filling form elements on web pages
+ */
+class FillTool extends BaseBrowserToolExecutor {
+  name = TOOL_NAMES.BROWSER.FILL;
+
+  /**
+   * Execute fill operation
+   */
+  async execute(args: FillToolParams): Promise<ToolResult> {
+    const coordinates = args.coordinate || args.coordinates;
+    const value = args.value !== undefined ? args.value : args.text;
+    const targetText = args.targetText || (args.value !== undefined ? args.text : undefined);
+    const { selector, selectorType = 'css', ref, frameId } = args;
+
+    console.log(`Starting fill operation with options:`, args);
+
+    const hasRef = Boolean(ref || args.index !== undefined);
+    const hasSelector = Boolean(selector);
+    const hasTargetTextOrRole = Boolean(targetText || args.role);
+    const hasCoords = Boolean(coordinates);
+
+    if (!hasRef && !hasSelector && !hasTargetTextOrRole && !hasCoords) {
+      return createErrorResponse(
+        ERROR_MESSAGES.INVALID_PARAMETERS + ': Provide ref, index, selector, targetText/role, or coordinate',
+      );
+    }
+
+    if (value === undefined || value === null) {
+      return createErrorResponse(ERROR_MESSAGES.INVALID_PARAMETERS + ': Text or value must be provided');
+    }
+
+    try {
+      const tab = await this.resolveAffinityTab({
+        tabId: args.tabId,
+        windowId: args.windowId,
+        sessionId: args.sessionId || (args as any).sessionContext,
+      });
+      if (!tab.id) {
+        return createErrorResponse(ERROR_MESSAGES.TAB_NOT_FOUND + ': Active tab has no ID');
+      }
+      const tabId = tab.id;
+
+      let finalRef = ref;
+      let finalSelector = selector;
+
+      // If selector is XPath, convert to ref first
+      if (selector && selectorType === 'xpath') {
+        await this.injectContentScript(tabId, ['inject-scripts/accessibility-tree-helper.js']);
+        try {
+          const resolved = await this.sendMessageToTab(
+            tabId,
+            {
+              action: TOOL_MESSAGE_TYPES.ENSURE_REF_FOR_SELECTOR,
+              selector,
+              isXPath: true,
+            },
+            frameId,
+          );
+          if (resolved && resolved.success && resolved.ref) {
+            finalRef = resolved.ref;
+            finalSelector = undefined; // Use ref instead of selector
+          } else {
+            return createErrorResponse(
+              `Failed to resolve XPath selector: ${resolved?.error || 'unknown error'}`,
+            );
+          }
+        } catch (error) {
+          return createErrorResponse(
+            `Error resolving XPath: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+
+      // Unified locator & CDP Input fill dispatch (P1-4)
+      const loc = await resolveTargetLocation(tabId, {
+        ref: finalRef,
+        index: args.index,
+        selector: finalSelector,
+        selectorType,
+        targetText,
+        text: targetText,
+        role: args.role,
+        coordinate: coordinates,
+        coordinateSpace: (args as any).coordinateSpace,
+      });
+
+      if (loc.success) {
+        let isTrusted = false;
+        try {
+          await cdpSessionManager.withSession(tabId, 'fill-tool', async () => {
+            // Click to focus
+            await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
+              type: 'mouseMoved',
+              x: loc.x,
+              y: loc.y,
+            });
+            await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
+              type: 'mousePressed',
+              x: loc.x,
+              y: loc.y,
+              button: 'left',
+              clickCount: 1,
+            });
+            await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
+              type: 'mouseReleased',
+              x: loc.x,
+              y: loc.y,
+              button: 'left',
+              clickCount: 1,
+            });
+
+            // Clear input
+            let isMac = false;
+            try {
+              const platform = await chrome.runtime.getPlatformInfo();
+              isMac = platform?.os === 'mac';
+            } catch {}
+            const selectAllMod = isMac ? 8 : 2;
+
+            await cdpSessionManager.sendCommand(tabId, 'Input.dispatchKeyEvent', {
+              type: 'rawKeyDown',
+              modifiers: selectAllMod,
+              windowsVirtualKeyCode: 65,
+              key: 'a',
+              code: 'KeyA',
+            });
+            await cdpSessionManager.sendCommand(tabId, 'Input.dispatchKeyEvent', {
+              type: 'keyUp',
+              modifiers: selectAllMod,
+              windowsVirtualKeyCode: 65,
+              key: 'a',
+              code: 'KeyA',
+            });
+            await cdpSessionManager.sendCommand(tabId, 'Input.dispatchKeyEvent', {
+              type: 'rawKeyDown',
+              windowsVirtualKeyCode: 8,
+              key: 'Backspace',
+              code: 'Backspace',
+            });
+            await cdpSessionManager.sendCommand(tabId, 'Input.dispatchKeyEvent', {
+              type: 'keyUp',
+              windowsVirtualKeyCode: 8,
+              key: 'Backspace',
+              code: 'Backspace',
+            });
+
+            // Insert text
+            const textToInsert = String(value);
+            if (textToInsert.length > 0) {
+              await cdpSessionManager.sendCommand(tabId, 'Input.insertText', {
+                text: textToInsert,
+              });
+            }
+            isTrusted = true;
+          });
+        } catch (cdpErr) {
+          console.warn('[FillTool] CDP fill failed, falling back to content script:', cdpErr);
+        }
+
+        if (isTrusted) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  message: 'Fill operation successful (CDP Input)',
+                  fillMethod: loc.resolutionPath,
+                  resolutionPath: loc.resolutionPath,
+                  coordinates: { x: loc.x, y: loc.y },
+                  tagName: loc.tagName,
+                  isTrusted: true,
+                  ...(loc.warning ? { warning: loc.warning } : {}),
+                }),
+              },
+            ],
+            isError: false,
+          };
+        }
+      }
+
+      await this.injectContentScript(tab.id, ['inject-scripts/fill-helper.js']);
+
+      // Send fill message to content script
+      const result = await this.sendMessageToTab(
+        tab.id,
+        {
+          action: TOOL_MESSAGE_TYPES.FILL_ELEMENT,
+          selector: finalSelector,
+          ref: finalRef,
+          value,
+        },
+        frameId,
+      );
+
+      if (result && result.error) {
+        return createErrorResponse(result.error);
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: result.message || 'Fill operation successful',
+              elementInfo: result.elementInfo,
+            }),
+          },
+        ],
+        isError: false,
+      };
+    } catch (error) {
+      console.error('Error in fill operation:', error);
+      return createErrorResponse(
+        `Error filling element: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+}
+
+export const fillTool = new FillTool();

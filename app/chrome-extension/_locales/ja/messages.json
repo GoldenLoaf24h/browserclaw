@@ -1,0 +1,197 @@
+{
+  "extensionName": {
+    "message": "Chrome MCPサーバー"
+  },
+  "extensionDescription": {
+    "message": "自身のChromeブラウザの機能を外部に公開します"
+  },
+  "nativeServerConfigLabel": {
+    "message": "ネイティブサーバー設定"
+  },
+  "statusLabel": {
+    "message": "ステータス"
+  },
+  "runningStatusLabel": {
+    "message": "実行ステータス"
+  },
+  "connectionStatusLabel": {
+    "message": "接続ステータス"
+  },
+  "lastUpdatedLabel": {
+    "message": "最終更新:"
+  },
+  "connectButton": {
+    "message": "接続"
+  },
+  "disconnectButton": {
+    "message": "切断"
+  },
+  "connectingStatus": {
+    "message": "接続中..."
+  },
+  "connectedStatus": {
+    "message": "接続済み"
+  },
+  "disconnectedStatus": {
+    "message": "未接続"
+  },
+  "detectingStatus": {
+    "message": "検出中..."
+  },
+  "serviceRunningStatus": {
+    "message": "サービス実行中 (ポート: $1)",
+    "placeholders": {
+      "port": {
+        "content": "$1",
+        "example": "12306"
+      }
+    }
+  },
+  "serviceNotConnectedStatus": {
+    "message": "サービス未接続"
+  },
+  "connectedServiceNotStartedStatus": {
+    "message": "接続済み、サービス未起動"
+  },
+  "mcpServerConfigLabel": {
+    "message": "MCPサーバー設定"
+  },
+  "connectionPortLabel": {
+    "message": "接続ポート"
+  },
+  "refreshStatusButton": {
+    "message": "ステータス更新"
+  },
+  "copyConfigButton": {
+    "message": "設定をコピー"
+  },
+  "retryButton": {
+    "message": "再試行"
+  },
+  "cancelButton": {
+    "message": "キャンセル"
+  },
+  "confirmButton": {
+    "message": "確認"
+  },
+  "saveButton": {
+    "message": "保存"
+  },
+  "closeButton": {
+    "message": "閉じる"
+  },
+  "resetButton": {
+    "message": "リセット"
+  },
+  "initializingStatus": {
+    "message": "初期化中..."
+  },
+  "processingStatus": {
+    "message": "処理中..."
+  },
+  "loadingStatus": {
+    "message": "読み込み中..."
+  },
+  "clearingStatus": {
+    "message": "クリア中..."
+  },
+  "cleaningStatus": {
+    "message": "クリーンアップ中..."
+  },
+  "downloadingStatus": {
+    "message": "ダウンロード中..."
+  },
+  "networkErrorMessage": {
+    "message": "ネットワーク接続エラーです。ネットワークを確認して再試行してください"
+  },
+  "permissionDeniedErrorMessage": {
+    "message": "権限が拒否されました"
+  },
+  "timeoutErrorMessage": {
+    "message": "操作がタイムアウトしました"
+  },
+  "settingsTitle": {
+    "message": "設定"
+  },
+  "aboutTitle": {
+    "message": "情報"
+  },
+  "helpTitle": {
+    "message": "ヘルプ"
+  },
+  "bookmarksBarLabel": {
+    "message": "ブックマークバー"
+  },
+  "newTabLabel": {
+    "message": "新しいタブ"
+  },
+  "currentPageLabel": {
+    "message": "現在のページ"
+  },
+  "menuLabel": {
+    "message": "メニュー"
+  },
+  "navigationLabel": {
+    "message": "ナビゲーション"
+  },
+  "mainContentLabel": {
+    "message": "メインコンテンツ"
+  },
+  "languageSelectorLabel": {
+    "message": "言語"
+  },
+  "themeLabel": {
+    "message": "テーマ"
+  },
+  "lightTheme": {
+    "message": "ライト"
+  },
+  "darkTheme": {
+    "message": "ダーク"
+  },
+  "autoTheme": {
+    "message": "自動"
+  },
+  "advancedSettingsLabel": {
+    "message": "詳細設定"
+  },
+  "debugModeLabel": {
+    "message": "デバッグモード"
+  },
+  "verboseLoggingLabel": {
+    "message": "詳細ロギング"
+  },
+  "successNotification": {
+    "message": "操作が正常に完了しました"
+  },
+  "warningNotification": {
+    "message": "警告：続行する前に確認してください"
+  },
+  "infoNotification": {
+    "message": "情報"
+  },
+  "configCopiedNotification": {
+    "message": "設定がクリップボードにコピーされました"
+  },
+  "dataClearedNotification": {
+    "message": "データが正常にクリアされました"
+  },
+  "bytesUnit": {
+    "message": "バイト"
+  },
+  "kilobytesUnit": {
+    "message": "KB"
+  },
+  "megabytesUnit": {
+    "message": "MB"
+  },
+  "gigabytesUnit": {
+    "message": "GB"
+  },
+  "itemsUnit": {
+    "message": "項目"
+  },
+  "pagesUnit": {
+    "message": "ページ"
+  }
+}

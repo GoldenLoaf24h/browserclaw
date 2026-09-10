@@ -1,0 +1,270 @@
+#!/usr/bin/env node
+
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import {
+  CallToolRequestSchema,
+  CallToolResult,
+  ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ListPromptsRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
+import {
+  filterToolSchemas,
+  profileBlockedMessage,
+  resolveToolProfile,
+  TOOL_SCHEMAS,
+} from 'chrome-mcp-shared';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import * as fs from 'fs';
+import * as path from 'path';
+import { resolveBridgeToken } from '../server/token';
+
+let stdioMcpServer: Server | null = null;
+let mcpClient: Client | null = null;
+
+// Same profile contract as the HTTP server (register-tools.ts): resolved once
+// at startup, full by default, CHROME_MCP_TOOL_PROFILE=core to trim to 26.
+const TOOL_PROFILE = resolveToolProfile(process.env.CHROME_MCP_TOOL_PROFILE);
+const EXPOSED_TOOLS = filterToolSchemas(TOOL_SCHEMAS, TOOL_PROFILE);
+
+// Resolve MCP target URL from environment or configuration
+const resolveTargetUrl = (): string => {
+  if (process.env.MCP_SERVER_URL) {
+    return process.env.MCP_SERVER_URL;
+  }
+  const host = process.env.CHROME_MCP_HOST || '127.0.0.1';
+  const port = process.env.CHROME_MCP_PORT || process.env.MCP_HTTP_PORT;
+  if (port) {
+    return `http://${host}:${port}/mcp`;
+  }
+  try {
+    const configPath = path.join(__dirname, 'stdio-config.json');
+    if (fs.existsSync(configPath)) {
+      const configData = fs.readFileSync(configPath, 'utf8');
+      const parsed = JSON.parse(configData);
+      if (parsed?.url) return parsed.url;
+    }
+  } catch {}
+  return `http://${host}:12306/mcp`;
+};
+
+export const ensureMcpClient = async () => {
+  try {
+    if (mcpClient) {
+      try {
+        const pingResult = await mcpClient.ping();
+        if (pingResult) {
+          return mcpClient;
+        }
+      } catch {
+        try {
+          await mcpClient.close();
+        } catch {}
+        mcpClient = null;
+      }
+    }
+
+    const targetUrl = resolveTargetUrl();
+    const token = resolveBridgeToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    mcpClient = new Client({ name: 'Mcp Chrome Proxy', version: '1.0.0' }, { capabilities: {} });
+    const transport = new StreamableHTTPClientTransport(new URL(targetUrl), {
+      requestInit: { headers },
+    });
+    await mcpClient.connect(transport);
+    return mcpClient;
+  } catch (error) {
+    mcpClient?.close();
+    mcpClient = null;
+    console.error('Failed to connect to MCP server:', error);
+  }
+};
+
+export const getStdioMcpServer = () => {
+  if (stdioMcpServer) {
+    return stdioMcpServer;
+  }
+  stdioMcpServer = new Server(
+    {
+      name: 'StdioChromeMcpServer',
+      version: '1.0.0',
+    },
+    {
+      capabilities: {
+        tools: {},
+        resources: {},
+        prompts: {},
+      },
+    },
+  );
+
+  setupTools(stdioMcpServer);
+  return stdioMcpServer;
+};
+
+export const setupTools = (server: Server) => {
+  // List tools handler
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: EXPOSED_TOOLS }));
+
+  // Call tool handler
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const name = request.params.name;
+    if (!EXPOSED_TOOLS.some((t) => t.name === name)) {
+      const known = TOOL_SCHEMAS.some((t) => t.name === name);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: known
+              ? profileBlockedMessage(name, TOOL_PROFILE)
+              : `Tool "${name}" is not a BrowserClaw tool. Call tools/list to see the ${EXPOSED_TOOLS.length} available tools.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    return handleToolCall(name, request.params.arguments || {});
+  });
+
+  // List resources handler - REQUIRED BY MCP PROTOCOL
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: [] }));
+
+  // List prompts handler - REQUIRED BY MCP PROTOCOL
+  server.setRequestHandler(ListPromptsRequestSchema, async () => ({ prompts: [] }));
+};
+
+const isConnectionError = (err: any): boolean => {
+  const msg = String(err?.message || err || '').toLowerCase();
+  const code = String(err?.code || '').toLowerCase();
+  return (
+    code === 'econnreset' ||
+    code === 'econnrefused' ||
+    code === 'epipe' ||
+    msg.includes('econnreset') ||
+    msg.includes('econnrefused') ||
+    msg.includes('connection reset') ||
+    msg.includes('connection refused') ||
+    msg.includes('socket hang up') ||
+    msg.includes('eof') ||
+    msg.includes('closed') ||
+    msg.includes('fetch failed')
+  );
+};
+
+const handleToolCall = async (name: string, args: any): Promise<CallToolResult> => {
+  const DEFAULT_CALL_TIMEOUT_MS = 2 * 60 * 1000;
+
+  const executeCall = async (): Promise<CallToolResult> => {
+    const client = await ensureMcpClient();
+    if (!client) {
+      throw new Error('Failed to connect to MCP server');
+    }
+    const result = await client.callTool({ name, arguments: args }, undefined, {
+      timeout: DEFAULT_CALL_TIMEOUT_MS,
+    });
+    return result as CallToolResult;
+  };
+
+  try {
+    return await executeCall();
+  } catch (error: any) {
+    if (isConnectionError(error)) {
+      console.warn(`[Stdio MCP] Connection lost during tool call (${error.message}). Attempting auto-reconnect...`);
+      try {
+        mcpClient?.close();
+      } catch {}
+      mcpClient = null;
+
+      try {
+        return await executeCall();
+      } catch (retryErr: any) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error calling tool after reconnect retry: ${retryErr.message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Error calling tool: ${error.message}`,
+        },
+      ],
+      isError: true,
+    };
+  }
+};
+
+let isExiting = false;
+export function triggerCleanExit(code = 0): void {
+  if (isExiting) return;
+  isExiting = true;
+
+  // Force exit timer capped at 800ms
+  const forceTimer = setTimeout(() => {
+    process.exit(code);
+  }, 800);
+  forceTimer.unref();
+
+  // Teardown client and transport
+  if (mcpClient) {
+    try {
+      mcpClient.close();
+    } catch {}
+  }
+  process.exit(code);
+}
+
+export function startParentWatchdog(parentPid: number): void {
+  if (!parentPid || isNaN(parentPid)) return;
+  const interval = setInterval(() => {
+    try {
+      process.kill(parentPid, 0);
+    } catch (err: any) {
+      if (err.code === 'ESRCH') {
+        triggerCleanExit(0);
+      }
+    }
+  }, 500);
+  interval.unref();
+}
+
+async function main() {
+  // Listen for stdin EOF and close
+  process.stdin.on('end', () => triggerCleanExit(0));
+  process.stdin.on('close', () => triggerCleanExit(0));
+  process.stdin.on('error', () => triggerCleanExit(0));
+
+  // Process termination signals
+  process.on('SIGINT', () => triggerCleanExit(0));
+  process.on('SIGTERM', () => triggerCleanExit(0));
+  process.on('SIGHUP', () => triggerCleanExit(0));
+
+  // Check parent PID from args or env or default to process.ppid
+  const parentPidArgIndex = process.argv.indexOf('--parent-pid');
+  const parentPidVal = parentPidArgIndex !== -1 ? parseInt(process.argv[parentPidArgIndex + 1], 10) : undefined;
+  const parentPid = parentPidVal || (process.env.MCP_PARENT_PID ? parseInt(process.env.MCP_PARENT_PID, 10) : process.ppid);
+  if (parentPid && parentPid > 1) {
+    startParentWatchdog(parentPid);
+  }
+
+  const transport = new StdioServerTransport();
+  await getStdioMcpServer().connect(transport);
+}
+
+main().catch((error) => {
+  console.error('Fatal error Chrome MCP Server main():', error);
+  process.exit(1);
+});

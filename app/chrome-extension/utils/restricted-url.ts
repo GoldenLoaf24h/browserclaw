@@ -1,0 +1,62 @@
+/**
+ * Single source of truth for pages Chrome blocks extension content scripts /
+ * CDP input from (browser internal pages, web store, etc.).
+ *
+ * Kept shared so chrome_read_dom / chrome_click_element / chrome_keyboard /
+ * batch / screenshot all produce the SAME friendly error instead of leaking
+ * the raw "Cannot access a chrome:// URL" exception into the extension error
+ * panel with a spurious "ping content script failed" log line first.
+ */
+
+export function isRestrictedChromeUrl(url: string | undefined | null): boolean {
+  if (!url) return false;
+  return (
+    url.startsWith('chrome://') ||
+    url.startsWith('edge://') ||
+    url.startsWith('https://chrome.google.com/webstore') ||
+    url.startsWith('https://microsoftedge.microsoft.com/')
+  );
+}
+
+export function restrictedUrlErrorMessage(url: string | undefined | null): string {
+  return 'Cannot operate on this browser internal page or web store page due to security restrictions: ' + (url || 'unknown URL');
+}
+
+/**
+ * Throw the friendly restricted-page error when the tab cannot be scripted.
+ *
+ * Every chrome.scripting.executeScript call site funnels through this so the
+ * raw "Cannot access a chrome:// URL" exception never reaches the extension
+ * error panel — previously only the content-script injection and in-page
+ * engine entry points were guarded, while javascript / scroll_to_text /
+ * upload_file / batch_actions / computer hover still leaked the raw error.
+ */
+export async function assertTabInjectable(tabId: number): Promise<void> {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (isRestrictedChromeUrl(tab?.url)) {
+    throw new Error(restrictedUrlErrorMessage(tab?.url));
+  }
+}
+
+/**
+ * Derive the ping action for a set of injected files.
+ *
+ * The previous per-tool ping (`${this.name}_ping`) could never match helpers
+ * that answer a fixed action: accessibility-tree-helper answers
+ * chrome_read_page_ping but is also injected by computer / interaction /
+ * keyboard, wait-helper answers wait_helper_ping, web-fetcher-helper answers
+ * chrome_web_fetcher_ping. Every mismatch cost a 300ms ping timeout plus a
+ * "ping content script failed" log line before the script was re-injected
+ * anyway. Keying the ping on the injected file set makes the answer depend on
+ * what was actually injected, not on who asked.
+ */
+export const PING_ACTION_PREFIX = 'mcp_ping_';
+
+export function pingActionForFiles(files: string[]): string {
+  let hash = 5381;
+  const key = files.join(',');
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) + hash + key.charCodeAt(i)) >>> 0;
+  }
+  return `${PING_ACTION_PREFIX}${hash.toString(36)}`;
+}
