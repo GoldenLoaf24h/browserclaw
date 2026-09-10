@@ -1,5 +1,8 @@
 # Chrome MCP Server 🚀
 
+> [!NOTE]
+> **BrowserClaw fork** — this repository is an optimized fork of [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome) (MIT). It adds a hardened tool surface (46-tool schema with core/crawl/full profiles), Set-of-Mark + asset-index visual grounding, link-graph extraction, fit-markdown content extraction, click-dwell for anti-instant-click targets, zero-artifact screenshot policy, and a bundled agent skill under [`skill/`](./skill).
+
 [![Stars](https://img.shields.io/github/stars/hangwin/mcp-chrome)](https://img.shields.io/github/stars/hangwin/mcp-chrome)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8+-blue.svg)](https://www.typescriptlang.org/)
