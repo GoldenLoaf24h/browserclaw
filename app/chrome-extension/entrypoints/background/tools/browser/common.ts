@@ -1,3 +1,5 @@
+import { tabGroupManager } from './tab-group-manager';
+import { tabFaviconManager } from './tab-favicon';
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
@@ -20,6 +22,9 @@ interface NavigateToolParams {
   tabId?: number;
   windowId?: number;
   background?: boolean; // when true, do not activate tab or focus window
+  groupTitle?: string;
+  groupColor?: 'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange';
+  autoGroup?: boolean;
 }
 
 export function hasIpOrCustomPort(urlStr: string): boolean {
@@ -414,6 +419,16 @@ class NavigateTool extends BaseBrowserToolExecutor {
             windowId: targetWindow.id,
             active: background === false,
           });
+          if (newTab.id) {
+            if (args.autoGroup !== false) {
+              await tabGroupManager.ensureAgentTabGroup(newTab.id, {
+                title: args.groupTitle,
+                color: args.groupColor,
+                windowId: targetWindow.id,
+              }).catch(() => {});
+            }
+            await tabFaviconManager.setAgentFavicon(newTab.id).catch(() => {});
+          }
           if (sessionId && newTab.id) {
             sessionTabAffinity.setAffinity(sessionId, newTab.id);
           }
@@ -615,7 +630,11 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
           return createErrorResponse('Found tabs but could not get their IDs');
         }
 
-        await chrome.tabs.remove(tabIdsToClose);
+        for (const tid of tabIdsToClose) {
+            await tabFaviconManager.restoreFavicon(tid).catch(() => {});
+          }
+          await chrome.tabs.remove(tabIdsToClose);
+          await tabGroupManager.cleanupEmptyOrOrphanGroups().catch(() => {});
 
         return {
           content: [
@@ -670,7 +689,11 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
           };
         }
 
-        await chrome.tabs.remove(validTabIds);
+        for (const tid of validTabIds) {
+            await tabFaviconManager.restoreFavicon(tid).catch(() => {});
+          }
+          await chrome.tabs.remove(validTabIds);
+          await tabGroupManager.cleanupEmptyOrOrphanGroups().catch(() => {});
 
         return {
           content: [
@@ -697,7 +720,9 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
         return createErrorResponse('No active tab found');
       }
 
-      await chrome.tabs.remove(activeTab.id);
+      await tabFaviconManager.restoreFavicon(activeTab.id).catch(() => {});
+        await chrome.tabs.remove(activeTab.id);
+        await tabGroupManager.cleanupEmptyOrOrphanGroups().catch(() => {});
 
       return {
         content: [

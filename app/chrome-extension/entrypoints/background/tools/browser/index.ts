@@ -45,3 +45,7 @@ export { smartScrollTool } from './smart-scroll';
 export { storageTool } from './storage';
 export { getLinksTool } from './get-links';
 export { toolDocsTool } from './tool-docs';
+
+export { cdpExecuteTool } from './cdp-execute';
+export { tabGroupManager } from './tab-group-manager';
+export { tabFaviconManager } from './tab-favicon';

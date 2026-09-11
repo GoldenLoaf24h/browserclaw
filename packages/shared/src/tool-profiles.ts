@@ -32,6 +32,7 @@ export const CORE_TOOL_NAMES: Set<string> = new Set([
   'chrome_fill_index',
   'chrome_batch_actions',
   'chrome_computer',
+    'chrome_cdp_execute',
   'chrome_click_element',
   'chrome_fill_or_select',
   'chrome_keyboard',
@@ -55,6 +56,7 @@ export const CORE_TOOL_NAMES: Set<string> = new Set([
   'chrome_javascript',
   'chrome_handle_download',
   'chrome_storage',
+  'chrome_cdp_execute',
 ]);
 
 // Tool discovery is part of every profile: chrome_tool_docs is how an agent
@@ -89,6 +91,7 @@ export const CRAWL_TOOL_NAMES: ReadonlySet<string> = new Set([
   'chrome_scroll',
   'chrome_javascript',
   'chrome_storage',
+  'chrome_cdp_execute',
   'chrome_network_request',
   'chrome_screenshot',
   'chrome_get_links',
@@ -129,6 +132,7 @@ export const TOOL_CATEGORIES: Record<string, string> = {
     'chrome_batch_actions',
     'chrome_burst_interact',
     'chrome_computer',
+    'chrome_cdp_execute',
   ].join(" "),
   observe: [
     'chrome_screenshot',

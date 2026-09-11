@@ -53,6 +53,7 @@ export const TOOL_NAMES = {
     STORAGE: 'chrome_storage',
     GET_LINKS: 'chrome_get_links',
     TOOL_DOCS: 'chrome_tool_docs',
+    CDP_EXECUTE: 'chrome_cdp_execute',
   },
 };
 
@@ -172,6 +173,21 @@ export const TOOL_SCHEMAS: Tool[] = [
       type: 'object',
       properties: {
         tabId: { type: 'number', description: 'Target tab ID (default: active tab)' },
+        groupTitle: {
+          type: 'string',
+          description:
+            'Title for the Chrome tab group created or joined for this task. Agent should generate a short, task-aligned title in the user language. Default: "Agent"',
+        },
+        groupColor: {
+          type: 'string',
+          enum: ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'],
+          description: 'Color for the Chrome tab group. Default: "blue"',
+        },
+        autoGroup: {
+          type: 'boolean',
+          description:
+            'Automatically place the newly opened tab into an Agent-managed tab group with dedicated title and color. Default: true',
+        },
         background: {
           type: 'boolean',
           description:
@@ -2217,6 +2233,42 @@ export const TOOL_SCHEMAS: Tool[] = [
         category: { type: 'string', enum: ['navigate', 'perceive', 'act', 'observe', 'manage', 'crawl'], description: 'Tool category to document' },
       },
       required: ['category'],
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.CDP_EXECUTE,
+    annotations: {
+      title: 'Execute Raw CDP Command',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    description:
+      'Execute raw Chrome DevTools Protocol (CDP) commands directly on a target tab. Gives advanced reasoning agents full, unconstrained, low-level browser automation capabilities (e.g. Page, DOM, Input, Runtime, Network, Emulation domains). Requires debugger permission.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tabId: {
+          type: 'number',
+          description:
+            'Target tab ID to attach and execute CDP on. Defaults to current active/affinity tab.',
+        },
+        method: {
+          type: 'string',
+          description:
+            'CDP method name (e.g. "Page.navigate", "Runtime.evaluate", "Input.dispatchMouseEvent", "DOMSnapshot.captureSnapshot").',
+        },
+        params: {
+          type: 'object',
+          description: 'Parameters object passed to the CDP method.',
+        },
+        timeoutMs: {
+          type: 'number',
+          description: 'Timeout in milliseconds for this CDP command. Default: 10000.',
+        },
+      },
+      required: ['method'],
     },
   },
 ];
