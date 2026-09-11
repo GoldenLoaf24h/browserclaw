@@ -1,7 +1,7 @@
 <div align="center">
   <img src="./docs/images/logo.png" width="100" alt="BrowserClaw Logo" />
   <h1>BrowserClaw</h1>
-  <p>Turn the Chrome you <b>actually use</b> into an ultra-fast, controllable, readable, and verifiable automation environment for AI agents.</p>
+  <p><b>Take full control of everything in your own browser.</b></p>
   <p>
     <a href="./README.zh-CN.md">📖 简体中文说明</a> ·
     <a href="./docs/TOOLS.md">Tool Reference</a> ·
@@ -42,9 +42,9 @@ On Windows, however, all existing approaches break down due to low-level OS and 
 
 ## 📌 What is BrowserClaw?
 
-BrowserClaw is an industrial-grade browser automation engine built on top of [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome) (MIT): featuring a three-tier architecture (WXT Vue 3 MV3 Chrome Extension + Fastify Native Host + Shared Type Schema), connected through Chrome Native Messaging, exposing CDP capabilities as **52 schema-validated MCP tools**.
+**BrowserClaw** turns the Chrome browser you actually use every day into an ultra-fast, controllable, readable, and verifiable environment for AI agents.
 
-Unlike headless browser drivers (Playwright, Puppeteer, Selenium), BrowserClaw runs directly inside your **real, everyday Chrome/Edge browser** — preserving your active logins, cookies, enterprise SSO sessions, and extensions. Every dispatched click and keystroke is a native, trusted browser event (`isTrusted=true`).
+Built on an industrial-grade three-tier architecture (WXT Vue 3 MV3 Extension + Fastify Native Host + Shared Schema) connected via Chrome Native Messaging, BrowserClaw exposes 52 schema-validated MCP tools. Unlike detached headless sandboxes (Playwright / Puppeteer), it lives inside your daily browser — keeping your active logins, cookies, enterprise SSO sessions, and extensions intact, while guaranteeing every dispatched action is a native trusted browser event (`isTrusted=true`).
 
 ---
 

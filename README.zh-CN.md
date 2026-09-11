@@ -1,7 +1,7 @@
 <div align="center">
   <img src="./docs/images/logo.png" width="100" alt="BrowserClaw Logo" />
   <h1>BrowserClaw</h1>
-  <p>把你<b>正在使用</b>的 Chrome 变成 AI agent 可控、可读、可验证的高性能操作环境。</p>
+  <p><b>控制你自己的浏览器的一切。</b></p>
   <p>
     <a href="./README.md">📖 English Version</a> ·
     <a href="./docs/TOOLS.md">工具参考</a> ·
@@ -42,9 +42,9 @@
 
 ## 📌 BrowserClaw 是什么？
 
-BrowserClaw 是 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)（MIT）的深度优化分支：WXT (Vue 3) MV3 扩展 + Fastify 原生宿主 + 共享 schema 包三层架构，经 Chrome Native Messaging 连接，把 CDP 能力封装为 **52 个 schema 校验的 MCP 工具**。
+**BrowserClaw** 致力于把你日常正在使用的 Chrome 浏览器，打造成一个供 AI Agent 极速操控、深度理解与实时校验的高性能操作环境。
 
-与无头浏览器方案（Playwright/Puppeteer）的本质区别：运行在用户**日常浏览器**里，天然携带登录态、Cookie、扩展环境，事件为浏览器原生可信事件（isTrusted=true）。
+基于 WXT (Vue 3) MV3 扩展 + Fastify 原生宿主 + 共享 Schema 的三层工业级架构，BrowserClaw 经由 Chrome 原生通信管道封装并暴露了 52 个 Schema 校验的 MCP 工具。与无头独立沙盒方案不同，它原生常驻于您的主力浏览器中，无感复用现有的全部登录凭据、Cookie 与扩展环境，并确保全链路交互均为浏览器原生可信事件（`isTrusted=true`）。
 
 ---
 
