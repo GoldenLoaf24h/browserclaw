@@ -1,6 +1,7 @@
 {
-  "name": "mcp-chrome-bridge-monorepo",
-  "version": "1.0.0",
+  "name": "browserclaw",
+  "version": "2.0.0",
+  "description": "BrowserClaw - High-efficiency Chrome browser automation MCP server and AI agent skill",
   "private": true,
   "author": "hangye",
   "type": "module",
