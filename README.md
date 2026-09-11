@@ -36,6 +36,7 @@ BrowserClaw is a high-performance Model Context Protocol (MCP) platform that giv
 - 🔍 **Targeted Grep (`chrome_grep`)**: Sub-100 token instant element and text search across large documents.
 - 🖱️ **Human-Grade Aesthetics**: 1:1 spring-kinematics virtual cursor overlay and dedicated tab groups lifecycle management.
 - 🛡️ **Zero-Jitter Session Retention**: 10-minute session-aware CDP retention eliminates infobar dropping and viewport accordion shifts.
+- 🧠 **Personal Context & Second Brain**: AI doesn't just click — it understands your workflow through your browsing history and organizes messy bookmarks into a structured personal knowledge base.
 
 ---
 
@@ -54,6 +55,7 @@ BrowserClaw is a high-performance Model Context Protocol (MCP) platform that giv
 | **Tab Lifecycle Isolation** | ✅ **Dedicated Chrome Tab Groups** | ❌ Messy Tabs | ❌ None | ❌ None | ❌ None |
 | **Human-in-the-Loop 2FA Takeover**| ✅ **Frosted Banner + Auto-Resume**| ❌ Timeout / Fail | ⚠️ Manual Pausing | ❌ None | ⚠️ Error Catching |
 | **Low-Level Escape Hatch** | ✅ **`cdp_execute` + Anti-Hang** | ⚠️ Raw CDP via Python | ❌ Playwright Only | ❌ Fixed MCP Tools | ⚠️ Raw Playwright Page |
+| **Personal Context (History & Bookmarks)** | ✅ **Native Intelligence (`chrome_history`, `bookmark_*`)** | ❌ None (Disposable Sandbox) | ❌ None (Cloud Remote) | ❌ None (Isolated) | ❌ None (Stateless) |
 
 ### 🔍 Honest Limitations & Current Boundaries
 While BrowserClaw provides an unmatched experience for local desktop browser control, we believe in radical transparency regarding current architectural tradeoffs:
