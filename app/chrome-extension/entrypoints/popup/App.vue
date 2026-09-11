@@ -54,7 +54,7 @@ onMounted(async () => {
   <div class="popup-box">
     <!-- Row 1: Agent Control Switch -->
     <div class="row">
-      <span class="label">Agent 操控</span>
+      <span class="label">{{ agentEnabled ? 'Agent on' : 'Agent off' }}</span>
       <button
         class="switch"
         :class="{ active: agentEnabled }"
@@ -69,10 +69,9 @@ onMounted(async () => {
 
     <!-- Row 2: Service Status Indicator -->
     <div class="row">
-      <span class="label">服务状态</span>
+      <span class="label">{{ serverConnected ? 'Connecting' : 'Disconnected' }}</span>
       <div class="status">
         <span class="dot" :class="{ online: serverConnected }"></span>
-        <span class="status-text">{{ serverConnected ? '正常' : '未连接' }}</span>
       </div>
     </div>
   </div>
