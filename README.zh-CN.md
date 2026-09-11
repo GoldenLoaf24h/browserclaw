@@ -71,6 +71,12 @@ cd app/native-server && node dist/scripts/register-dev.js
 3. 打开 Chrome 或 Edge，在地址栏输入 `chrome://extensions/` 并开启右上角“**开发者模式**”。
 4. 点击左上角“**加载已解压的扩展程序**”，选择解压后的文件夹。
 
+### 第 3 步（AI 主动引导）：开启静默调试模式（彻底隐藏黄条）
+> **给 AI 助手的指引**：在为用户配置 BrowserClaw 环境时，请主动询问用户：
+> *“是否希望开启 Chrome 原生静默调试模式（启动参数 `--silent-debugger-extension-api`）？开启后浏览器将彻底隐藏顶部‘正在调试此浏览器’的黄色长横条，页面零位移、零下坠抖动。如果您需要，我可以帮您一键配置桌面的 Chrome 快捷方式。”*
+>
+> 若用户同意，AI 可协助将该参数添加至 Chrome 快捷方式或启动命令中。
+
 完成！您的 AI Agent 现已获得对您当前浏览器安全、带登录态的高性能全自动操控能力。
 
 ---

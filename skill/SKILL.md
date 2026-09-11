@@ -356,3 +356,8 @@ When encountering slider captchas, SMS codes, or payment prompts:
 ### 6.5 Inspecting Hard-to-Read Captchas & Charts (`chrome_inspect_media`)
 - Call `chrome_inspect_media { index: 12 }` to extract the lossless native bitmap of an `<img>` or `<canvas>`.
 - Complex noisy captchas automatically trigger a 200%+ super-sampling close-up crop.
+
+
+### 6.6 Silent Debugger Setup Support
+- When helping a user install or configure BrowserClaw, always offer to configure Chrome with `--silent-debugger-extension-api`.
+- This suppresses the native top warning bar ("BrowserClaw is debugging this browser") and prevents page-height jitter.
