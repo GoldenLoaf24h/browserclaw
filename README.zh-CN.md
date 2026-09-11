@@ -12,7 +12,10 @@
 
 ---
 
-## 💡 项目背景与初衷
+<details>
+<summary><b>💡 项目背景与初衷：Windows 环境下 Agent 操控本地浏览器的困境（点击展开）</b></summary>
+
+<br/>
 
 在本地运行 AI Agent（Hermes、Codex、Claude Code）时，调用浏览器进行数据检索与自动化交互是高频刚需。理想状态下，Agent 应当能直接复用开发者主浏览器现有的登录态（Google、GitHub、社区论坛、校企后台等），并在后台静默完成任务，无需人工干预。
 
@@ -33,13 +36,51 @@
 
 **BrowserClaw** 由此诞生：基于 **Chrome Native Messaging + MV3 扩展** 架构，无需杀进程、无惧文件锁、无需手动点弹窗，真正实现 Windows 平台上的**登录态无感复用**与**100% 完全无人值守**。
 
+</details>
+
 ---
 
-BrowserClaw 是 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)（MIT）的深度优化分支：WXT (Vue 3) MV3 扩展 + Fastify 原生宿主 + 共享 schema 包三层架构，经 Chrome Native Messaging 连接，把 CDP 能力封装为 **46 个 schema 校验的 MCP 工具**。
+## 📌 BrowserClaw 是什么？
+
+BrowserClaw 是 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)（MIT）的深度优化分支：WXT (Vue 3) MV3 扩展 + Fastify 原生宿主 + 共享 schema 包三层架构，经 Chrome Native Messaging 连接，把 CDP 能力封装为 **52 个 schema 校验的 MCP 工具**。
 
 与无头浏览器方案（Playwright/Puppeteer）的本质区别：运行在用户**日常浏览器**里，天然携带登录态、Cookie、扩展环境，事件为浏览器原生可信事件（isTrusted=true）。
 
-## 核心能力
+---
+
+## 🚀 极速上手 (把项目交给 AI 即可！)
+
+> **用户操作仅需 1 分钟**：让 AI Agent 完成环境与服务配置，您只需手动将纯净扩展包下载并加载至 Chrome。
+
+### 第 1 步：把项目交给你的 AI Agent
+将本仓库目录直接提供给你的 AI 编程助手（Claude Code、Cursor、Codex、Windsurf、Cline），并对它说：
+> *“帮我配置并启动 BrowserClaw MCP 服务器”*
+
+AI Agent 将自动执行后台桥接服务构建与原生注册：
+```bash
+git clone https://github.com/GoldenLoaf24h/browserclaw.git
+cd browserclaw
+pnpm install && pnpm build
+cd app/native-server && node dist/scripts/register-dev.js
+```
+*(生成的 Bearer Token 位于 `~/.chrome-mcp/bridge-token`，默认监听端口 `http://127.0.0.1:12306/mcp`)*
+
+### 第 2 步：在 Chrome 加载扩展（您唯一的手动操作）
+1. 前往 **[GitHub Releases 下载最新纯净扩展包](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)**（`browserclaw-extension-latest.zip`，仅 ~350KB）。
+2. 解压到本地任意固定目录（如 `browserclaw-extension`）。
+3. 打开 Chrome 或 Edge，在地址栏输入 `chrome://extensions/` 并开启右上角“**开发者模式**”。
+4. 点击左上角“**加载已解压的扩展程序**”，选择解压后的文件夹。
+
+完成！您的 AI Agent 现已获得对您当前浏览器安全、带登录态的高性能全自动操控能力。
+
+---
+
+## 🛠️ 核心功能全览（点击展开对应类别）
+
+<details open>
+<summary><b>👁️ 页面感知层（DOM 剪枝、定向 Grep 与媒体透视）</b></summary>
+
+<br/>
 
 ### 感知层 —— 让 agent 看清页面
 
@@ -51,6 +92,13 @@ BrowserClaw 是 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)（MI
 - **chrome_get_links**：链接图谱提取（绝对 URL + 锚文本 + 内外链 + nofollow），多页爬取的输入
 - **chrome_intercept_api**：CDP Network 域静默嗅探与后端 JSON 接口拦截，直接获取结构化真值数据，降维绕过复杂 HTML 逆向
 
+</details>
+
+<details>
+<summary><b>⚡ 精准交互层（自驱 Diff 携带、批处理流水线与 1:1 虚拟鼠标）</b></summary>
+
+<br/>
+
 ### 交互层 —— 让 agent 点得准
 
 - **统一定位器**：ref → selector → text/role → coordinate 四级降级，所有交互工具共用
@@ -60,17 +108,29 @@ BrowserClaw 是 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)（MI
 - **1:1 复刻 ChatGPT 官方扩展虚拟鼠标 (Agent Cursor)**：封闭 Shadow DOM 隔离渲染，贝塞尔圆弧飞行、弹簧速度拉伸形变、微光尾迹、真实用户接管瞬时淡出
 - **原生 Chrome 标签组与无痕销毁 (TabGroupManager)**：自动归入专属色彩分组（默认标题“Agent”），所有任务标签关闭后底层自动销毁分组，绝不遗留孤儿分组
 - **微光 Favicon 状态反馈 (TabFaviconManager)**：任务执行中动态将标签页 Favicon 替换为炫蓝脉冲光晕，任务结束或关闭前无感还原
+
+</details>
+
+<details>
+<summary><b>🤝 人机协作与高可用性</b></summary>
+
+<br/>
+
 - **人机协同打断浮条 (chrome_request_human_intervention)**：遭遇 2FA 验证码、滑块或支付时自动唤起毛玻璃通知浮条，支持用户在页面一键或按 Enter 恢复自动化
 - **会话操作回滚 (chrome_undo_last_action)**：5 步容量环形操作栈，支持跳转撤销与表单原值反向回填
 - **逃生通道 (chrome_cdp_execute)**：对齐工业级 CDP 穿透标准，支持多态 Target 路由与超时自动解挂防挂死
 - **反作弊合规**：CDP Input 原生可信事件、真实指针轨迹、isTrusted 全链路保持
-
-### 可靠性设计
-
 - 截图零落盘：>450KB 自动降质内联缩略图，右/下边缘黑边采样自愈重拍
 - 工具面 = schema 面：未声明执行器不可调用（测试钉死）；profile 隐藏的工具可用 chrome_tool_docs 按类别查参数
 - 错误信息面向 agent：结构化 + 有限 stack，无原始异常泄漏
 - 安全护栏：chrome:// 受限页拦截、跨域截图域名校验、Session Tab Affinity
+
+</details>
+
+<details>
+<summary><b>🗂️ 52 个工具 × 3 档 Profile</b></summary>
+
+<br/>
 
 ## 52 个工具 × 3 档 Profile
 
@@ -81,6 +141,8 @@ BrowserClaw 是 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)（MI
 | crawl | `CHROME_MCP_TOOL_PROFILE=crawl` | 15 | ~5.8k tokens | 极速批量网页抓取与数据提取 |
 
 工具分组：导航与标签页（7）· 页面感知（7）· 交互操作（12）· 观察与滚动（6）· 数据管理（11）· 性能与诊断（9）——完整清单见 [docs/TOOLS.md](./docs/TOOLS.md)。
+
+</details>
 
 ## 环境要求
 
