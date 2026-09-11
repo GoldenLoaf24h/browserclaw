@@ -259,6 +259,7 @@ pnpm lint && pnpm format
 
 ## 📚 Documentation Map
 
+- **[Project Map & Index](./docs/MAP.md)**: 🗺️ Master navigation hub, reading paths by role, code topology, and documentation matrix.
 - [Tool Reference](./docs/TOOLS.md): Complete parameter references for all 52 tools (auto-generated).
 - [Architecture Design](./docs/ARCHITECTURE.md): Detailed system topology, sequence flows, and ADR records.
 - [Troubleshooting Guide](./docs/TROUBLESHOOTING.md): Quick diagnostic checklist for connection issues.

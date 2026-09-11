@@ -4,6 +4,7 @@
   <p><b>控制你自己的浏览器的一切。</b></p>
   <p>
     <a href="./README.md">📖 English Version</a> ·
+    <a href="./docs/MAP.md">🗺️ 项目地图</a> ·
     <a href="./docs/TOOLS.md">工具参考</a> ·
     <a href="./docs/TROUBLESHOOTING.md">故障排查</a> ·
     <a href="https://github.com/GoldenLoaf24h/browserclaw/releases">GitHub Releases</a>
