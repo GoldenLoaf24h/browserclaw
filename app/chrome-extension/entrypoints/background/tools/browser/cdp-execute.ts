@@ -131,7 +131,17 @@ export class CdpExecuteTool extends BaseBrowserToolExecutor {
         if (targetTabId !== undefined && !specificTargetId) {
           return await cdpSessionManager.sendCommand(targetTabId, method, commandParams);
         }
-        // Direct chrome.debugger fallback for out-of-process targetId
+                // Direct chrome.debugger fallback for out-of-process targetId
+        if (specificTargetId && typeof chrome !== 'undefined' && chrome.debugger?.attach) {
+          try {
+            await chrome.debugger.attach({ targetId: specificTargetId }, '1.3');
+          } catch (attErr: any) {
+            const attMsg = String(attErr?.message || attErr).toLowerCase();
+            if (!attMsg.includes('already attached') && !attMsg.includes('another client')) {
+              console.warn('[CdpExecuteTool] attach target warning:', attErr);
+            }
+          }
+        }
         return await chrome.debugger.sendCommand(debuggee, method, commandParams);
       })();
 

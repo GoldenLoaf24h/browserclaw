@@ -80,7 +80,7 @@ export class TabGroupManager {
 
       // Find if there is an existing valid managed group in this window
       let targetGroupId: number | null = null;
-      for (const gid of this.managedGroupIds) {
+      for (const gid of Array.from(this.managedGroupIds)) {
         try {
           const group = await chrome.tabGroups.get(gid);
           if (group.windowId === targetWindowId) {
