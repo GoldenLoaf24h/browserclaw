@@ -2,11 +2,11 @@
 
 > 本文档由 `scripts/gen-tools-doc.mjs` 从 `packages/shared/src/tools.ts` 的 schema 生成，与代码保持一致。重新生成：`node scripts/gen-tools-doc.mjs`。
 
-| Profile | 工具数 | Schema 开销 |
-| --- | --- | --- |
-| full（默认） | 46 | ~17.2k tokens |
-| core | 28 | ~13.2k tokens |
-| crawl | 12 | ~4.8k tokens |
+| Profile | 工具数 | Schema 开销 | 场景 |
+| --- | --- | --- | --- |
+| full（默认） | 52 | ~19.5k tokens | 完整底层 CDP 穿透与扩展控制 |
+| core | 24 | ~11.5k tokens | 核心高频利器（DOM 索引直点/表单/视觉/搜索） |
+| crawl | 15 | ~5.8k tokens | 极速批量网页抓取与数据提取 |
 
 被 profile 隐藏的工具可用 `chrome_tool_docs` 按类别查询参数（该工具在任何 profile 均可用）。
 
@@ -97,6 +97,26 @@ Extract clean, structured hierarchical markdown from the active tab DOM stripped
 - `windowId` — Target window ID (optional)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
 
+### `chrome_inspect_media`
+
+Inspect and extract high-fidelity media assets (images, canvas, captchas, icons) directly by element index or selector. Uses in-memory lossless extraction for <img>/<canvas>, with super-sampled 200%+ crop fallback for complex DOM containers.
+
+- `index` — 1-based element index from chrome_read_dom
+- `selector` — CSS selector fallback
+- `zoom` — Super-sampling zoom factor (default: 2.0)
+- `tabId` — Target tab ID
+
+### `chrome_grep`
+
+Search the page without dumping full DOM tree. Supports searching interactive elements (returning indices for chrome_interact_index), all DOM nodes, or raw visible text lines.
+
+- `query`（必填） — Search term or regex pattern
+- `isRegex` — Whether to evaluate query as a regular expression (default: false)
+- `searchType:interactive_only|all_dom|page_text` — Search target: "interactive_only" (default, matches clickable/fillable elements and returns indices), "all_dom" (matches all elements), "page_text" (s
+- `limit` — Maximum matching results to return (default: 20, max: 50)
+- `tabId` — Target tab ID (optional)
+- `sessionId` — Session identifier for tab affinity (optional)
+
 ### `chrome_get_web_content`
 
 Fetch content from a web page
@@ -151,6 +171,7 @@ Click, hover, or interact with an element using its compact 1-based numeric inde
 - `waitForSettle` — Wait for DOM mutations to settle (quiet for 150ms or timeout) after interaction before returning (default: false)
 - `settleTimeoutMs` — Maximum settle timeout in milliseconds (default: 1500, range: 200-10000)
 - `humanize` — Simulate realistic human-like cursor trajectory with micro-jitter before clicking (default: false)
+- `includeDelta` — Automatically capture and return DOM changes caused by this interaction in the delta field (default: false)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
 
 ### `chrome_fill_index`
@@ -165,6 +186,7 @@ Fill text into an input or textarea element using its compact 1-based numeric in
 - `windowId` — Target window ID (optional)
 - `waitForSettle` — Wait for DOM mutations to settle after filling text before returning (default: false)
 - `settleTimeoutMs` — Maximum settle timeout in milliseconds (default: 1500, range: 200-10000)
+- `includeDelta` — Automatically capture and return DOM changes caused by filling in the delta field (default: false)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
 
 ### `chrome_click_element`
@@ -277,6 +299,7 @@ Execute a sequential pipeline of browser actions with static and runtime page-dr
 - `windowId` — Target window ID (optional)
 - `waitForSettle` — Wait for DOM mutations to settle after all actions before returning (default: false)
 - `settleTimeoutMs` — Maximum settle timeout in milliseconds (default: 1500, range: 200-10000)
+- `includeDelta` — Automatically capture and return DOM changes caused by the batch in the delta field (default: false)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
 
 ### `chrome_burst_interact`
@@ -297,6 +320,9 @@ Execute ultra-low latency rapid interaction sequences: high-frequency clicks (bu
 Use a mouse and keyboard to interact with a web browser, and take screenshots.
 
 - `tabId` — Target tab ID (default: active tab)
+- `groupTitle` — Title for the Chrome tab group created or joined for this task. Agent should generate a short, task-aligned title in the user language. Default: "Agen
+- `groupColor:grey|blue|red|yellow|green|pink|purple|cyan|orange` — Color for the Chrome tab group. Default: "blue"
+- `autoGroup` — Automatically place the newly opened tab into an Agent-managed tab group with dedicated title and color. Default: true
 - `background` — Avoid focusing/activating tab/window for operations (best-effort). Default: true (runs quietly in background without stealing user focus)
 - `dwellMs` — For click actions: milliseconds to hold the button down before release (0-2000). Use 50-150 for targets that reject instant clicks
 - `action:left_click|right_click|double_click|triple_click|left_click_drag|scroll|scroll_to|type|key|fill|fill_form|hover|wait|resize_page|zoom|screenshot`（必填） — Action to perform. There is no plain "click" — use left_click.
@@ -321,6 +347,15 @@ Use a mouse and keyboard to interact with a web browser, and take screenshots.
 - `duration` — Seconds to wait for action=wait (max 30s)
 - `windowId` — Target window ID (optional)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
+
+### `chrome_cdp_execute`
+
+Execute raw Chrome DevTools Protocol (CDP) commands directly on a target tab. Gives advanced reasoning agents full, unconstrained, low-level browser automation capabilities (e.g. Page, DOM, Input, Runtime, Network, Emulation domains). Requires debugger permission.
+
+- `tabId` — Target tab ID to attach and execute CDP on. Defaults to current active/affinity tab.
+- `method`（必填） — CDP method name (e.g. "Page.navigate", "Runtime.evaluate", "Input.dispatchMouseEvent", "DOMSnapshot.captureSnapshot").
+- `params` — Parameters object passed to the CDP method.
+- `timeoutMs` — Timeout in milliseconds for this CDP command. Default: 10000.
 
 
 ## 观察与滚动 / Observation & Scrolling
@@ -559,4 +594,28 @@ Read localStorage, sessionStorage, and cookies for the current tab. Cookies incl
 Return compact parameter documentation for a category of BrowserClaw tools (navigate | perceive | act | observe | manage | crawl). Use when a workflow needs a tool that is not in the current profile view.
 
 - `category:navigate|perceive|act|observe|manage|crawl`（必填） — Tool category to document
+- `activateForSession` — When true, dynamically exposes all tools in this category for the current MCP session without server restart. Default: false
+
+### `chrome_request_human_intervention`
+
+Request user assistance for high-friction barriers (SMS 2FA, puzzle captcha, payment confirmation). Renders an in-page glassmorphism overlay bar with explanation, moves agent cursor to standby, and resumes cleanly when human finishes or clicks continue.
+
+- `reason`（必填） — Clear instruction explaining what the human user needs to do
+- `timeoutMs` — Timeout in milliseconds (default: 60000)
+- `tabId` — Target tab ID
+
+### `chrome_undo_last_action`
+
+Rolls back the most recent mutating action on this tab (e.g. reverts form field input to previous value, or triggers browser history back navigation for mistaken links).
+
+- `tabId` — Target tab ID
+
+### `chrome_intercept_api`
+
+Intercepts backend JSON API responses matching a URL pattern (e.g. "*/api/v1/data*") via CDP Network domain, bypassing messy HTML DOM scraping to obtain 100% structured ground-truth data.
+
+- `urlPattern`（必填） — Glob pattern to match API endpoint URL
+- `triggerAction:inspect_recent|wait_next` — Wait for next response or inspect most recent match (default: inspect_recent)
+- `timeoutMs` — Timeout in milliseconds (default: 10000)
+- `tabId` — Target tab ID
 

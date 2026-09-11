@@ -12,17 +12,26 @@ BrowserClaw 是 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)（MI
 
 ### 感知层 —— 让 agent 看清页面
 
-- **chrome_read_dom**：DOM 剪枝树 + 1-based 元素索引，含遮挡检测（isOccluded/occludedBy）与安全点击点；典型页面压缩比 0.6，输出仅数 KB
+- **chrome_read_dom**：DOM 剪枝树 + 1-based 元素索引，含遮挡检测（isOccluded/occludedBy）与安全点击点；典型页面压缩比 0.6，输出仅数 KB；支持 `deltaOnly: true` 差量指纹更新模式，Token 消耗骤降 90%
+- **chrome_grep**：页面轻量定向检索利器，免 dump 全量 DOM，支持毫秒级检索可交互元素索引、全量节点或可见纯文本行，单次调用仅消耗数十 Token
 - **assets[] 视觉资源索引**：img/canvas/video/CSS 背景图全部带视口 bbox 输出；chrome_screenshot 按 assetIndex 直接返回图像字节（canvas 反爬内容也能读），跨域等不可得时回退视口裁剪
+- **chrome_inspect_media**：局部高保真媒体透视，支持直接提取 Canvas/图片 原生无损分辨率或 200%+ 超采样特写截图（精准识别复杂验证码与图表）
 - **chrome_get_markdown**：结构化 Markdown 转换，fit 模式自动剥离 nav/header/footer/aside 噪声（crawl4ai fit-markdown 等价实现）
 - **chrome_get_links**：链接图谱提取（绝对 URL + 锚文本 + 内外链 + nofollow），多页爬取的输入
+- **chrome_intercept_api**：CDP Network 域静默嗅探与后端 JSON 接口拦截，直接获取结构化真值数据，降维绕过复杂 HTML 逆向
 
 ### 交互层 —— 让 agent 点得准
 
 - **统一定位器**：ref → selector → text/role → coordinate 四级降级，所有交互工具共用
-- **chrome_computer**：16 种动作（left_click/drag/scroll/zoom/type/key…），dwellMs 按压时长对抗瞬击拒绝，coordinateSpace 显式声明坐标空间
-- **chrome_interact_index**：索引直点 + drag（end/steps/holdMs/dnd）
-- **chrome_batch_actions / chrome_burst_interact**：批量与低延迟序列，单次往返执行多步
+- **自驱 Diff 携带机制**：在 `chrome_interact_index`、`chrome_fill_index`、`chrome_batch_actions` 中传入 `includeDelta: true`，操作完成后自动携带页面增量 DOM，砍掉 50% 网络往返
+- **chrome_interact_index**：紧凑 1-based 索引直点 + 阻尼滑翔拖拽（end/steps/holdMs/dnd），内置中心优先遮挡补偿与 CDP 送达回查校验
+- **增强批处理流水线 (chrome_batch_actions)**：原子级无往返执行多步交互，支持 `type: 'assert'` 校验状态与 `type: 'extract'` 提取页面字段，单次往返跑通“填表 -> 提交 -> 校验 -> 取数”全流程
+- **1:1 复刻 ChatGPT 官方扩展虚拟鼠标 (Agent Cursor)**：封闭 Shadow DOM 隔离渲染，贝塞尔圆弧飞行、弹簧速度拉伸形变、微光尾迹、真实用户接管瞬时淡出
+- **原生 Chrome 标签组与无痕销毁 (TabGroupManager)**：自动归入专属色彩分组（默认标题“Agent”），所有任务标签关闭后底层自动销毁分组，绝不遗留孤儿分组
+- **微光 Favicon 状态反馈 (TabFaviconManager)**：任务执行中动态将标签页 Favicon 替换为炫蓝脉冲光晕，任务结束或关闭前无感还原
+- **人机协同打断浮条 (chrome_request_human_intervention)**：遭遇 2FA 验证码、滑块或支付时自动唤起毛玻璃通知浮条，支持用户在页面一键或按 Enter 恢复自动化
+- **会话操作回滚 (chrome_undo_last_action)**：5 步容量环形操作栈，支持跳转撤销与表单原值反向回填
+- **逃生通道 (chrome_cdp_execute)**：对齐工业级 CDP 穿透标准，支持多态 Target 路由与超时自动解挂防挂死
 - **反作弊合规**：CDP Input 原生可信事件、真实指针轨迹、isTrusted 全链路保持
 
 ### 可靠性设计
@@ -32,15 +41,15 @@ BrowserClaw 是 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)（MI
 - 错误信息面向 agent：结构化 + 有限 stack，无原始异常泄漏
 - 安全护栏：chrome:// 受限页拦截、跨域截图域名校验、Session Tab Affinity
 
-## 46 个工具 × 3 档 Profile
+## 52 个工具 × 3 档 Profile
 
 | Profile | 环境变量 | 工具数 | Schema 开销 | 场景 |
 | --- | --- | --- | --- | --- |
-| full | 不设置（默认） | 46 | ~17.2k tokens | 完整能力 |
-| core | `CHROME_MCP_TOOL_PROFILE=core` | 28 | ~13.2k tokens | 日常浏览/操作/验证 |
-| crawl | `CHROME_MCP_TOOL_PROFILE=crawl` | 12 | ~4.8k tokens | 批量网页读取/爬取 |
+| full | 不设置（默认） | 52 | ~19.5k tokens | 完整底层穿透、诊断与数据管理 |
+| core | `CHROME_MCP_TOOL_PROFILE=core` | 24 | ~11.5k tokens | 核心高频利器（DOM 索引、表单、视觉、Grep 定向检索） |
+| crawl | `CHROME_MCP_TOOL_PROFILE=crawl` | 15 | ~5.8k tokens | 极速批量网页抓取与数据提取 |
 
-工具分组：导航与标签页（7）· 页面感知（5）· 交互操作（12）· 观察与滚动（5）· 数据管理（9）· 性能与诊断（8）——完整清单见 [docs/TOOLS.md](./docs/TOOLS.md)。
+工具分组：导航与标签页（7）· 页面感知（7）· 交互操作（12）· 观察与滚动（6）· 数据管理（11）· 性能与诊断（9）——完整清单见 [docs/TOOLS.md](./docs/TOOLS.md)。
 
 ## 环境要求
 

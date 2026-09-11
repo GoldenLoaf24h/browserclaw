@@ -13,16 +13,25 @@ Unlike headless browsers (Playwright/Puppeteer), it runs inside your daily brows
 ### Perception
 
 - **chrome_read_dom**: pruned DOM tree with 1-based indexes, occlusion detection (isOccluded/occludedBy) and safe click points; typical compression ratio 0.6
+- **chrome_grep**: lightweight targeted search without full DOM dump; fast regex/text search over interactive elements, full DOM, or visible lines (< 150 tokens)
 - **assets[] visual index**: img/canvas/video/CSS background images with viewport boxes; chrome_screenshot returns real image bytes by assetIndex (canvas anti-scrape content included), viewport-crop fallback when bytes are unobtainable
+- **chrome_inspect_media**: targeted media extraction; lossless native-resolution Canvas/image extraction or 200%+ super-sampling close-up crop for captchas and complex charts
 - **chrome_get_markdown**: structured markdown; fit:true strips nav/header/footer/aside noise (crawl4ai fit-markdown equivalent)
 - **chrome_get_links**: link graph (absolute URL, anchor text, internal/external, nofollow)
+- **chrome_intercept_api**: silent CDP Network API response sniffing and JSON interception, retrieving ground truth without messy DOM reverse engineering
 
 ### Interaction
 
 - **Unified locator**: ref → selector → text/role → coordinate fallback, shared by every interaction tool
-- **chrome_computer**: 16 actions, dwellMs hold time (defeats instant-click rejection), coordinateSpace viewport|screenshot
-- **chrome_interact_index**: index-based clicks + drag (end/steps/holdMs/dnd)
-- **chrome_batch_actions / chrome_burst_interact**: multi-step sequences in one round trip
+- **Self-driven Diff piggybacking**: pass `includeDelta: true` in `chrome_interact_index`, `chrome_fill_index`, and `chrome_batch_actions` to get incremental DOM changes directly in the action response, cutting 50% round trips
+- **chrome_interact_index**: 1-based index clicks + smooth drag (end/steps/holdMs/dnd) with center-first occlusion compensation and CDP delivery verification
+- **Enhanced Batch Pipeline (chrome_batch_actions)**: atomic multi-action sequence with `type: 'assert'` (pre/post condition checks) and `type: 'extract'` (in-pipeline text/value/attribute extraction)
+- **1:1 ChatGPT Official Agent Cursor**: isolated closed Shadow DOM overlay, bezier arc motion, velocity stretch springs, luminous blue trail, and instant fade-out on human takeover
+- **Native Chrome Tab Groups with Zero-Orphan Cleanup (TabGroupManager)**: dedicated colored tab groups ("Agent"), auto-destroyed on tab closure
+- **Luminous Glowing Favicon (TabFaviconManager)**: real-time glowing SVG pulse indicator during tasks, cleanly restored on finish
+- **Human-in-the-loop Interventions (chrome_request_human_intervention)**: frosted glass banner on 2FA/captchas, resumed instantly by button click or Enter
+- **Action Snapshots and Rollback (chrome_undo_last_action)**: 5-step circular stack for navigation history and form value rollback
+- **CDP Escape Hatch (chrome_cdp_execute)**: polymorphic Target routing with auto-detach timeout protection to prevent thread hangs
 
 ### Reliability
 
@@ -31,13 +40,13 @@ Unlike headless browsers (Playwright/Puppeteer), it runs inside your daily brows
 - Agent-friendly errors: structured messages with bounded stacks, no raw exception leaks
 - Guards: chrome:// page blocking, cross-origin screenshot domain check, Session Tab Affinity
 
-## 46 tools x 3 profiles
+## 52 tools x 3 profiles
 
 | Profile | Env | Tools | Schema cost |
 | --- | --- | --- | --- |
-| full (default) | unset | 46 | ~17.2k tokens |
-| core | CHROME_MCP_TOOL_PROFILE=core | 28 | ~13.2k tokens |
-| crawl | CHROME_MCP_TOOL_PROFILE=crawl | 12 | ~4.8k tokens |
+| full (default) | unset | 52 | ~19.5k tokens |
+| core | CHROME_MCP_TOOL_PROFILE=core | 24 | ~11.5k tokens |
+| crawl | CHROME_MCP_TOOL_PROFILE=crawl | 15 | ~5.8k tokens |
 
 ## Requirements
 

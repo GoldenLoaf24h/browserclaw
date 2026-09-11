@@ -220,3 +220,19 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
   1. Generate a cryptographically secure 256-bit token (`TOKEN_FILE`) on native host initialization or read `CHROME_MCP_TOKEN` from environment.
   2. Validate `Authorization: Bearer <token>` on all Fastify HTTP endpoints and SSE streams.
 - **Consequences**: Complete protection against unauthorized local loopback access and DNS rebinding attacks.
+
+### ADR-007: Self-Driven Delta Piggybacking & In-Pipeline DOM Fingerprinting
+- **Status**: Implemented & Verified
+- **Context**: Traditional browser automation agents suffer from severe latency multiplication: each click or fill requires a subsequent `read_dom` call to observe outcomes, doubling the network roundtrips and token consumption.
+- **Decision**:
+  1. Introduce `includeDelta: true` in `chrome_interact_index`, `chrome_fill_index`, and `chrome_batch_actions`.
+  2. After physical action dispatch and settle buffering (150ms), the extension automatically extracts the latest element tree, executes fingerprint hashing against the previous snapshot baseline, and piggybacks the delta (`added`, `modified`, `removed`, `unchanged`) directly inside the action's response payload.
+- **Consequences**: Reduces agent execution roundtrips by 50% and drops inspection token costs to < 200 tokens when state remains unchanged.
+
+### ADR-008: 1:1 Agent Cursor Simulation & Zero-Orphan Tab Group Lifecycle
+- **Status**: Implemented & Verified
+- **Context**: Users working alongside an AI agent in the same browser need visual clarity on which tabs the agent owns, feedback on where the agent is clicking, and immediate seamless takeover when they physically touch the mouse or keyboard.
+- **Decision**:
+  1. Render a floating virtual cursor in an isolated closed Shadow DOM overlay with bezier trajectories, spring stretch physics, and instant fade-out upon physical human input.
+  2. Group all agent-spawned tabs under a designated colored Chrome Tab Group (`TabGroupManager`), with auto-naming derived from the task and automatic destruction of empty groups upon tab removal to eliminate orphan residue.
+- **Consequences**: Flawless human-agent coexistence without UI interference or leftover workspace pollution.

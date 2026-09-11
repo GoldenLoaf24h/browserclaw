@@ -314,3 +314,45 @@ To eliminate agent decision confusion between high-level semantic tools and low-
    - chrome_cdp_execute (Target polymorphic, auto-detach timeout guard)
    - Never call for standard clicks, text inputs, or basic reading.
    - Use ONLY when high-level tools repeatedly fail twice, or when low-level browser primitives are required (e.g. Network.getCookies, Emulation.setDeviceMetricsOverride, Page.printToPDF, or out-of-process iframe 	arget: { targetId }).
+
+---
+
+## 6. High-Efficiency Agent Patterns & Best Practices
+
+### 6.1 Targeted Search Over Full DOM Dump (`chrome_grep`)
+When hunting for a specific button, link, or keyword in huge pages (> 5,000 tokens):
+- **DO NOT** call `chrome_read_dom` blindly.
+- **DO** call `chrome_grep { query: "Submit", searchType: "interactive_only" }`.
+- It returns matching 1-based indices and selectors immediately for < 100 tokens, ready for direct `chrome_interact_index`.
+
+### 6.2 Self-Driven Diff Piggybacking (`includeDelta: true`)
+To avoid double-roundtrip latency ("click -> wait -> read_dom -> wait"):
+- Pass `includeDelta: true` when calling `chrome_interact_index`, `chrome_fill_index`, or `chrome_batch_actions`.
+- The response includes a `delta` object detailing newly added, modified, or removed DOM elements and the new revision.
+- If `delta.unchanged === true`, the page experienced zero DOM mutations, saving a full inspection turn.
+
+### 6.3 Closed-Loop Pipeline with Assert & Extract (`chrome_batch_actions`)
+For multi-step flows (e.g. filling search forms and collecting results):
+```json
+{
+  "tabId": 123,
+  "actions": [
+    { "type": "fill", "index": 4, "text": "AI Automation" },
+    { "type": "click", "index": 5 },
+    { "type": "assert", "selector": ".results-container", "condition": "visible", "abortOnFailure": true },
+    { "type": "extract", "selector": ".result-count", "property": "text", "variableName": "totalResults" }
+  ],
+  "includeDelta": true
+}
+```
+Executes with zero intermediate roundtrip lag and returns extracted values under `extractedData`.
+
+### 6.4 Handling Captchas & 2FA (`chrome_request_human_intervention`)
+When encountering slider captchas, SMS codes, or payment prompts:
+- Call `chrome_request_human_intervention { reason: "Please complete slider verification" }`.
+- Automatically dims page, displays an Apple/OpenAI styled frosted glass top banner, parks the virtual mouse, and yields control to the user.
+- Resumes seamlessly once the user clicks "Continue" or presses `Enter`.
+
+### 6.5 Inspecting Hard-to-Read Captchas & Charts (`chrome_inspect_media`)
+- Call `chrome_inspect_media { index: 12 }` to extract the lossless native bitmap of an `<img>` or `<canvas>`.
+- Complex noisy captchas automatically trigger a 200%+ super-sampling close-up crop.
