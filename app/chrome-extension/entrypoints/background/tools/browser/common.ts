@@ -331,9 +331,9 @@ class NavigateTool extends BaseBrowserToolExecutor {
         console.log(
           `URL already open in Tab ID: ${existingTab.id}, Window ID: ${existingTab.windowId}`,
         );
-        // Update URL only when explicit tab specified and url differs
-        if (explicitTab && typeof explicitTab.id === 'number') {
-          await chrome.tabs.update(explicitTab.id, { url });
+        // Update URL when explicit tab specified or when existingTab URL differs from requested url
+        if (typeof existingTab.id === 'number' && (explicitTab || existingTab.url !== url)) {
+          await chrome.tabs.update(existingTab.id, { url });
         }
         // Optionally bring to foreground only if background is explicitly false (P0-1)
         await this.ensureFocus(existingTab, {
@@ -517,6 +517,9 @@ export const navigateTool = new NavigateTool();
 interface CloseTabsToolParams {
   tabIds?: number[];
   url?: string;
+  confirm?: boolean;
+  sessionId?: string;
+  sessionContext?: string;
 }
 
 /**
@@ -527,6 +530,7 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
 
   async execute(args: CloseTabsToolParams): Promise<ToolResult> {
     const { tabIds, url } = args;
+    const sessionId = args.sessionId || args.sessionContext;
     let urlPattern = url;
     console.log(`Attempting to close tabs with options:`, args);
 
@@ -716,17 +720,29 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
         };
       }
 
-      // If no tabIds or URL provided, close the current active tab
-      console.log('No tabIds or URL provided, closing active tab');
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      if (!activeTab || !activeTab.id) {
-        return createErrorResponse('No active tab found');
+      // If no tabIds or URL provided, protect active tab against accidental closure
+      // Require either session tab affinity or explicit confirmation
+      const affinityTab = sessionId ? await sessionTabAffinity.resolveSessionTab(sessionId) : null;
+      let targetTabId = affinityTab?.id;
+      if (!targetTabId) {
+        if (args.confirm !== true) {
+          return createErrorResponse(
+            'No tabIds or url specified. To close the current active tab, pass confirm: true or specify tabIds explicitly to prevent unintended tab destruction.',
+          );
+        }
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!activeTab || !activeTab.id) {
+          return createErrorResponse('No active tab found');
+        }
+        targetTabId = activeTab.id;
       }
 
-      await tabFaviconManager.restoreFavicon(activeTab.id).catch(() => {});
-        await chrome.tabs.remove(activeTab.id);
-        await tabGroupManager.cleanupEmptyOrOrphanGroups().catch(() => {});
+      await tabFaviconManager.restoreFavicon(targetTabId).catch(() => {});
+      await chrome.tabs.remove(targetTabId);
+      if (sessionId && affinityTab?.id === targetTabId) {
+        sessionTabAffinity.removeAffinity(sessionId);
+      }
+      await tabGroupManager.cleanupEmptyOrOrphanGroups().catch(() => {});
 
       return {
         content: [
@@ -734,9 +750,9 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
             type: 'text',
             text: JSON.stringify({
               success: true,
-              message: 'Closed active tab',
+              message: `Closed ${affinityTab ? 'session tab' : 'active tab'}`,
               closedCount: 1,
-              closedTabIds: [activeTab.id],
+              closedTabIds: [targetTabId],
             }),
           },
         ],

@@ -36,7 +36,7 @@ export class FillFormTool extends BaseBrowserToolExecutor {
         const platform = await chrome.runtime.getPlatformInfo();
         isMac = platform?.os === 'mac';
       } catch {}
-      const selectAllMod = isMac ? 8 : 2;
+      const selectAllMod = isMac ? 4 : 2;
 
       const results: Array<{
         fieldIndex: number;

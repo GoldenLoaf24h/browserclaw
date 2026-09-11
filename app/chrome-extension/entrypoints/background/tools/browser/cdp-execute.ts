@@ -148,7 +148,7 @@ export class CdpExecuteTool extends BaseBrowserToolExecutor {
       const timeoutPromise = new Promise((_, reject) => {
         timeoutTimer = setTimeout(async () => {
           isTimedOut = true;
-          // Official ChatGPT Anti-Hang Guard: auto-detach if stuck
+          // Official ChatGPT Anti-Hang Guard: force-detach if stuck
           if (targetTabId !== undefined && args.preserveDebuggerOnTimeout !== true) {
             try {
               await cdpSessionManager.detach(targetTabId, 'timeout-guard');

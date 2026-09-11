@@ -487,19 +487,7 @@ class ComputerTool extends BaseBrowserToolExecutor {
         if (!coord) {
           return createErrorResponse('Failed to resolve coordinates');
         }
-        // Prefer DOM path via existing click tool - pass raw params.coordinates so clickTool's resolveTargetLocation projects once
-        const domResult = await clickTool.execute({
-          coordinates: params.coordinates,
-          coordinateSpace: params.coordinateSpace,
-          waitForNavigation: false,
-          timeout: TIMEOUTS.DEFAULT_WAIT * 5,
-          button: params.action === 'right_click' ? 'right' : 'left',
-          modifiers: params.modifiers,
-        });
-        if (!domResult.isError) {
-          return domResult; // Standardized response from click tool
-        }
-        // Fallback to CDP if DOM failed
+        // Direct native CDP mouse event dispatch for coordinate clicks (isTrusted: true)
         try {
           await cdpSessionManager.withSession(tabId, 'computer', async () => {
             const button: MouseButton = params.action === 'right_click' ? 'right' : 'left';

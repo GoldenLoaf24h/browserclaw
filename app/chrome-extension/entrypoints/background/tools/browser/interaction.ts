@@ -476,7 +476,7 @@ class FillTool extends BaseBrowserToolExecutor {
               const platform = await chrome.runtime.getPlatformInfo();
               isMac = platform?.os === 'mac';
             } catch {}
-            const selectAllMod = isMac ? 8 : 2;
+            const selectAllMod = isMac ? 4 : 2;
 
             await cdpSessionManager.sendCommand(tabId, 'Input.dispatchKeyEvent', {
               type: 'rawKeyDown',

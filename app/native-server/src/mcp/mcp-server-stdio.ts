@@ -14,6 +14,7 @@ import {
   profileBlockedMessage,
   resolveToolProfile,
   TOOL_SCHEMAS,
+  TOOL_CATEGORIES,
 } from 'chrome-mcp-shared';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -28,6 +29,9 @@ let mcpClient: Client | null = null;
 // at startup, full by default, CHROME_MCP_TOOL_PROFILE=core to trim to 26.
 const TOOL_PROFILE = resolveToolProfile(process.env.CHROME_MCP_TOOL_PROFILE);
 const EXPOSED_TOOLS = filterToolSchemas(TOOL_SCHEMAS, TOOL_PROFILE);
+
+// Dynamic tool activation store for stdio session
+const dynamicExtraTools = new Set<string>();
 
 // Resolve MCP target URL from environment or configuration
 const resolveTargetUrl = (): string => {
@@ -109,12 +113,20 @@ export const getStdioMcpServer = () => {
 
 export const setupTools = (server: Server) => {
   // List tools handler
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: EXPOSED_TOOLS }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    if (dynamicExtraTools.size === 0) return { tools: EXPOSED_TOOLS };
+    const combined = TOOL_SCHEMAS.filter(
+      (t) => EXPOSED_TOOLS.some((e) => e.name === t.name) || dynamicExtraTools.has(t.name),
+    );
+    return { tools: combined };
+  });
 
   // Call tool handler
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const name = request.params.name;
-    if (!EXPOSED_TOOLS.some((t) => t.name === name)) {
+    const args = request.params.arguments || {};
+    const isAllowed = EXPOSED_TOOLS.some((t) => t.name === name) || dynamicExtraTools.has(name);
+    if (!isAllowed) {
       const known = TOOL_SCHEMAS.some((t) => t.name === name);
       return {
         content: [
@@ -128,7 +140,15 @@ export const setupTools = (server: Server) => {
         isError: true,
       };
     }
-    return handleToolCall(name, request.params.arguments || {});
+
+    // Dynamic activation hook for chrome_tool_docs
+    if (name === 'chrome_tool_docs' && (args as any)?.activateForSession && (args as any)?.category) {
+      const cat = (args as any).category;
+      const catList = TOOL_CATEGORIES[cat] ? TOOL_CATEGORIES[cat].split(' ') : [];
+      for (const tName of catList) dynamicExtraTools.add(tName);
+    }
+
+    return handleToolCall(name, args);
   });
 
   // List resources handler - REQUIRED BY MCP PROTOCOL

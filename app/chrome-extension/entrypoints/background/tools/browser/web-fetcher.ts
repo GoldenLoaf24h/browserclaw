@@ -71,8 +71,43 @@ class WebFetcherTool extends BaseBrowserToolExecutor {
           tab = await chrome.tabs.create({ url, active: background === false });
 
           // Wait for page to load
-          console.log('Waiting for page to load...');
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          if (tab.id && tab.status !== 'complete') {
+            const newTabId = tab.id;
+            console.log('Waiting for page to load...');
+            await new Promise<void>((resolve) => {
+              let timer: any;
+              const updatedListener = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+                if (updatedTabId === newTabId && changeInfo.status === 'complete') {
+                  cleanup();
+                  resolve();
+                }
+              };
+              const removedListener = (removedTabId: number) => {
+                if (removedTabId === newTabId) {
+                  cleanup();
+                  resolve();
+                }
+              };
+              const cleanup = () => {
+                clearTimeout(timer);
+                chrome.tabs.onUpdated?.removeListener?.(updatedListener);
+                chrome.tabs.onRemoved?.removeListener?.(removedListener);
+              };
+              if (chrome.tabs?.onUpdated?.addListener) {
+                chrome.tabs.onUpdated.addListener(updatedListener);
+              }
+              if (chrome.tabs?.onRemoved?.addListener) {
+                chrome.tabs.onRemoved.addListener(removedListener);
+              }
+              timer = setTimeout(() => {
+                cleanup();
+                resolve();
+              }, 10000);
+            });
+            try {
+              tab = await chrome.tabs.get(newTabId);
+            } catch {}
+          }
         }
       } else {
         // Use active tab (prefer specified window)

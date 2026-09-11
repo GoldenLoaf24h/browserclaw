@@ -586,6 +586,11 @@ export const initNativeHostListener = () => {
   });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    // Validate sender: strictly reject messages from content scripts (which have _sender.tab) or external extensions
+    if (_sender.id !== chrome.runtime.id || _sender.tab) {
+      return false;
+    }
+
     // Allow UI to call tools directly
     if (message && message.type === 'call_tool' && message.name) {
       handleCallTool({ name: message.name, args: message.args, sessionId: message.sessionId })

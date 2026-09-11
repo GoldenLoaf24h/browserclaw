@@ -530,11 +530,15 @@ export const TOOL_SCHEMAS: Tool[] = [
         tabIds: {
           type: 'array',
           items: { type: 'number' },
-          description: 'Array of tab IDs to close. If not provided, will close the active tab.',
+          description: 'Array of tab IDs to close. If not provided, will close the active tab (requires confirm: true or session affinity).',
         },
         url: {
           type: 'string',
           description: 'Close tabs matching this URL. Can be used instead of tabIds.',
+        },
+        confirm: {
+          type: 'boolean',
+          description: 'Explicit confirmation required to close the active tab when tabIds or url are not specified.',
         },
       },
       required: [],
@@ -2262,11 +2266,11 @@ export const TOOL_SCHEMAS: Tool[] = [
       openWorldHint: false,
     },
     description:
-      'Return compact parameter documentation for a category of BrowserClaw tools (navigate | perceive | act | observe | manage | crawl). Use when a workflow needs a tool that is not in the current profile view.',
+      'Return compact parameter documentation for a category of BrowserClaw tools (navigate | perceive | act | observe | manage | crawl | diagnose | network). Use when a workflow needs a tool that is not in the current profile view.',
     inputSchema: {
       type: 'object',
       properties: {
-        category: { type: 'string', enum: ['navigate', 'perceive', 'act', 'observe', 'manage', 'crawl'], description: 'Tool category to document' },
+        category: { type: 'string', enum: ['navigate', 'perceive', 'act', 'observe', 'manage', 'crawl', 'diagnose', 'network'], description: 'Tool category to document' },
         activateForSession: { type: 'boolean', description: 'When true, dynamically exposes all tools in this category for the current MCP session without server restart. Default: false' },
       },
       required: ['category'],

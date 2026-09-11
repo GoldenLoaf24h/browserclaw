@@ -47,22 +47,24 @@ npm run dev
 4. **Load the extension in Chrome**
    - Open `chrome://extensions/`
    - Enable "Developer mode"
-   - Click "Load unpacked" and select `your/extension/dist`
+   - Click "Load unpacked" and select `app/chrome-extension/.output/chrome-mv3` (generated after running `pnpm build` or `pnpm --filter chrome-mcp-server dev`).
 
 ## 🏗️ Project Structure
 
 ```
 chrome-mcp-server/
 ├── app/
-│   ├── chrome-extension/     # Chrome extension (WXT + Vue 3)
-│   │   ├── entrypoints/      # Background scripts, popup, sidepanel, content scripts
-│   │   └── utils/            # Helper utilities and storage managers
-│   └── native-server/        # Native messaging server (Fastify + TypeScript)
-│       ├── src/mcp/          # MCP protocol implementation
-│       └── src/server/       # HTTP server and native messaging
+│   ├── chrome-extension/     # Chrome extension MV3 (WXT + Vue 3)
+│   │   ├── entrypoints/      # Background SW, popup, and isolated inpage scripts
+│   │   ├── tests/            # Vitest suite for all 52 tool executors & utilities
+│   │   └── utils/            # CDP session manager, storage managers, ring buffer
+│   └── native-server/        # Native messaging Fastify bridge & Stdio MCP host
+│       ├── src/mcp/          # MCP protocol implementation (HTTP, SSE, Stdio)
+│       └── src/server/       # Fastify server, auth token validator, native messaging pipe
 ├── packages/
-│   └── shared/               # Shared types and utilities
-└── docs/                    # Documentation
+│   └── shared/               # Universal schemas (TOOL_SCHEMAS), profiles (TOOL_CATEGORIES), types
+├── scripts/                  # Code & doc generation utilities (gen-tools-doc.mjs)
+└── docs/                     # Documentation vault (MAP, ARCHITECTURE, TOOLS, TROUBLESHOOTING)
 ```
 
 ## 🛠️ Development Workflow
@@ -70,36 +72,42 @@ chrome-mcp-server/
 ### Adding New Tools
 
 1. **Define the tool schema in `packages/shared/src/tools.ts`**:
+   Specify parameters, descriptions, and required fields.
 
-```typescript
-{
-  name: 'your_new_tool',
-  description: 'Description of what your tool does',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      // Define parameters
-    },
-    required: ['param1']
-  }
-}
-```
+2. **Register the tool name in `packages/shared/src/types.ts`** under `TOOL_NAMES.BROWSER`.
 
-2. **Implement the tool in `app/chrome-extension/entrypoints/background/tools/browser/`**:
+3. **Map the tool to a category in `packages/shared/src/tool-profiles.ts`**:
+   Add the tool name to `TOOL_CATEGORIES` under one of the 8 canonical categories:
+   `navigate`, `perceive`, `act`, `observe`, `manage`, `diagnose`, `network`, or `crawl`.
+   If it belongs in the default profiles, include it in `CORE_TOOL_NAMES` or `CRAWL_TOOL_NAMES`.
 
-```typescript
-class YourNewTool extends BaseBrowserToolExecutor {
-  name = TOOL_NAMES.BROWSER.YOUR_NEW_TOOL;
+4. **Implement the tool executor in `app/chrome-extension/entrypoints/background/tools/browser/`**:
+   Extend `BaseBrowserToolExecutor` and implement `execute(args)`.
 
-  async execute(args: YourToolParams): Promise<ToolResult> {
-    // Implementation
-  }
-}
-```
+5. **Register the executor in `app/chrome-extension/entrypoints/background/tools/browser/index.ts`** in `toolsMap`.
 
-3. **Export the tool in `app/chrome-extension/entrypoints/background/tools/browser/index.ts`**
+6. **Regenerate tool documentation**:
 
-4. **Add tests in the appropriate test directory**
+   ```bash
+   pnpm --filter chrome-mcp-shared build
+   node scripts/gen-tools-doc.mjs
+   ```
+
+7. **Add automated tests**:
+   Add a unit test in `app/chrome-extension/tests/` and verify with `pnpm --filter chrome-mcp-server test` and `pnpm test`.
+
+### Core Architecture & Security Guidelines for Contributors
+
+- **Sender Authentication**: Any `chrome.runtime.onMessage` listener must strictly validate `_sender.id === chrome.runtime.id && !_sender.tab` to reject unauthorized messages from web page content scripts or external extensions.
+- **DOM XSS Defense**: Never interpolate untrusted strings or user inputs into `innerHTML`. Construct elements using safe DOM APIs (`document.createElement`, `document.createTextNode`, or `textContent`).
+- **Cross-Frame Isolation**: Always scope inpage scripts to target frames (`frameIds: [targetFrameId]`) and reindex subframe element numbers to avoid polluting the main frame's WeakRef element map.
+- **CDP Domain Lifecycle**: Use `CDPSessionManager.enableDomain` and `disableDomain` for reference-counted domain enablement. Never call raw CDP `*.disable` on core pinned domains (`Page`, `Network`).
+- **Debugger Anti-Hang**: Use `detach(tabId, 'timeout-guard')` or `detachDebugger(tabId)` to forcefully detach physical debuggers on unresponsive pages without refcount underflows.
+- **MV3 Storage Persistence**: Any background manager state (`affinityMap`, `managedGroups`, `favicons`) must synchronize with `chrome.storage.session` to survive 30-second MV3 service worker dormancy.
+- **Non-Disruptive Background Execution**: Never switch the user's active tab or steal window focus (`active: false`, `focused: false`) unless explicitly requested by the user.
+- **Safe Tab Closure**: Tools that close tabs must require explicit confirmation (`confirm: true`) or session tab affinity when `tabIds` and `url` are omitted, protecting the user's active tab.
+- **Offscreen Screenshots**: Background tabs (`active: false`) must strictly use CDP `Page.captureScreenshot(fromSurface: true)` rather than `chrome.tabs.captureVisibleTab`.
+- **Cross-Platform macOS Key Bitmask**: On macOS, Command (Meta) key modifier bitmasks must equal `4` (`mod = 4`).
 
 ### Code Style Guidelines
 

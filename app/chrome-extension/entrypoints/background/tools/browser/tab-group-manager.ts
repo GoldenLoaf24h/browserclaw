@@ -23,6 +23,7 @@ export class TabGroupManager {
 
   private managedGroupIds: Set<number> = new Set<number>();
   private listenersRegistered = false;
+  private static readonly STORAGE_KEY = 'tab_group_manager_managed_groups';
 
   public static getInstance(): TabGroupManager {
     if (!TabGroupManager.instance) {
@@ -33,6 +34,32 @@ export class TabGroupManager {
 
   constructor() {
     this.registerEventListeners();
+    void this.loadFromStorage();
+  }
+
+  private async loadFromStorage(): Promise<void> {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage?.session?.get) {
+        const data = await chrome.storage.session.get(TabGroupManager.STORAGE_KEY);
+        if (data && Array.isArray(data[TabGroupManager.STORAGE_KEY])) {
+          for (const gid of data[TabGroupManager.STORAGE_KEY]) {
+            if (typeof gid === 'number') {
+              this.managedGroupIds.add(gid);
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  private async saveToStorage(): Promise<void> {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage?.session?.set) {
+        await chrome.storage.session.set({
+          [TabGroupManager.STORAGE_KEY]: Array.from(this.managedGroupIds),
+        });
+      }
+    } catch {}
   }
 
   public registerEventListeners(): void {
@@ -54,6 +81,7 @@ export class TabGroupManager {
       chrome.tabGroups.onRemoved.addListener((group) => {
         if (group && typeof group.id === 'number') {
           this.managedGroupIds.delete(group.id);
+          void this.saveToStorage();
         }
       });
     }
@@ -113,6 +141,7 @@ export class TabGroupManager {
       });
 
       this.managedGroupIds.add(newGroupId);
+      void this.saveToStorage();
 
       await chrome.tabGroups.update(newGroupId, {
         title,
@@ -155,6 +184,10 @@ export class TabGroupManager {
         this.managedGroupIds.delete(gid);
         removedCount++;
       }
+    }
+
+    if (removedCount > 0) {
+      void this.saveToStorage();
     }
 
     return removedCount;

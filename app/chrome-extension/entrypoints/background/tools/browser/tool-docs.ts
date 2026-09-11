@@ -3,7 +3,8 @@ import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES, TOOL_SCHEMAS, TOOL_CATEGORIES } from 'chrome-mcp-shared';
 
 interface ToolDocsParams {
-  category: 'navigate' | 'perceive' | 'act' | 'observe' | 'manage' | 'crawl';
+  category: 'navigate' | 'perceive' | 'act' | 'observe' | 'manage' | 'crawl' | 'diagnose' | 'network';
+  activateForSession?: boolean;
 }
 
 type SchemaProp = { type?: string; description?: string; enum?: string[] };

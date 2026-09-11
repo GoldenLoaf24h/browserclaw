@@ -26,12 +26,12 @@ graph TB
     end
 
     subgraph "Chrome Extension MV3 Layer (Blink / V8)"
-        SW[Background Service Worker]
-        CDPMgr[CDP Session Manager]
+        SW[Background Service Worker (chrome.storage.session)]
+        CDPMgr[CDP Session Manager (Domain RefCount & Anti-Hang Guard)]
         Locator[Unified Locator & Degradation Engine]
         RingBuf[Screenshot Ring Buffer (Cap: 1)]
         SnapCache[DOM Snapshot Cache Manager]
-        Guard[Popup & Security Guard]
+        Guard[Popup, Sender Auth & Security Guard]
     end
 
     subgraph "Browser Runtime & Target Page"
@@ -112,8 +112,8 @@ sequenceDiagram
     Note over Fastify: Validates CHROME_MCP_TOKEN Bearer
     Fastify->>Host: Dispatch Native Message
     Host->>SW: Standard IO Framed Message (4-byte length prefix)
-    Note over SW: Enforces 1MB physical buffer defense
-    SW->>SW: Check Session-Tab Affinity & Snapshot Validity
+    Note over SW: Enforces 1MB physical buffer defense & Sender Authentication
+    SW->>SW: Check Session-Tab Affinity (chrome.storage.session) & Snapshot Validity
     SW->>InPage: UnifiedLocator: Resolve Target (Ref / Selector / Text / Coordinate)
     InPage-->>SW: Target Coords { x, y, resolutionPath }
     SW->>CDP: Input.dispatchMouseEvent (mousePressed, mouseReleased)
@@ -124,7 +124,7 @@ sequenceDiagram
     Fastify-->>Agent: HTTP 200 / SSE tool_result
 ```
 
-### 3.2 Zero-Disk In-Memory Screenshot Pipeline
+### 3.2 Zero-Disk In-Memory Screenshot Pipeline (Background Offscreen Isolation)
 
 ```mermaid
 sequenceDiagram
@@ -134,9 +134,14 @@ sequenceDiagram
     participant CDP as CDP Page Domain
     participant RingBuf as ScreenshotRingBuffer (Cap: 1)
 
-    Agent->>SW: chrome_screenshot { format: 'jpeg', quality: 80 }
-    Note over SW: savePng defaults to false (Zero Disk I/O)
-    SW->>CDP: Page.captureScreenshot { format: 'jpeg', quality: 80, clip: max 1280px }
+    Agent->>SW: chrome_screenshot { format: 'jpeg', quality: 80, tabId: 101 }
+    Note over SW: Checks tab.active state
+    alt Background Tab (active: false)
+        SW->>CDP: Page.captureScreenshot { format: 'jpeg', quality: 80, fromSurface: true }
+        Note over SW: Bypasses captureVisibleTab to prevent active-window visual leaks & rAF hangs
+    else Active Foreground Tab
+        SW->>CDP: Page.captureScreenshot or captureVisibleTab fallback
+    end
     CDP-->>SW: Raw Base64 Buffer
     SW->>RingBuf: push({ tabId, dataBase64, mimeType })
     Note over RingBuf: Evicts older entry; enforces O(1) bounded memory
@@ -149,27 +154,36 @@ sequenceDiagram
 
 Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser-use**, and **midscene**:
 
-| Architecture Dimension | BrowserClaw (`mcp-chrome`) | `browser-use` | `midscene` |
-| :--- | :--- | :--- | :--- |
-| **Primary Philosophy** | Non-intrusive MCP copilot in user's live browser | Autonomous agent driving standalone Chromium | Visual AI & Multimodal UI Testing framework |
-| **Runtime Topology** | Chrome MV3 Extension + Native Messaging + Fastify SSE | Python script controlling Playwright / remote CDP | Node.js / Puppeteer / Playwright / Web SDK |
-| **User Profile Reuse** | **Native**: Uses existing Chrome session, logins, cookies, and tabs | Requires launching separate profile or remote debugging port | Typically launches fresh test browser contexts |
-| **Focus & Background Safety** | **Strict P0 Isolation**: Tabs `active: false`, windows `focused: false`, zero focus stealing | Often brings tab to foreground; steals focus during typing | Focuses active viewport during test actions |
-| **DOM Tree Representation** | Pruned hybrid DOM tree with interactive nodes, ARIA roles, bounding boxes, scrollable/dialog hints | Accessibility tree + filtered interactive elements | Multimodal bounding-box tree + visual prompt markers |
-| **Element Addressing** | **Unified 4-stage locator**: `ref` (1-based) $\to$ `selector` $\to$ `text/role` $\to$ `coordinate` | Numbered numeric tags (1, 2, 3...) or raw coordinates | Natural language query grounded via Vision Model |
-| **DOM Mutation Pollution** | **Zero DOM pollution**: In-memory `WeakRef` Map prevents memory leaks | Modifies DOM with attributes/classes; overlays canvas | Injects highlight markers or overlays canvas |
-| **Coordinate Scaling** | Automatic DPR & viewport scaling via `ScreenshotContextManager` | Playwright coordinate translation | Vision-model relative box coordinate conversion |
-| **Input Fidelity** | CDP `Input` domain dispatches trusted events (`isTrusted: true`) | Playwright CDP synthetic/trusted events | Synthetic DOM dispatch / CDP mouse events |
-| **Screenshot Pipeline** | **Zero-disk in-memory pipeline**: returned in MCP response; RingBuffer capacity 1 | Writes PNG files to local disk directory | Memory buffer or temporary disk snapshots |
-| **Multi-Agent Isolation** | `SessionTabAffinityManager` binds agent sessions to specific tab IDs | Handled at process/agent instance level | Handled via separate runner contexts |
-| **Sensitive Data Masking** | Built-in regex masking (`••••••••`) for passwords, credit cards, OTPs | No automatic input masking | Relies on external prompt masking |
-| **Native Protocol Defense** | Enforces 1MB physical buffer ceiling on Native Messaging | N/A (Direct WebSocket CDP) | N/A (Direct DevTools / Playwright WebSocket) |
+| Architecture Dimension         | BrowserClaw (`mcp-chrome`)                                                                                   | `browser-use`                                                | `midscene`                                           |
+| :----------------------------- | :----------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------- | :--------------------------------------------------- |
+| **Primary Philosophy**         | Non-intrusive MCP copilot in user's live browser                                                             | Autonomous agent driving standalone Chromium                 | Visual AI & Multimodal UI Testing framework          |
+| **Runtime Topology**           | Chrome MV3 Extension + Native Messaging + Fastify SSE                                                        | Python script controlling Playwright / remote CDP            | Node.js / Puppeteer / Playwright / Web SDK           |
+| **User Profile Reuse**         | **Native**: Uses existing Chrome session, logins, cookies, and tabs                                          | Requires launching separate profile or remote debugging port | Typically launches fresh test browser contexts       |
+| **Focus & Background Safety**  | **Strict P0 Isolation**: Tabs `active: false`, windows `focused: false`, zero focus stealing                 | Often brings tab to foreground; steals focus during typing   | Focuses active viewport during test actions          |
+| **DOM Tree Representation**    | Pruned hybrid DOM tree with interactive nodes, ARIA roles, bounding boxes, scrollable/dialog hints           | Accessibility tree + filtered interactive elements           | Multimodal bounding-box tree + visual prompt markers |
+| **Element Addressing**         | **Unified 4-stage locator**: `ref` (1-based) $\to$ `selector` $\to$ `text/role` $\to$ `coordinate`           | Numbered numeric tags (1, 2, 3...) or raw coordinates        | Natural language query grounded via Vision Model     |
+| **DOM Mutation Pollution**     | **Zero DOM pollution**: In-memory `WeakRef` Map prevents memory leaks                                        | Modifies DOM with attributes/classes; overlays canvas        | Injects highlight markers or overlays canvas         |
+| **Coordinate Scaling**         | Automatic DPR & viewport scaling via `ScreenshotContextManager`                                              | Playwright coordinate translation                            | Vision-model relative box coordinate conversion      |
+| **Input Fidelity**             | CDP `Input` domain dispatches trusted events (`isTrusted: true`)                                             | Playwright CDP synthetic/trusted events                      | Synthetic DOM dispatch / CDP mouse events            |
+| **Screenshot Pipeline**        | **Zero-disk in-memory pipeline**: returned in MCP response; RingBuffer capacity 1; offscreen CDP for bg tabs | Writes PNG files to local disk directory                     | Memory buffer or temporary disk snapshots            |
+| **Multi-Agent Isolation**      | `SessionTabAffinityManager` backed by `chrome.storage.session` binds agent sessions to specific tab IDs      | Handled at process/agent instance level                      | Handled via separate runner contexts                 |
+| **Sensitive Data Masking**     | Built-in regex masking (`••••••••`) for passwords, credit cards, OTPs                                        | No automatic input masking                                   | Relies on external prompt masking                    |
+| **Native Protocol Defense**    | Enforces 1MB physical buffer ceiling on Native Messaging                                                     | N/A (Direct WebSocket CDP)                                   | N/A (Direct DevTools / Playwright WebSocket)         |
+| **MV3 Lifecycle Persistence**  | `chrome.storage.session` rehydrates tab affinity, groups, and favicons across SW restarts                    | N/A (Persistent daemon process)                              | N/A (Standard Node runtime)                          |
+| **CDP Domain Lifecycle**       | Domain-level reference counting (`enableDomain`/`disableDomain`) + core domain pinning (`Page`, `Network`)   | Managed by Playwright driver                                 | Ad-hoc domain commands                               |
+| **Debugger Anti-Hang**         | Immediate physical debugger detach (`timeout-guard`) bypassing refcount underflow                            | Process SIGKILL fallback                                     | Process exit                                         |
+| **Sender & DOM Security**      | Rejects messages with `_sender.tab` or invalid `runtime.id`; programmatic DOM nodes eliminate XSS            | N/A (No browser extension context)                           | N/A (No browser extension context)                   |
+| **Multi-Frame Grounding**      | Multi-frame `chrome_grep` with hierarchical index remapping; cross-origin iframe coordinate guard            | Playwright frame tree                                        | Visual multimodal detection                          |
+| **Dynamic Profile Activation** | Runtime activation via `chrome_tool_docs` across 8 categories without process restart (HTTP/SSE & Stdio)     | Static tool definitions                                      | Fixed testing API                                    |
+| **In-Page JS Evaluation**      | Top-level await + automatic single-expression `return (...)` wrapping; sanitized output                      | `page.evaluate`                                              | Assertion DSL                                        |
+| **Navigation Settle**          | Event-driven `chrome.tabs.onUpdated` / `onRemoved` listener with settle watchdog                             | `waitForLoadState`                                           | Fixed timeouts / sleep                               |
 
 ---
 
 ## 5. Architectural Decision Records (ADR)
 
 ### ADR-001: Background Execution & Non-Intrusive Multi-Tab Isolation
+
 - **Status**: Implemented & Verified (P0-1)
 - **Context**: Autonomous agents executing long-running workflows previously stole focus from the human user by calling `windows.update({ focused: true })` and `tabs.update({ active: true })`.
 - **Decision**:
@@ -179,15 +193,18 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
 - **Consequences**: Agents operate invisibly in the background without interrupting the user's active keyboard or screen focus.
 
 ### ADR-002: Zero-Disk In-Memory Screenshot Pipeline & Bounded Ring Buffer
+
 - **Status**: Implemented & Verified (P0-2)
 - **Context**: Screenshots were previously dumped to the host filesystem, accumulating disk bloat, leaking sensitive screenshots to shared storage, and slowing down response cycles with disk I/O.
 - **Decision**:
   1. Return CDP `Page.captureScreenshot` directly as Base64 image payloads in the MCP response (`type: 'image'`).
   2. Maintain an in-memory `ScreenshotRingBuffer` with a fixed capacity of 1 per tab, automatically evicting stale frames.
   3. Default compression to JPEG $\le$ 1280px. Disk writes (`savePng: true`) are strictly opt-in for manual debugging.
-- **Consequences**: Zero disk writes, sub-100ms screenshot round-trips, and zero memory leaks in the MV3 service worker.
+  4. For background tabs (`active: false`), strictly use CDP `Page.captureScreenshot` (`fromSurface: true`) instead of `chrome.tabs.captureVisibleTab`, preventing active-window screen leaks and `requestAnimationFrame` hangs.
+- **Consequences**: Zero disk writes, sub-100ms screenshot round-trips, zero visual leaks across background tabs, and zero memory leaks in the MV3 service worker.
 
 ### ADR-003: Unified Locator Degradation Chain & Visual Fallback
+
 - **Status**: Implemented & Verified (P1-4)
 - **Context**: Agents frequently failed when relying solely on brittle CSS selectors or when index maps drifted after page re-renders.
 - **Decision**:
@@ -197,6 +214,7 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
 - **Consequences**: Dramatic increase in execution resilience across dynamic SPAs, canvas apps, and legacy web pages.
 
 ### ADR-004: Pure In-Memory WeakRef Mapping for Element Grounding
+
 - **Status**: Implemented & Verified (P1-7)
 - **Context**: In-page index tagging previously modified HTML element attributes (e.g. `data-mcp-index="1"`), which breaks reactive frameworks (React, Vue, Solid), triggers unwanted MutationObserver loops, and leaks detached DOM nodes in Blink's C++ memory.
 - **Decision**:
@@ -206,6 +224,7 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
 - **Consequences**: Zero DOM pollution, 100% compatibility with sensitive reactive web applications, and prevention of memory leaks.
 
 ### ADR-005: 1MB Physical Native Messaging Ceiling & Chunking Defense
+
 - **Status**: Implemented & Verified (P0)
 - **Context**: Chrome's Native Messaging host crashes immediately with `ERR_FAILED` or broken pipe when any single message payload exceeds $1024 \times 1024$ bytes.
 - **Decision**:
@@ -214,6 +233,7 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
 - **Consequences**: Permanently eliminated native host disconnects and process crashes caused by large DOM snapshots or uncompressed images.
 
 ### ADR-006: High-Entropy Token Authentication for Local Fastify Bridge
+
 - **Status**: Implemented & Verified (P0)
 - **Context**: The local Fastify HTTP/SSE server binds to port 12306. Any malicious website or script running on localhost could make cross-origin requests to control the browser.
 - **Decision**:
@@ -222,6 +242,7 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
 - **Consequences**: Complete protection against unauthorized local loopback access and DNS rebinding attacks.
 
 ### ADR-007: Self-Driven Delta Piggybacking & In-Pipeline DOM Fingerprinting
+
 - **Status**: Implemented & Verified
 - **Context**: Traditional browser automation agents suffer from severe latency multiplication: each click or fill requires a subsequent `read_dom` call to observe outcomes, doubling the network roundtrips and token consumption.
 - **Decision**:
@@ -230,9 +251,85 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
 - **Consequences**: Reduces agent execution roundtrips by 50% and drops inspection token costs to < 200 tokens when state remains unchanged.
 
 ### ADR-008: 1:1 Agent Cursor Simulation & Zero-Orphan Tab Group Lifecycle
+
 - **Status**: Implemented & Verified
 - **Context**: Users working alongside an AI agent in the same browser need visual clarity on which tabs the agent owns, feedback on where the agent is clicking, and immediate seamless takeover when they physically touch the mouse or keyboard.
 - **Decision**:
   1. Render a floating virtual cursor in an isolated closed Shadow DOM overlay with bezier trajectories, spring stretch physics, and instant fade-out upon physical human input.
   2. Group all agent-spawned tabs under a designated colored Chrome Tab Group (`TabGroupManager`), with auto-naming derived from the task and automatic destruction of empty groups upon tab removal to eliminate orphan residue.
 - **Consequences**: Flawless human-agent coexistence without UI interference or leftover workspace pollution.
+
+### ADR-009: MV3 Service Worker Session Storage Persistence (`chrome.storage.session`)
+
+- **Status**: Implemented & Verified
+- **Context**: In Chrome Manifest V3, background service workers terminate after ~30 seconds of idle time. In-memory manager states (`SessionTabAffinityManager`, `TabGroupManager`, and `TabFaviconManager`) previously vanished across worker sleep/wake cycles, causing orphaned tab groups, broken multi-turn agent affinity, and unrestored favicons.
+- **Decision**:
+  1. Persist `affinityMap`, `managedGroupIds`, and `originalFavicons` to `chrome.storage.session`.
+  2. Asynchronously load cached states during manager instantiation and synchronize state modifications upon creation, mutation, and removal events.
+  3. Clean up storage mappings when tabs or tab groups are destroyed.
+- **Consequences**: Total resilience against MV3 service worker dormancy, zero state loss across agent think-time pauses, and complete session cleanup upon tab closure.
+
+### ADR-010: CDP Domain Reference Counting & Anti-Hang Detachment Guard
+
+- **Status**: Implemented & Verified
+- **Context**: Multiple concurrent or chained tools calling `.enable` / `.disable` on CDP domains (such as `Page` or `Network`) caused race conditions where one tool's cleanup disabled domains actively required by another tool or background monitor (`inFlightRequests`, `waitForPageSettle`, dialog listeners). In addition, unresponsive tabs caused debugger detachments to hang or refcounts to underflow.
+- **Decision**:
+  1. Implement domain-level reference counting (`enableDomain` / `disableDomain`) in `CDPSessionManager`.
+  2. Core domains (`Page`, `Network`) are permanently pinned and never physically disabled while the CDP session remains attached.
+  3. Automatically intercept `*.enable` and `*.disable` methods in `sendCommand` to route through reference counting.
+  4. Provide a fast-path `timeout-guard` detachment mode in `detach(tabId, 'timeout-guard')` and an explicit `detachDebugger(tabId)` method that forcefully detach the physical debugger (`chrome.debugger.detach`) and clean up all sessions and `domainRefCounts` without refcount underflow.
+- **Consequences**: Elimination of domain disabling race conditions, bulletproof dialog and settle monitoring, and guaranteed recovery on target hangs.
+
+### ADR-011: Strict Extension Message Sender Authentication, DOM XSS Hardening & Cross-Frame Isolation
+
+- **Status**: Implemented & Verified
+- **Context**: Unauthenticated message channels allowed malicious content scripts or rogue extensions to invoke privileged background tools via `chrome.runtime.sendMessage`. Furthermore, interpolating human intervention reasons into HTML via `innerHTML` created potential DOM XSS injection vectors, while concurrent frame operations could cross-pollute the global WeakRef element index map.
+- **Decision**:
+  1. In `chrome.runtime.onMessage`, validate `_sender.id === chrome.runtime.id` and strictly reject messages where `_sender.tab` is present, blocking content scripts and external extensions from calling privileged background tool executors or accessing tokens.
+  2. In `agent-cursor.content.ts`, replace `innerHTML` template strings with safe DOM creation APIs (`document.createElement`, `document.createTextNode`, `textContent`).
+  3. Isolate all UI overlays within a closed Shadow DOM.
+  4. Isolate cross-frame messages by scoping execution strictly to target frames (`frameIds: [targetFrameId]`) and isolating subframe element index ranges, preventing element map collisions and memory leakage.
+- **Consequences**: Full privilege boundary enforcement between unprivileged web page contexts and extension capabilities, completely neutralizing DOM XSS risks and preventing frame map pollution.
+
+### ADR-012: Multi-Frame Unified Index Remapping & Cross-Origin Coordinate Guard
+
+- **Status**: Implemented & Verified
+- **Context**: Complex modern applications embed nested and cross-origin iframes. Previous index trees and grep searches were restricted to the top frame or collided index numbers, while coordinate dispatches in subframes failed or misfired when iframe offsets were missing.
+- **Decision**:
+  1. In `chrome_grep`, execute DOM pruning across all frames (`allFrames: true`), hierarchically remapping subframe element indices (`currentIndex = elements.length + 1`), and synchronizing subframe maps via `inPageReindexFrame`.
+  2. Expand grep attribute searching to query `placeholder`, `aria-label`, and `value` properties in addition to inner text and tag name.
+  3. In `chrome_batch_actions`, detect cross-origin subframes via `inPageGetFrameOrigin` and prevent unprojected coordinate dispatches when frame offsets are not available.
+  4. In `chrome_computer`, directly align `left_click` coordinate actions to native CDP mouse events (`Input.dispatchMouseEvent`, `isTrusted: true`).
+  5. Fix macOS modifier key bitmask: map Command (Meta) to bitmask 4 (`mod = 4`) instead of 8 across form-fill and batch-actions.
+- **Consequences**: Comprehensive coverage of iframe-heavy applications, accurate cross-origin coordinate execution, and native event fidelity.
+
+### ADR-013: Active Tab Close Protection & Confirmation Guard (`chrome_close_tabs`)
+
+- **Status**: Implemented & Verified
+- **Context**: Calling `chrome_close_tabs` with an empty argument object (`{}`) previously closed the human user's currently active foreground tab without warning, causing catastrophic user tab loss during accidental or hallucinated tool calls.
+- **Decision**:
+  1. In `chrome_close_tabs`, require explicit confirmation (`confirm: true`) or session tab affinity when `tabIds` and `url` are omitted.
+  2. When session tab affinity exists (`sessionId`), close the session-bound tab instead of the user's active foreground tab, and clean up the affinity mapping.
+  3. If neither `tabIds`, `url`, nor `confirm: true` are provided, return a descriptive error prompting the caller to specify tab IDs or confirm tab closure.
+- **Consequences**: Zero accidental closures of user active tabs while preserving autonomous closing of session-bound agent tabs.
+
+### ADR-014: Dynamic Profile Layering & Session-Level Tool Activation across Transports
+
+- **Status**: Implemented & Verified
+- **Context**: Different AI agent models have vastly different token window budgets. Standard monolithic MCP server exposing all 52 tools consumes ~19.5k tokens on `tools/list`, which overwhelms smaller or faster reasoning models. At the same time, hardcoding static profiles (e.g. `core` with 24 tools or `crawl` with 15 tools) prevented agents from dynamically discovering and invoking advanced debugging or network inspection capabilities when encountering complex edge cases.
+- **Decision**:
+  1. Define 8 comprehensive tool categories in `TOOL_CATEGORIES` across `packages/shared`: `navigate`, `perceive`, `act`, `observe`, `manage`, `diagnose`, `network`, and `crawl`.
+  2. Retain `chrome_tool_docs` as an omni-present introspection tool across all profiles.
+  3. Implement `activateForSession: true` support on both transports:
+     - **Fastify HTTP/SSE**: dynamically registers extra tools to the client's dedicated `McpSessionManager` instance.
+     - **Stdio Transport**: maintains `dynamicExtraTools` set in `mcp-server-stdio.ts`, dynamically expanding both `tools/list` and `tools/call` filters for subsequent RPC requests.
+- **Consequences**: Minimal initial token footprint (< 5.8k-11.5k tokens) with zero-restart, on-demand privilege and capability escalation during autonomous runs.
+
+### ADR-015: Single-Expression JavaScript Auto-Return & Event-Driven Page Load Settle
+
+- **Status**: Implemented & Verified
+- **Context**: Agents querying DOM properties or window state via `chrome_javascript` frequently omit the `return` keyword (e.g. executing `document.title` or `window.innerWidth`), resulting in `undefined` returns and wasted reasoning turns. Furthermore, in `chrome_get_web_content`, fixed `setTimeout(resolve, 3000)` sleeps wasted seconds on fast pages and raced dynamic renderers on slow connections.
+- **Decision**:
+  1. In `chrome_javascript`, implement `detectSingleExpression`: automatically detect if the input code is a valid single JavaScript expression (stripping trailing semicolons and single/multi-line comments). If so, automatically wrap with `return (...)` inside the async execution block across both CDP `Runtime.evaluate` and `chrome.scripting.executeScript`.
+  2. In `chrome_get_web_content`, replace fixed timer sleeps with event-driven tab lifecycle listeners (`chrome.tabs.onUpdated` checking `status === 'complete'` and `chrome.tabs.onRemoved`), bounded by a 10-second timeout guard.
+- **Consequences**: 100% ergonomic parity for immediate agent evaluations and significantly reduced latency on page content extraction.

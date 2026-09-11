@@ -297,10 +297,8 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
             w: Math.round((asset.rect.width + pad * 2) * dpr),
             h: Math.round((asset.rect.height + pad * 2) * dpr),
           };
-          const visibleDataUrl = typeof tab.windowId === 'number'
-            ? await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
-            : await chrome.tabs.captureVisibleTab({ format: 'png' });
-          if (!visibleDataUrl) throw new Error('captureVisibleTab returned empty image (asset fallback)');
+          const visibleDataUrl = await this.captureTabPng(tab);
+          if (!visibleDataUrl) throw new Error('captureTabPng returned empty image (asset fallback)');
           const cropped = new OffscreenCanvas(crop.w, crop.h);
           const cctx = cropped.getContext('2d');
           if (!cctx) throw new Error('OffscreenCanvas 2d context failed (asset fallback)');
@@ -330,10 +328,18 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
             // tab has presented its real content; otherwise captureScreenshot
             // races the window-transition frame and returns black bars.
             try {
-              await cdpSessionManager.sendCommand(tabId, 'Runtime.evaluate', {
-                expression: "new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r())))",
-                awaitPromise: true,
-              });
+              if (tab.active) {
+                const rafPromise = cdpSessionManager.sendCommand(tabId, 'Runtime.evaluate', {
+                  expression: "new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r())))",
+                  awaitPromise: true,
+                });
+                await Promise.race([
+                  rafPromise,
+                  new Promise((r) => setTimeout(r, 300)),
+                ]);
+              } else {
+                await new Promise((r) => setTimeout(r, 50));
+              }
             } catch (rafErr) {
               console.warn('rAF settle wait failed (capturing anyway):', rafErr);
             }
@@ -496,9 +502,7 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
         } else {
           // Visible area only
           this.logInfo('Capturing visible area...');
-          const rawVisibleDataUrl = typeof tab.windowId === 'number'
-            ? await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
-            : await chrome.tabs.captureVisibleTab({ format: 'png' });
+          const rawVisibleDataUrl = await this.captureTabPng(tab);
           if (!rawVisibleDataUrl) throw new Error('captureVisibleTab returned empty image');
           // Enforce DPR 1:1 Normalization: resample from physical pixels to exact CSS viewport dimensions
           finalImageDataUrl = await normalizeImageToCssDimensions(
@@ -747,6 +751,29 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
     }
   }
 
+  private async captureTabPng(tab: chrome.tabs.Tab): Promise<string> {
+    if (!tab.active && tab.id) {
+      // For background tabs, captureVisibleTab would capture whatever tab is currently active
+      // in the window, causing an active window data leak. Use CDP Page.captureScreenshot instead.
+      const tabId = tab.id;
+      const { cdpSessionManager } = await import('@/utils/cdp-session-manager');
+      const shot: any = await cdpSessionManager.withSession(tabId, 'screenshot-bg', async () => {
+        return await cdpSessionManager.sendCommand(tabId, 'Page.captureScreenshot', {
+          format: 'png',
+          fromSurface: true,
+        });
+      });
+      if (!shot?.data) throw new Error('CDP captureScreenshot returned empty data for background tab');
+      return `data:image/png;base64,${shot.data}`;
+    }
+
+    const dataUrl = typeof tab.windowId === 'number'
+      ? await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
+      : await chrome.tabs.captureVisibleTab({ format: 'png' });
+    if (!dataUrl) throw new Error('captureVisibleTab returned empty image');
+    return dataUrl;
+  }
+
   async _captureElement(
     tabId: number,
     options: ScreenshotToolParams,
@@ -805,9 +832,12 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
     // Small delay to ensure element is fully rendered after scrollIntoView
     await new Promise((resolve) => setTimeout(resolve, SCREENSHOT_CONSTANTS.SCRIPT_INIT_DELAY));
 
-    const visibleCaptureDataUrl = typeof windowId === 'number'
-      ? await chrome.tabs.captureVisibleTab(windowId, { format: 'png' })
-      : await chrome.tabs.captureVisibleTab({ format: 'png' });
+    const targetTab = await chrome.tabs.get(tabId).catch(() => null);
+    const visibleCaptureDataUrl = targetTab
+      ? await this.captureTabPng(targetTab)
+      : (typeof windowId === 'number'
+          ? await chrome.tabs.captureVisibleTab(windowId, { format: 'png' })
+          : await chrome.tabs.captureVisibleTab({ format: 'png' }));
     if (!visibleCaptureDataUrl) {
       throw new Error('Failed to capture visible tab for element cropping');
     }
@@ -906,9 +936,12 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
         setTimeout(resolve, SCREENSHOT_CONSTANTS.CAPTURE_STITCH_DELAY_MS),
       );
 
-      const dataUrl = typeof windowId === 'number'
-        ? await chrome.tabs.captureVisibleTab(windowId, { format: 'png' })
-        : await chrome.tabs.captureVisibleTab({ format: 'png' });
+      const targetTab = await chrome.tabs.get(tabId).catch(() => null);
+      const dataUrl = targetTab
+        ? await this.captureTabPng(targetTab)
+        : (typeof windowId === 'number'
+            ? await chrome.tabs.captureVisibleTab(windowId, { format: 'png' })
+            : await chrome.tabs.captureVisibleTab({ format: 'png' }));
       if (!dataUrl) throw new Error('captureVisibleTab returned empty during full page capture');
 
       const yOffsetPx = currentScrollYCss * dpr;

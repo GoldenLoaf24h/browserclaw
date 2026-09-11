@@ -120,7 +120,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
                 const platform = await chrome.runtime.getPlatformInfo();
                 isMac = platform?.os === 'mac';
               } catch {}
-              const mod = isMac ? 8 : 2;
+              const mod = isMac ? 4 : 2;
               await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
                 type: 'rawKeyDown',
                 modifiers: mod,

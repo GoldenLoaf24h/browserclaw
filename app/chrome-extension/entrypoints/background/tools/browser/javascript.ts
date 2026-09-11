@@ -147,9 +147,58 @@ function isDebuggerConflictError(error: unknown): boolean {
 }
 
 /**
- * Wrap user code in an async IIFE to support top-level await and return statements.
+ * Detect if user code is a single expression, correctly handling trailing semicolons,
+ * single-line comments, and multi-line comments. Returns the expression string to return,
+ * or null if code contains declarations or multi-statement blocks.
  */
-function wrapUserCode(code: string): string {
+export function detectSingleExpression(code: string): string | null {
+  const rawTrimmed = code.trim();
+  if (!rawTrimmed || rawTrimmed.startsWith('return ') || rawTrimmed === 'return') {
+    return null;
+  }
+
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+
+  // 1. Direct check after stripping trailing semicolons
+  const direct = rawTrimmed.replace(/;+$/, '').trim();
+  try {
+    new AsyncFunction(`return (\n${direct}\n);`);
+    return direct;
+  } catch {}
+
+  // 2. Iteratively strip trailing comments (// ... and /* ... */) and semicolons
+  let cleaned = direct;
+  let changed = true;
+  while (changed) {
+    const prev = cleaned;
+    cleaned = cleaned
+      .replace(/\/\/[^\r\n]*$/, '')
+      .replace(/\/\*[\s\S]*?\*\/\s*$/, '')
+      .trim()
+      .replace(/;+$/, '')
+      .trim();
+    changed = cleaned !== prev;
+  }
+
+  if (cleaned && cleaned !== direct) {
+    try {
+      new AsyncFunction(`return (\n${cleaned}\n);`);
+      return cleaned;
+    } catch {}
+  }
+
+  return null;
+}
+
+/**
+ * Wrap user code in an async IIFE to support top-level await and return statements.
+ * Automatically adds a return statement if user code is a single expression.
+ */
+export function wrapUserCode(code: string): string {
+  const expr = detectSingleExpression(code);
+  if (expr !== null) {
+    return `(async () => {\nreturn (\n${expr}\n);\n})()`;
+  }
   return `(async () => {\n${code}\n})()`;
 }
 
@@ -315,9 +364,41 @@ async function executeViaScripting(
       func: async (userCode: string): Promise<ScriptingExecutionResult> => {
         try {
           // Use AsyncFunction constructor to support top-level await
-
           const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-          const fn = new AsyncFunction(userCode);
+          let codeToRun = userCode;
+          const rawTrimmed = userCode.trim();
+          if (rawTrimmed && !rawTrimmed.startsWith('return ') && rawTrimmed !== 'return') {
+            const direct = rawTrimmed.replace(/;+$/, '').trim();
+            let validExpr: string | null = null;
+            try {
+              new AsyncFunction(`return (\n${direct}\n);`);
+              validExpr = direct;
+            } catch {}
+            if (!validExpr) {
+              let cleaned = direct;
+              let changed = true;
+              while (changed) {
+                const prev = cleaned;
+                cleaned = cleaned
+                  .replace(/\/\/[^\r\n]*$/, '')
+                  .replace(/\/\*[\s\S]*?\*\/\s*$/, '')
+                  .trim()
+                  .replace(/;+$/, '')
+                  .trim();
+                changed = cleaned !== prev;
+              }
+              if (cleaned && cleaned !== direct) {
+                try {
+                  new AsyncFunction(`return (\n${cleaned}\n);`);
+                  validExpr = cleaned;
+                } catch {}
+              }
+            }
+            if (validExpr !== null) {
+              codeToRun = `return (\n${validExpr}\n);`;
+            }
+          }
+          const fn = new AsyncFunction(codeToRun);
           const value = await fn();
           return { ok: true, value };
         } catch (err: unknown) {

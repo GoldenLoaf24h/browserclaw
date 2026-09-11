@@ -3,21 +3,60 @@
  * Binds client MCP sessions to dedicated Chrome tabs to prevent concurrent agents
  * from hijacking each other's active tabs when tabId is omitted.
  */
+const STORAGE_KEY = 'session_tab_affinity_map';
+
 export class SessionTabAffinityManager {
   private affinityMap = new Map<string, number>();
 
   constructor() {
     this.initListeners();
+    void this.loadFromStorage();
+  }
+
+  private async loadFromStorage(): Promise<void> {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage?.session?.get) {
+        const data = await chrome.storage.session.get(STORAGE_KEY);
+        if (data && data[STORAGE_KEY] && typeof data[STORAGE_KEY] === 'object') {
+          for (const [k, v] of Object.entries(data[STORAGE_KEY])) {
+            if (typeof v === 'number' && !this.affinityMap.has(k)) {
+              this.affinityMap.set(k, v);
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignored in non-extension environments (unit tests)
+    }
+  }
+
+  private async saveToStorage(): Promise<void> {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage?.session?.set) {
+        const obj: Record<string, number> = {};
+        for (const [k, v] of this.affinityMap.entries()) {
+          obj[k] = v;
+        }
+        await chrome.storage.session.set({ [STORAGE_KEY]: obj });
+      }
+    } catch {
+      // Ignored in non-extension environments
+    }
   }
 
   private initListeners() {
     try {
       if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
         chrome.tabs.onRemoved.addListener((removedTabId: number) => {
+          let modified = false;
           for (const [sessionId, boundTabId] of this.affinityMap.entries()) {
             if (boundTabId === removedTabId) {
               this.affinityMap.delete(sessionId);
+              modified = true;
             }
+          }
+          if (modified) {
+            void this.saveToStorage();
           }
         });
       }
@@ -29,6 +68,7 @@ export class SessionTabAffinityManager {
   public setAffinity(sessionId: string, tabId: number): void {
     if (!sessionId || typeof tabId !== 'number') return;
     this.affinityMap.set(sessionId, tabId);
+    void this.saveToStorage();
   }
 
   public getAffinity(sessionId: string): number | undefined {
@@ -51,10 +91,12 @@ export class SessionTabAffinityManager {
   public removeAffinity(sessionId: string): void {
     if (!sessionId) return;
     this.affinityMap.delete(sessionId);
+    void this.saveToStorage();
   }
 
   public clearAll(): void {
     this.affinityMap.clear();
+    void this.saveToStorage();
   }
 
   public getMapSize(): number {
@@ -67,6 +109,9 @@ export class SessionTabAffinityManager {
    */
   public async resolveSessionTab(sessionId?: string): Promise<chrome.tabs.Tab | null> {
     if (!sessionId) return null;
+    if (!this.affinityMap.has(sessionId)) {
+      await this.loadFromStorage();
+    }
     const tabId = this.affinityMap.get(sessionId);
     if (typeof tabId !== 'number') return null;
 
@@ -76,8 +121,10 @@ export class SessionTabAffinityManager {
         return tab;
       }
       this.affinityMap.delete(sessionId);
+      void this.saveToStorage();
     } catch {
       this.affinityMap.delete(sessionId);
+      void this.saveToStorage();
     }
     return null;
   }

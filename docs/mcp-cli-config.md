@@ -1,108 +1,164 @@
-# CLI MCP Configuration Guide
+# CLI & Agent MCP Configuration Guide 🔌
 
-This guide explains how to configure Codex CLI and Claude Code to connect to the Chrome MCP Server.
+This guide explains how to configure AI Agent CLIs (Claude Desktop, Claude Code, Codex CLI, Cursor, Windsurf, Cline, Roo Code) to connect to BrowserClaw via Model Context Protocol (MCP).
 
-## Overview
+---
 
-The Chrome MCP Server exposes its MCP interface at `http://127.0.0.1:12306/mcp` (default port).
-Both Codex CLI and Claude Code can connect to this endpoint to use Chrome browser control tools.
+## 1. Overview & Connection Architecture
 
-## Codex CLI Configuration
+BrowserClaw exposes two primary MCP transport modes:
 
-### Option 1: HTTP MCP Server (Recommended)
+1. **HTTP / SSE Transport (Recommended for high-concurrency & multi-client)**:
+   - Endpoint: `http://127.0.0.1:12306/sse` (or `/mcp`)
+   - Requires high-entropy token authentication via HTTP header.
+2. **StdIO Transport (Direct process pipe)**:
+   - Spawns the native bridge process directly via Node.js stdio pipe.
+   - Automatically reads the local token and connects to the active Chrome extension.
 
-Add the following to your `~/.codex/config.json`:
+---
+
+## 2. Authentication Token
+
+To protect your local browser session against unauthorized local loopback exploitation, BrowserClaw strictly enforces token authentication:
+
+- **Token Location**: `~/.chrome-mcp/bridge-token` (Windows: `%USERPROFILE%\.chrome-mcp\bridge-token`)
+- **Custom Token**: Set the `CHROME_MCP_TOKEN` environment variable prior to starting the service.
+- **Reading the Token**:
+  ```bash
+  # Windows PowerShell
+  Get-Content "$HOME\.chrome-mcp\bridge-token"
+
+  # macOS / Linux
+  cat ~/.chrome-mcp/bridge-token
+  ```
+
+---
+
+## 3. Client Configuration Templates
+
+### 3.1 Claude Desktop / Claude Code
+
+File: `~/.claude/claude_desktop_config.json`
+
+#### Option A: HTTP / SSE Mode (Recommended)
 
 ```json
 {
   "mcpServers": {
-    "chrome-mcp": {
-      "url": "http://127.0.0.1:12306/mcp"
+    "browserclaw": {
+      "url": "http://127.0.0.1:12306/sse",
+      "headers": {
+        "Authorization": "Bearer <TOKEN_FROM_~/.chrome-mcp/bridge-token>"
+      }
     }
   }
 }
 ```
 
-### Option 2: Via Environment Variable
-
-Set the MCP URL via environment variable before running codex:
-
-```bash
-export MCP_HTTP_PORT=12306
-```
-
-## Claude Code Configuration
-
-### Option 1: HTTP MCP Server
-
-Add the following to your `~/.claude/claude_desktop_config.json`:
+#### Option B: Stdio Pipe Mode
 
 ```json
 {
   "mcpServers": {
-    "chrome-mcp": {
-      "url": "http://127.0.0.1:12306/mcp"
-    }
-  }
-}
-```
-
-### Option 2: Stdio Server (Alternative)
-
-If you prefer stdio-based MCP communication:
-
-```json
-{
-  "mcpServers": {
-    "chrome-mcp": {
+    "browserclaw": {
       "command": "node",
-      "args": ["/path/to/mcp-chrome/dist/mcp/mcp-server-stdio.js"]
+      "args": ["<repo-root>/app/native-server/dist/cli.js", "--stdio"],
+      "env": {
+        "CHROME_MCP_TOOL_PROFILE": "full"
+      }
     }
   }
 }
 ```
 
-## Verifying Connection
+---
 
-After configuration, the CLI tools should be able to see and use Chrome MCP tools such as:
+### 3.2 Codex CLI
 
-- `chrome_get_windows_and_tabs` - Get browser window and tab information
-- `chrome_navigate` - Navigate to a URL
-- `chrome_click_element` - Click on page elements
-- `chrome_get_page_content` - Get page content
-- And more...
+File: `~/.codex/config.json`
 
-## Troubleshooting
+```json
+{
+  "mcpServers": {
+    "browserclaw": {
+      "url": "http://127.0.0.1:12306/sse",
+      "headers": {
+        "x-mcp-token": "<TOKEN_FROM_~/.chrome-mcp/bridge-token>"
+      }
+    }
+  }
+}
+```
 
-### Connection Refused
+---
 
-If you get "connection refused" errors:
+### 3.3 Cursor
 
-1. Ensure the Chrome extension is installed and the native server is running
-2. Check that the port matches (default: 12306)
-3. Verify no firewall is blocking localhost connections
-4. Run `mcp-chrome-bridge doctor` to diagnose issues
+File: `.cursor/mcp.json` or Cursor Settings -> Features -> MCP Servers:
 
-### Tools Not Appearing
+```json
+{
+  "mcpServers": {
+    "browserclaw": {
+      "command": "node",
+      "args": ["<repo-root>/app/native-server/dist/cli.js", "--stdio"],
+      "env": {
+        "CHROME_MCP_TOOL_PROFILE": "core"
+      }
+    }
+  }
+}
+```
 
-If MCP tools don't appear in the CLI:
+---
 
-1. Restart the CLI tool after configuration changes
-2. Check the configuration file syntax (valid JSON)
-3. Ensure the MCP server URL is accessible
+## 4. Tool Profiles & Dynamic Session Activation
 
-### Port Conflicts
+To optimize token consumption, you can configure `CHROME_MCP_TOOL_PROFILE`:
 
-If port 12306 is already in use:
+| Profile              | Tool Count | Token Overhead | Best For                                                           |
+| :------------------- | :--------- | :------------- | :----------------------------------------------------------------- |
+| **`full`** (default) | 52         | ~19.5k tokens  | Full low-level CDP access, diagnostics, and storage                |
+| **`core`**           | 24         | ~11.5k tokens  | Daily semantic navigation, 1-based clicks, form fills, screenshots |
+| **`crawl`**          | 15         | ~5.8k tokens   | High-throughput content extraction, markdown, links                |
 
-1. Set a custom port in the extension settings
-2. Update the CLI configuration to match the new port
-3. Run `mcp-chrome-bridge update-port <new-port>` to update the stdio config
+### Dynamic Tool Activation Without Restart
 
-## Environment Variables
+Even when running in `core` or `crawl` profiles, agents can dynamically expose hidden tool categories during runtime without restarting the server:
 
-| Variable                     | Description                            | Default |
-| ---------------------------- | -------------------------------------- | ------- |
-| `MCP_HTTP_PORT`              | HTTP port for MCP server               | 12306   |
-| `MCP_ALLOWED_WORKSPACE_BASE` | Additional allowed workspace directory | (none)  |
-| `CHROME_MCP_NODE_PATH`       | Override Node.js executable path       | (auto)  |
+```json
+// Call chrome_tool_docs
+{
+  "category": "manage",
+  "activateForSession": true
+}
+```
+
+Supported categories: `navigate`, `perceive`, `act`, `observe`, `manage`, `diagnose`, `network`, `crawl`. Supported in both **HTTP/SSE** and **Stdio** transports.
+
+---
+
+## 5. Verifying Connection
+
+Once connected, your agent will have access to high-precision browser automation tools:
+
+- `chrome_read_dom`: Retrieve 1-based pruned DOM index tree (85%+ token savings).
+- `chrome_interact_index`: Dispatch native click, hover, or drag (`isTrusted: true`).
+- `chrome_fill_index`: Fill form inputs with automatic old text clearing.
+- `chrome_batch_actions`: Pipeline multiple actions, assertions, and extractions with zero roundtrip latency.
+- `chrome_grep`: Millisecond regex/text query across nested iframes with index remapping.
+- `chrome_screenshot`: Capture viewport with optional 1:1 CSS coordinate grid overlay or offscreen background tab isolation.
+- `chrome_close_tabs`: Safe tab closure with active-tab confirmation protection (`confirm: true`).
+- `chrome_javascript`: Execute JavaScript with top-level await and automatic single-expression `return (...)`.
+
+---
+
+## 6. Environment Variables
+
+| Variable                            | Description                                                | Default                            |
+| :---------------------------------- | :--------------------------------------------------------- | :--------------------------------- |
+| `CHROME_MCP_HOST`                   | Bind address for Fastify server                            | `127.0.0.1`                        |
+| `CHROME_MCP_PORT` / `MCP_HTTP_PORT` | HTTP/SSE port for MCP server                               | `12306`                            |
+| `CHROME_MCP_TOKEN`                  | Overrides the token stored in `~/.chrome-mcp/bridge-token` | Auto-generated high-entropy string |
+| `CHROME_MCP_TOOL_PROFILE`           | Tool profile level (`full`, `core`, `crawl`)               | `full`                             |
+| `CHROME_MCP_NODE_PATH`              | Override Node.js executable path for native host           | Auto-detected                      |

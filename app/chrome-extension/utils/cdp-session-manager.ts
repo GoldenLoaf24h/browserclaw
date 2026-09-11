@@ -27,6 +27,7 @@ class CDPSessionManager {
   private eventObservers = new Set<CdpEventObserver>();
   private dialogStates = new Map<number, PendingDialogInfo>();
   private inFlightRequests = new Map<number, Set<string>>();
+  private domainRefCounts = new Map<number, Map<string, number>>();
 
   constructor() {
     if (typeof chrome !== 'undefined') {
@@ -166,6 +167,7 @@ class CDPSessionManager {
       this.idleTimers.delete(tabId);
     }
     this.inFlightRequests.delete(tabId);
+    this.domainRefCounts.delete(tabId);
     if (this.sessions.has(tabId)) {
       console.warn(`[CDPSessionManager] Tab ${tabId} disconnected/closed via ${reason}. Cleaning up session.`);
       this.sessions.delete(tabId);
@@ -243,25 +245,73 @@ class CDPSessionManager {
     });
   }
 
+  getDomainRefCount(tabId: number, domain: string): number {
+    return this.domainRefCounts.get(tabId)?.get(domain) || 0;
+  }
+
+  /**
+   * Acquire a domain reference count. If refCount transitions from 0 to 1,
+   * actually dispatches <domain>.enable to CDP.
+   */
+  async enableDomain(tabId: number, domain: string, params?: object): Promise<void> {
+    let tabDomains = this.domainRefCounts.get(tabId);
+    if (!tabDomains) {
+      tabDomains = new Map<string, number>();
+      this.domainRefCounts.set(tabId, tabDomains);
+    }
+    const current = tabDomains.get(domain) || 0;
+    tabDomains.set(domain, current + 1);
+    if (current === 0 || (params && Object.keys(params).length > 0)) {
+      if ((chrome.runtime as any)?.id === 'test-ext-id') return;
+      try {
+        await this.sendDebuggerCommand(tabId, `${domain}.enable`, params || {}, 3000);
+      } catch (e: any) {
+        const msg = String(e?.message || e || '').toLowerCase();
+        if (msg.includes('target closed') || msg.includes('tab closed') || msg.includes('not attached')) {
+          throw e;
+        }
+      }
+    }
+  }
+
+  /**
+   * Release a domain reference count.
+   * Core domains (Page, Network) are essential for session lifecycle (dialog detection,
+   * in-flight request tracking, waitForPageSettle) and are NEVER physically disabled
+   * while the CDP session is attached.
+   */
+  async disableDomain(tabId: number, domain: string, force = false): Promise<void> {
+    const tabDomains = this.domainRefCounts.get(tabId);
+    if (!tabDomains) return;
+    const current = tabDomains.get(domain) || 0;
+    const next = Math.max(0, current - 1);
+    if (next === 0) {
+      tabDomains.delete(domain);
+    } else {
+      tabDomains.set(domain, next);
+    }
+
+    // Core domains required by the manager (Page, Network) must remain physically enabled
+    // while the CDP session is alive, preventing waitForPageSettle from breaking.
+    if ((domain === 'Page' || domain === 'Network') && !force) {
+      return;
+    }
+
+    if (next === 0 || force) {
+      if ((chrome.runtime as any)?.id === 'test-ext-id') return;
+      try {
+        await this.sendDebuggerCommand(tabId, `${domain}.disable`, {}, 3000);
+      } catch {}
+    }
+  }
+
   /**
    * Enable the Page domain so Chromium routes JS dialogs (alert/confirm/prompt)
    * through CDP. Without this, Page.handleJavaScriptDialog reports
    * "No dialog is showing" even while a native dialog is pending.
    */
   private async enablePageDomain(tabId: number): Promise<void> {
-    if ((chrome.runtime as any)?.id === 'test-ext-id') return;
-    try {
-      // Short timeout: Page.enable needs a renderer ack, which hangs while a
-      // JS dialog is open. chrome_handle_dialog can still work because
-      // Page.handleJavaScriptDialog is served by the browser process.
-      await this.sendDebuggerCommand(tabId, 'Page.enable', {}, 3000);
-    } catch (e: any) {
-      const msg = String(e?.message || e || '').toLowerCase();
-      if (msg.includes('target closed') || msg.includes('tab closed') || msg.includes('not attached')) {
-        throw e;
-      }
-      // Best-effort: dialog handling degrades gracefully without Page domain.
-    }
+    await this.enableDomain(tabId, 'Page');
   }
 
   /**
@@ -269,26 +319,35 @@ class CDPSessionManager {
    * loadingFinished/loadingFailed events for accurate in-flight request tracking.
    */
   private async enableNetworkDomain(tabId: number): Promise<void> {
-    if ((chrome.runtime as any)?.id === 'test-ext-id') return;
-    try {
-      await this.sendDebuggerCommand(tabId, 'Network.enable', {}, 3000);
-    } catch (e: any) {
-      const msg = String(e?.message || e || '').toLowerCase();
-      if (msg.includes('target closed') || msg.includes('tab closed') || msg.includes('not attached')) {
-        throw e;
-      }
-      // Best-effort: in-flight request tracking degrades gracefully without Network domain.
-    }
+    await this.enableDomain(tabId, 'Network');
   }
 
   async detach(tabId: number, owner: OwnerTag = 'unknown'): Promise<void> {
     return this.serializeTabOp(tabId, async () => {
+      if (owner === 'timeout-guard') {
+        // Anti-hang guard: immediately detach physical debugger and clear session without refCount underflow
+        if (this.idleTimers.has(tabId)) {
+          clearTimeout(this.idleTimers.get(tabId));
+          this.idleTimers.delete(tabId);
+        }
+        try {
+          await chrome.debugger.detach({ tabId });
+        } catch {}
+        this.sessions.delete(tabId);
+        this.domainRefCounts.delete(tabId);
+        return;
+      }
+
       const state = this.getState(tabId);
       if (!state) return; // Nothing to do
 
-      // Update ownership/refcount
-      if (state.owners.has(owner)) state.owners.delete(owner);
-      state.refCount = Math.max(0, state.refCount - 1);
+      // Update ownership/refcount: only decrement if owner was tracked or unknown
+      if (state.owners.has(owner)) {
+        state.owners.delete(owner);
+        state.refCount = Math.max(0, state.refCount - 1);
+      } else if (owner === 'unknown') {
+        state.refCount = Math.max(0, state.refCount - 1);
+      }
 
       if (state.refCount > 0) {
         // Still in use by other owners
@@ -322,6 +381,7 @@ class CDPSessionManager {
               // Best-effort detach; ignore
             } finally {
               this.sessions.delete(tabId);
+              this.domainRefCounts.delete(tabId);
             }
           }
         });
@@ -359,6 +419,7 @@ class CDPSessionManager {
         await chrome.debugger.detach({ tabId });
       } catch {}
       this.sessions.delete(tabId);
+      this.domainRefCounts.delete(tabId);
     });
   }
 
@@ -439,6 +500,17 @@ class CDPSessionManager {
         }
       });
     };
+
+    if (method.endsWith('.enable')) {
+      const domain = method.slice(0, -7);
+      await this.enableDomain(tabId, domain, params);
+      return {} as T;
+    }
+    if (method.endsWith('.disable')) {
+      const domain = method.slice(0, -8);
+      await this.disableDomain(tabId, domain);
+      return {} as T;
+    }
 
     const state = this.getState(tabId);
     if (state && state.attachedByUs) {

@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const shared = await import(pathToFileURL(path.join(here, '../packages/shared/dist/index.mjs')).href);
-import { pathToFileURL } from 'node:url';
 const { TOOL_SCHEMAS, TOOL_CATEGORIES, CORE_TOOL_NAMES, CRAWL_TOOL_NAMES } = shared;
 
 const groups = [
@@ -12,6 +12,8 @@ const groups = [
   ['act', '交互操作 / Interaction'],
   ['observe', '观察与滚动 / Observation & Scrolling'],
   ['manage', '数据管理 / Data Management'],
+  ['diagnose', '代码诊断与调试 / Diagnostics & Debugging'],
+  ['network', '网络拦截与捕获 / Network Interception & Capture'],
 ];
 
 const toolDoc = (t) => {

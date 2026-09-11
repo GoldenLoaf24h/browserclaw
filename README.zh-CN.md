@@ -48,7 +48,9 @@
 基于 WXT (Vue 3) MV3 扩展 + Fastify 原生宿主 + 共享 Schema 的三层工业级架构，BrowserClaw 经由 Chrome 原生通信管道封装并暴露了 52 个 Schema 校验的 MCP 工具。与无头独立沙盒方案不同，它原生常驻于您的主力浏览器中，无感复用现有的全部登录凭据、Cookie 与扩展环境，并确保全链路交互均为浏览器原生可信事件（`isTrusted=true`）。
 
 ### 💡 站在巨人的肩膀上（参考与致谢的开源项目）
+
 BrowserClaw 在设计与实现过程中，深入吸收并融合了业内前沿开源项目的核心精髓：
+
 - **[hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)**：提供坚实的 Chrome MV3 扩展 + Native Messaging 本地双向 IPC 基础底座；
 - **[browser-use/browser-use](https://github.com/browser-use/browser-use)**：借鉴其极致省 Token 的 1-based DOM 索引理念与类真人操作流水线；
 - **[browseros-ai/BrowserOS](https://github.com/browseros-ai/BrowserOS)**：引入操作自驱局部 Diff 回传（`includeDelta`）、毫秒级轻量检索（`chrome_grep`）与流水线断言闭环；
@@ -61,27 +63,33 @@ BrowserClaw 在设计与实现过程中，深入吸收并融合了业内前沿�
 > **用户操作仅需 1 分钟**：让 AI Agent 完成环境与服务配置，您只需手动将纯净扩展包下载并加载至 Chrome。
 
 ### 第 1 步：把项目交给你的 AI Agent
+
 将本仓库目录直接提供给你的 AI 编程助手（Claude Code、Cursor、Codex、Windsurf、Cline），并对它说：
-> *“帮我配置并启动 BrowserClaw MCP 服务器：https://github.com/GoldenLoaf24h/browserclaw”*
+
+> _“帮我配置并启动 BrowserClaw MCP 服务器：https://github.com/GoldenLoaf24h/browserclaw”_
 
 AI Agent 将自动执行后台桥接服务构建与原生注册：
+
 ```bash
 git clone https://github.com/GoldenLoaf24h/browserclaw.git
 cd browserclaw
 pnpm install && pnpm build
 cd app/native-server && node dist/scripts/register-dev.js
 ```
-*(生成的 Bearer Token 位于 `~/.chrome-mcp/bridge-token`，默认监听端口 `http://127.0.0.1:12306/mcp`)*
+
+_(生成的 Bearer Token 位于 `~/.chrome-mcp/bridge-token`，默认监听端口 `http://127.0.0.1:12306/mcp`)_
 
 ### 第 2 步：在 Chrome 加载扩展（您唯一的手动操作）
+
 1. 前往 **[GitHub Releases 下载最新纯净扩展包](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)**（`browserclaw-extension-latest.zip`，仅 ~350KB）。
 2. 解压到本地任意固定目录（如 `browserclaw-extension`）。
 3. 打开 Chrome 或 Edge，在地址栏输入 `chrome://extensions/` 并开启右上角“**开发者模式**”。
 4. 点击左上角“**加载已解压的扩展程序**”，选择解压后的文件夹。
 
 ### 第 3 步（AI 主动引导）：开启静默调试模式（彻底隐藏黄条）
+
 > **给 AI 助手的指引**：在为用户配置 BrowserClaw 环境时，请主动询问用户：
-> *“是否希望开启 Chrome 原生静默调试模式（启动参数 `--silent-debugger-extension-api`）？开启后浏览器将彻底隐藏顶部‘正在调试此浏览器’的黄色长横条，页面零位移、零下坠抖动。如果您需要，我可以帮您一键配置桌面的 Chrome 快捷方式。”*
+> _“是否希望开启 Chrome 原生静默调试模式（启动参数 `--silent-debugger-extension-api`）？开启后浏览器将彻底隐藏顶部‘正在调试此浏览器’的黄色长横条，页面零位移、零下坠抖动。如果您需要，我可以帮您一键配置桌面的 Chrome 快捷方式。”_
 >
 > 若用户同意，AI 可协助将该参数添加至 Chrome 快捷方式或启动命令中。
 
@@ -98,7 +106,7 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 - **`chrome_navigate`**：页面 URL 跳转、前进（`"forward"`）、后退（`"back"`）或整页刷新。原生支持 `background: true`，保证后台静默打开，绝不抢占前台用户焦点。
 - **`chrome_switch_tab`**：无感切换活跃标签页或绑定会话亲缘标签页。
-- **`chrome_close_tabs`**：关闭指定标签页（支持 ID 数组）或按目标 URL 模式批量匹配关闭。
+- **`chrome_close_tabs`**：关闭指定标签页（支持 ID 数组）、按目标 URL 模式批量匹配关闭，或安全关闭活跃/会话标签页（关闭活跃 Tab 必须显式传入 `confirm: true` 或携带会话亲缘，杜绝误杀用户日常标签页）。
 - **`chrome_move_tab`**：移动标签页在窗口内的排列位置或跨窗口迁移。
 - **`get_windows_and_tabs`**：遍历并获取当前所有打开的 Chrome 窗口与标签页详细拓扑（ID、标题、激活状态与 URL）。
 - **标签分组全生命周期管理 (`TabGroupManager`)**：
@@ -117,7 +125,8 @@ cd app/native-server && node dist/scripts/register-dev.js
 <br/>
 
 - **chrome_read_dom**：DOM 剪枝树 + 1-based 元素索引，含遮挡检测（isOccluded/occludedBy）与安全点击点；典型页面压缩比 0.6，输出仅数 KB；支持 `deltaOnly: true` 差量指纹更新模式，Token 消耗骤降 90%
-- **chrome_grep**：页面轻量定向检索利器，免 dump 全量 DOM，支持毫秒级检索可交互元素索引、全量节点或可见纯文本行，单次调用仅消耗数十 Token
+- **chrome_grep**：页面轻量定向检索利器，免 dump 全量 DOM，支持毫秒级检索可交互元素索引、全量节点或可见纯文本行，支持跨 Frame 层次化索引重映射与 `placeholder`/`aria-label`/`value` 属性检索，单次调用仅消耗数十 Token
+- **chrome_get_web_content**：抓取网页内容，支持基于 `chrome.tabs.onUpdated` / `onRemoved` 的事件驱动页面加载完成等待与指定 CSS 作用域筛选
 - **assets[] 视觉资源索引**：img/canvas/video/CSS 背景图全部带视口 bbox 输出；chrome_screenshot 按 assetIndex 直接返回图像字节（canvas 反爬内容也能读），跨域等不可得时回退视口裁剪
 - **chrome_inspect_media**：局部高保真媒体透视，支持直接提取 Canvas/图片 原生无损分辨率或 200%+ 超采样特写截图（精准识别复杂验证码与图表）
 - **chrome_get_markdown**：结构化 Markdown 转换，fit 模式自动剥离 nav/header/footer/aside 噪声（crawl4ai fit-markdown 等价实现）
@@ -137,10 +146,11 @@ cd app/native-server && node dist/scripts/register-dev.js
 - **chrome_interact_index**：紧凑 1-based 索引直点 + 阻尼滑翔拖拽（end/steps/holdMs/dnd），内置中心优先遮挡补偿与 CDP 送达回查校验
 - **chrome_fill_index**：1-based 索引表单快速填充，输入前自动聚焦并派发真实 input/change 事件。
 - **chrome_fill_form / chrome_fill_or_select**：针对复杂多字段表单的批量预填与选择器兼容交互。
-- **增强批处理流水线 (chrome_batch_actions)**：原子级无往返执行多步交互，支持 `type: 'assert'` 校验状态与 `type: 'extract'` 提取页面字段，单次往返跑通“填表 -> 提交 -> 校验 -> 取数”全流程
+- **增强批处理流水线 (chrome_batch_actions)**：原子级无往返执行多步交互，支持 `type: 'assert'` 校验状态、`type: 'extract'` 提取页面字段与跨域 iframe 坐标转换校验，单次往返跑通“填表 -> 提交 -> 校验 -> 取数”全流程
 - **chrome_burst_interact**：超低延迟连发点击与键盘序列（对抗动态画布/Canvas 游戏/即时移动目标）。
-- **chrome_computer**：16 种底层原生鼠标与键盘复合动作，支持 `dwellMs` 按压时长防瞬击拦截。
+- **chrome_computer**：16 种底层原生鼠标与键盘复合动作，支持 `dwellMs` 按压时长防瞬击拦截；坐标点击直接派发 CDP 原生可信事件（`isTrusted: true`）。
 - **chrome_keyboard**：物理键盘按键派发与组合快捷键触发（Control+A, Enter 等）。
+- **跨平台 macOS 按键位掩码**：Command (Meta) 快捷键位掩码严格对齐 `mod = 4`，杜绝 macOS 环境下快捷键失灵。
 - **chrome_upload_file**：无头文件上传注入（规避系统原生文件选择对话框死锁）。
 - **chrome_handle_dialog**：自动捕获并响应浏览器 `alert`、`confirm`、`prompt` 原生对话框。
 - **1:1 复刻 ChatGPT 官方扩展虚拟鼠标 (Agent Cursor)**：封闭 Shadow DOM 隔离渲染，贝塞尔圆弧飞行、弹簧速度拉伸形变、微光尾迹、真实用户接管瞬时淡出
@@ -154,7 +164,7 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 <br/>
 
-- **chrome_screenshot**：零落盘高清截图管线（>450KB 智能降质内联，右/下边缘黑边自愈重拍，支持按 `assetIndex` 定向截取媒体）。
+- **chrome_screenshot**：零落盘高清截图管线（>450KB 智能降质内联，右/下边缘黑边自愈重拍，支持按 `assetIndex` 定向截取媒体）；后台静默 Tab 强制走离屏 CDP `Page.captureScreenshot(fromSurface: true)`，彻底杜绝前台窗口画面泄露与 rAF 卡死。
 - **chrome_smart_scroll**：智能感知页面或特定可滚动容器的最优滚动位置，返回精确的 `pages_up`/`pages_down` 剩余翻页数与溢出状态。
 - **chrome_scroll_to_text**：基于 TreeWalker 的语义文本定位滚动，毫秒级将目标文本平滑滚至视口正中。
 - **chrome_scroll**：底层物理滚轮派发（支持上下左右像素距离或按整页倍数滚动）。
@@ -182,16 +192,16 @@ cd app/native-server && node dist/scripts/register-dev.js
 <br/>
 
 - **chrome_console**：实时捕获页面控制台输出（`log`、`warn`、`error`、`unhandledrejection`），排查前端报错。
-- **chrome_javascript**：在当前页面上下文中安全执行任意 JavaScript 代码片段并取回返回值。
+- **chrome_javascript**：在当前页面上下文中安全执行任意 JavaScript 代码片段，支持顶级 await 与单表达式自动包装 `return (...)` 取回返回值。
 - **chrome_cdp_execute**：原生 CDP 穿透逃生通道，支持多态 Target 路由，内置超时自动脱钩（Anti-Hang Detach Guard）保护。
 - **性能分析全套 (Performance Tracing)**：
   - `performance_start_trace`：启动 Chromium 渲染与运行性能采样；
   - `performance_stop_trace`：结束采样并导出 DevTools Timeline 追踪数据；
   - `performance_analyze_insight`：自动诊断首屏耗时、长任务（Long Tasks）、CLS 与交互延迟瓶颈。
-- **人机协同打断浮条 (chrome_request_human_intervention)**：遭遇 2FA 验证码、滑块或支付时自动唤起毛玻璃通知浮条，支持用户在页面一键或按 Enter 恢复自动化
+- **人机协同打断浮条 (chrome_request_human_intervention)**：遭遇 2FA 验证码、滑块或支付时自动唤起毛玻璃通知浮条，纯 DOM 原生 API 构建（免疫 DOM XSS），支持用户在页面一键或按 Enter 恢复自动化。
 - **会话操作回滚 (chrome_undo_last_action)**：5 步容量环形操作栈，支持跳转撤销与表单原值反向回填
 - **逃生通道 (chrome_cdp_execute)**：对齐工业级 CDP 穿透标准，支持多态 Target 路由与超时自动解挂防挂死
-- **`chrome_tool_docs`**：动态工具手册发现与会话级热插拔装配（`activateForSession: true`）。
+- **`chrome_tool_docs`**：动态工具手册发现与会话级热插拔装配（`activateForSession: true`），覆盖 8 大工具分类（`navigate`, `perceive`, `act`, `observe`, `manage`, `diagnose`, `network`, `crawl`），全面兼容 HTTP/SSE 与 Stdio 模式。
 
 </details>
 
@@ -202,24 +212,24 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 ## 52 个工具 × 3 档 Profile
 
-| Profile | 环境变量 | 工具数 | Schema 开销 | 场景 |
-| --- | --- | --- | --- | --- |
-| full | 不设置（默认） | 52 | ~19.5k tokens | 完整底层穿透、诊断与数据管理 |
-| core | `CHROME_MCP_TOOL_PROFILE=core` | 24 | ~11.5k tokens | 核心高频利器（DOM 索引、表单、视觉、Grep 定向检索） |
-| crawl | `CHROME_MCP_TOOL_PROFILE=crawl` | 15 | ~5.8k tokens | 极速批量网页抓取与数据提取 |
+| Profile | 环境变量                        | 工具数 | Schema 开销   | 场景                                                |
+| ------- | ------------------------------- | ------ | ------------- | --------------------------------------------------- |
+| full    | 不设置（默认）                  | 52     | ~19.5k tokens | 完整底层穿透、诊断与数据管理                        |
+| core    | `CHROME_MCP_TOOL_PROFILE=core`  | 24     | ~11.5k tokens | 核心高频利器（DOM 索引、表单、视觉、Grep 定向检索） |
+| crawl   | `CHROME_MCP_TOOL_PROFILE=crawl` | 15     | ~5.8k tokens  | 极速批量网页抓取与数据提取                          |
 
-工具分组：导航与标签页（7）· 页面感知（7）· 交互操作（12）· 观察与滚动（6）· 数据管理（11）· 性能与诊断（9）——完整清单见 [docs/TOOLS.md](./docs/TOOLS.md)。
+> **提示**：当前 Profile 隐藏的工具可通过 `chrome_tool_docs({ category: "<category>", activateForSession: true })` 即时动态激活，无需重启 MCP 服务（支持 HTTP/SSE 与 Stdio 两种通信通道）。工具分类详见 [docs/TOOLS.md](./docs/TOOLS.md)。
 
 </details>
 
 ## 环境要求
 
-| 依赖 | 版本 | 说明 |
-| --- | --- | --- |
-| Chrome / Edge | ≥ 120（MV3） | 你日常使用的浏览器即可，无需独立实例 |
-| Node.js | ≥ 20（建议 22 LTS） | 原生宿主与构建 |
-| pnpm | ≥ 9（lockfile v9） | 包管理器 |
-| 操作系统 | Windows / macOS / Linux | 原生宿主注册路径自动适配 |
+| 依赖          | 版本                    | 说明                                 |
+| ------------- | ----------------------- | ------------------------------------ |
+| Chrome / Edge | ≥ 120（MV3）            | 你日常使用的浏览器即可，无需独立实例 |
+| Node.js       | ≥ 20（建议 22 LTS）     | 原生宿主与构建                       |
+| pnpm          | ≥ 9（lockfile v9）      | 包管理器                             |
+| 操作系统      | Windows / macOS / Linux | 原生宿主注册路径自动适配             |
 
 ## 安装
 
@@ -275,11 +285,21 @@ AI Agent 客户端 (Claude Desktop / Cursor / Codex / Cline)
 本地原生宿主 (Fastify 原生进程, 127.0.0.1:12306)
         │
         ▼ (Chrome Native Messaging 原生管道, <= 1MB 帧保护)
-BrowserClaw 扩展 MV3 Service Worker
+BrowserClaw 扩展 MV3 Service Worker (chrome.storage.session 持久化)
         │
-        ▼ (隔离世界 Inpage Engine 与直连 CDP 通道)
+        ▼ (隔离世界 Inpage Engine 与直连 CDP 域计数通道)
 活跃 Chrome 浏览器会话 (isTrusted: true, 专属无孤儿标签分组)
 ```
+
+### 核心架构与安全加固基线
+
+- **MV3 Service Worker 状态持久化**：`SessionTabAffinityManager`（标签亲缘）、`TabGroupManager`（分组生命周期）与 `TabFaviconManager`（Favicon 还原）全面接入 `chrome.storage.session`，抵御 MV3 30 秒后台休眠，Worker 重启后无损恢复。
+- **CDP 域级别引用计数**：`CDPSessionManager` 精确管理各工具对 CDP 域的使用计数，核心域（`Page`, `Network`）常驻不关，彻底根治并发任务中途 disable 导致后续监听器崩溃的竞态难题。
+- **调试器防挂死脱钩保护**：`timeout-guard` 超时守护直通物理脱钩（`chrome.debugger.detach`），遇页面卡死迅速恢复，杜绝会话死锁。
+- **消息发送方权限鉴权**：`chrome.runtime.onMessage` 严格拒绝来自 content script（`_sender.tab`）或外部扩展的消息，杜绝恶意网页脚本提权调用工具。
+- **DOM XSS 防护与跨 Frame 隔离**：`agent-cursor.content.ts` 纯 DOM 原生 API 节点构建 (`createElement`/`createTextNode`) 消除 `innerHTML` 模板注入；单 Frame 独立执行上下文结合 `inPageReindexFrame` 杜绝子 Frame 污染主 Frame 索引与全局 WeakRef Map。
+- **后台离屏 CDP 截图防护**：非激活 Tab 强制走 CDP `Page.captureScreenshot(fromSurface: true)`，杜绝截取用户当前屏幕造成隐私外泄，杜绝 rAF 挂起。
+- **协议对齐与安全控标**：`chrome_close_tabs` 未传参数关闭活跃 Tab 必须显式传 `confirm: true` 或带 `sessionId` 防误关；`chrome_javascript` 单表达式自动补齐 `return (...)`；`chrome_get_web_content` 采用 `onUpdated`/`onRemoved` 事件驱动等待页面加载。
 
 扩展 popup 提供连接开关与 agent 控制总开关（关闭后所有工具调用被拒绝）。
 
@@ -291,24 +311,24 @@ pnpm typecheck        # 全仓 tsc --noEmit（extension 用 vue-tsc）
 pnpm lint && pnpm format
 ```
 
-| 测试 | 命令 | 数量 |
-| --- | --- | --- |
-| 扩展单测（vitest） | `pnpm --filter chrome-mcp-server test` | 125 项全部通过 (100%) |
-| 仓库回归（node:test） | `node --experimental-strip-types --test test/boost-*.test.ts test/p0-p1-hardening.test.ts` | 129 |
-| E2E（4 层） | `pnpm test` | 153 |
+| 测试                  | 命令                                                                                       | 数量                                         |
+| --------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------- |
+| 扩展单测（vitest）    | `pnpm --filter chrome-mcp-server test`                                                     | **139 项全部通过 (100% 覆盖 26 个测试套件)** |
+| 仓库回归（node:test） | `node --experimental-strip-types --test test/boost-*.test.ts test/p0-p1-hardening.test.ts` | 129 项通过 (100%)                            |
+| 原生宿主单测（Jest）  | `pnpm --filter mcp-chrome-bridge test`                                                     | **30 项全部通过 (100%)**                     |
 
 修改扩展代码后需在 chrome://extensions 重载扩展。工具文档重新生成：`node scripts/gen-tools-doc.mjs`。
 
 ## 文档地图
 
-| 文档 | 内容 |
-| --- | --- |
-| [skill/SKILL.md](./skill/SKILL.md) | agent 操作手册：双引擎工作流、52 工具梯次升级协议、微模式实践 |
-| [docs/TOOLS.md](./docs/TOOLS.md) | 52 工具参数参考（schema 自动生成） |
-| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 架构与数据流（mermaid） |
-| [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) | 报错速查与连接排查 |
-| [AGENT_CONFIG_GUIDE.md](./AGENT_CONFIG_GUIDE.md) | 各 MCP 客户端接入配置 |
-| [TEST_INFRA.md](./TEST_INFRA.md) | E2E 测试基础设施规格 |
+| 文档                                                 | 内容                                                          |
+| ---------------------------------------------------- | ------------------------------------------------------------- |
+| [skill/SKILL.md](./skill/SKILL.md)                   | agent 操作手册：双引擎工作流、52 工具梯次升级协议、微模式实践 |
+| [docs/TOOLS.md](./docs/TOOLS.md)                     | 52 工具参数参考（schema 自动生成）                            |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)       | 架构与数据流（mermaid）                                       |
+| [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) | 报错速查与连接排查                                            |
+| [AGENT_CONFIG_GUIDE.md](./AGENT_CONFIG_GUIDE.md)     | 各 MCP 客户端接入配置                                         |
+| [TEST_INFRA.md](./TEST_INFRA.md)                     | E2E 测试基础设施规格                                          |
 
 ---
 

@@ -203,6 +203,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               let y: number | undefined;
               let coords: any;
 
+              let targetFrameId = 0;
               const directCoord = item.coordinate ?? (item as any).coordinates;
               if (directCoord && typeof directCoord.x === 'number' && typeof directCoord.y === 'number') {
                 x = directCoord.x;
@@ -213,7 +214,10 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 if (!coords?.success) {
                   const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageGetElementCoordinates', [item.index]);
                   const match = frameResults.find((r) => r.result?.success);
-                  if (match?.result) coords = match.result;
+                  if (match?.result) {
+                    coords = match.result;
+                    targetFrameId = match.frameId ?? 0;
+                  }
                 }
                 if (!coords?.success || typeof coords.x !== 'number' || typeof coords.y !== 'number') {
                   throw new Error(
@@ -233,38 +237,71 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               const targetX = x;
               const targetY = y;
 
-              await cdpSessionManager.withSession(tabId, 'batch-actions-mouse', async () => {
-                await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                  type: 'mouseMoved',
+              let isCrossOriginSubframe = false;
+              if (
+                targetFrameId !== 0 &&
+                !coords?.frameOffsetX &&
+                !coords?.frameOffsetY
+              ) {
+                try {
+                  const mainOrigin = (await executeInPage({ tabId }, 'inPageGetFrameOrigin', []))?.[0]?.result;
+                  const frameOrigin = (await executeInPage({ tabId, frameIds: [targetFrameId] }, 'inPageGetFrameOrigin', []))?.[0]?.result;
+                  isCrossOriginSubframe = !mainOrigin || !frameOrigin || mainOrigin !== frameOrigin;
+                } catch {
+                  isCrossOriginSubframe = true;
+                }
+              }
+
+              if (isCrossOriginSubframe) {
+                const frameResults = await executeInPage({ tabId, frameIds: [targetFrameId] }, 'inPageInteractIndex', [item.index, item.type]);
+                const frameOutcome = frameResults?.[0]?.result;
+                if (!frameOutcome?.success) {
+                  throw new Error(
+                    frameOutcome?.error || `Failed to ${item.type} index [${item.index}] in cross-origin frame ${targetFrameId}`,
+                  );
+                }
+                stepOutput = {
                   x: targetX,
                   y: targetY,
+                  [item.type === 'click' ? 'clicked' : 'hovered']: true,
+                  tagName: coords?.tagName,
+                  frameId: targetFrameId,
+                  method: 'synthetic_cross_origin_frame',
+                };
+              } else {
+                await cdpSessionManager.withSession(tabId, 'batch-actions-mouse', async () => {
+                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mouseMoved',
+                    x: targetX,
+                    y: targetY,
+                  });
+
+                  if (item.type === 'click') {
+                    await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
+                      type: 'mousePressed',
+                      x: targetX,
+                      y: targetY,
+                      button: 'left',
+                      clickCount: 1,
+                    });
+                    await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
+                      type: 'mouseReleased',
+                      x: targetX,
+                      y: targetY,
+                      button: 'left',
+                      clickCount: 1,
+                    });
+                  }
                 });
 
-                if (item.type === 'click') {
-                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                    type: 'mousePressed',
-                    x: targetX,
-                    y: targetY,
-                    button: 'left',
-                    clickCount: 1,
-                  });
-                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                    type: 'mouseReleased',
-                    x: targetX,
-                    y: targetY,
-                    button: 'left',
-                    clickCount: 1,
-                  });
-                }
-              });
-
-              stepOutput = {
-                x: targetX,
-                y: targetY,
-                [item.type === 'click' ? 'clicked' : 'hovered']: true,
-                tagName: coords?.tagName,
-                text: coords?.text,
-              };
+                stepOutput = {
+                  x: targetX,
+                  y: targetY,
+                  [item.type === 'click' ? 'clicked' : 'hovered']: true,
+                  tagName: coords?.tagName,
+                  text: coords?.text,
+                };
+              }
               break;
             }
 
@@ -281,16 +318,35 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               // subsequent insertText into the previous box.
               let isKnownEmpty = false;
 
+              let targetFrameId = 0;
               try {
                 const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [item.index]);
                 coords = res?.[0]?.result;
                 if (!coords?.success) {
                   const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageGetElementCoordinates', [item.index]);
                   const match = frameResults.find((r) => r.result?.success);
-                  if (match?.result) coords = match.result;
+                  if (match?.result) {
+                    coords = match.result;
+                    targetFrameId = match.frameId ?? 0;
+                  }
                 }
 
-                if (coords?.success && typeof coords.x === 'number' && typeof coords.y === 'number') {
+                let isCrossOriginSubframe = false;
+                if (
+                  targetFrameId !== 0 &&
+                  !coords?.frameOffsetX &&
+                  !coords?.frameOffsetY
+                ) {
+                  try {
+                    const mainOrigin = (await executeInPage({ tabId }, 'inPageGetFrameOrigin', []))?.[0]?.result;
+                    const frameOrigin = (await executeInPage({ tabId, frameIds: [targetFrameId] }, 'inPageGetFrameOrigin', []))?.[0]?.result;
+                    isCrossOriginSubframe = !mainOrigin || !frameOrigin || mainOrigin !== frameOrigin;
+                  } catch {
+                    isCrossOriginSubframe = true;
+                  }
+                }
+
+                if (!isCrossOriginSubframe && coords?.success && typeof coords.x === 'number' && typeof coords.y === 'number') {
                   const targetX = coords.x;
                   const targetY = coords.y;
                   isKnownEmpty = typeof coords.value === 'string' && coords.value === '';
@@ -324,7 +380,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                         const platform = await chrome.runtime.getPlatformInfo();
                         isMac = platform?.os === 'mac';
                       } catch {}
-                      const mod = isMac ? 8 : 2; // Meta or Control
+                      const mod = isMac ? 4 : 2; // Meta or Control
                       await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
                         type: 'rawKeyDown',
                         modifiers: mod,
@@ -408,7 +464,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 const platform = await chrome.runtime.getPlatformInfo();
                 isMac = platform?.os === 'mac';
               } catch {}
-              const selectAllMod = isMac ? 8 : 2;
+              const selectAllMod = isMac ? 4 : 2;
 
               await cdpSessionManager.withSession(tabId, 'batch-actions-fill-form', async () => {
                 for (let f = 0; f < fields.length; f++) {

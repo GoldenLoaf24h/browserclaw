@@ -610,35 +610,49 @@ function initAgentCursor() {
           'animation: codexSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
         ].join('; ');
 
-        banner.innerHTML = `
-          <style>
-            @keyframes codexSlideIn {
-              from { opacity: 0; transform: translate(-50%, -20px) scale(0.96); }
-              to { opacity: 1; transform: translate(-50%, 0) scale(1); }
-            }
-            @keyframes codexPulse {
-              0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 156, 255, 0.7); }
-              70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(51, 156, 255, 0); }
-              100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 156, 255, 0); }
-            }
-          </style>
-          <div style="width: 10px; height: 10px; border-radius: 50%; background: #339cff; animation: codexPulse 1.8s infinite;"></div>
-          <div style="font-weight: 500; max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-            <span style="color: #93c5fd; font-weight: 600;">Agent 需人工协助：</span>${reason}
-          </div>
-          <button id="codex-btn-continue" style="
-            background: #339cff;
-            color: #ffffff;
-            border: none;
-            padding: 6px 14px;
-            border-radius: 9999px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            outline: none;
-          ">完成并继续 (Enter)</button>
+        const style = document.createElement('style');
+        style.textContent = `
+          @keyframes codexSlideIn {
+            from { opacity: 0; transform: translate(-50%, -20px) scale(0.96); }
+            to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+          }
+          @keyframes codexPulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 156, 255, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(51, 156, 255, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 156, 255, 0); }
+          }
         `;
+        banner.appendChild(style);
+
+        const pulseDot = document.createElement('div');
+        pulseDot.style.cssText = 'width: 10px; height: 10px; border-radius: 50%; background: #339cff; animation: codexPulse 1.8s infinite; flex-shrink: 0;';
+        banner.appendChild(pulseDot);
+
+        const textContainer = document.createElement('div');
+        textContainer.style.cssText = 'font-weight: 500; max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+        const labelSpan = document.createElement('span');
+        labelSpan.style.cssText = 'color: #93c5fd; font-weight: 600;';
+        labelSpan.textContent = 'Agent 需人工协助：';
+        textContainer.appendChild(labelSpan);
+        textContainer.appendChild(document.createTextNode(reason));
+        banner.appendChild(textContainer);
+
+        const continueBtn = document.createElement('button');
+        continueBtn.id = 'codex-btn-continue';
+        continueBtn.style.cssText = [
+          'background: #339cff',
+          'color: #ffffff',
+          'border: none',
+          'padding: 6px 14px',
+          'border-radius: 9999px',
+          'font-size: 12px',
+          'font-weight: 600',
+          'cursor: pointer',
+          'transition: all 0.2s',
+          'outline: none',
+        ].join('; ');
+        continueBtn.textContent = '完成并继续 (Enter)';
+        banner.appendChild(continueBtn);
 
         shadow.appendChild(banner);
 

@@ -52,8 +52,12 @@ export class InspectMediaTool extends BaseBrowserToolExecutor {
           try {
             let el: Element | null = null;
             if (typeof targetIdx === 'number') {
-              const isolatedMap = (window as any)[Symbol.for('BROWSERCLAW_ISOLATED_INDEX_MAP')] || (window as any).__MCP_INDEX_MAP__;
-              el = isolatedMap?.get(targetIdx) || null;
+              const isolatedMap =
+                (window as any)[Symbol.for('__browser_use_isolated_index_map__')] ||
+                (window as any)[Symbol.for('BROWSERCLAW_ISOLATED_INDEX_MAP')] ||
+                (window as any).__MCP_INDEX_MAP__;
+              const raw = isolatedMap?.get(targetIdx);
+              el = raw?.deref ? (raw.deref() ?? null) : (raw || null);
               if (!el) {
                 el = document.querySelector(`[data-mcp-index="${targetIdx}"]`);
               }

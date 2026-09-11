@@ -28,6 +28,7 @@ export class TabFaviconManager {
   // Map of tabId -> original favicon URL (or null if the page had no favicon)
   private originalFavicons: Map<number, string | null> = new Map();
   private listenersRegistered = false;
+  private static readonly STORAGE_KEY = 'tab_favicon_manager_original_favicons';
 
   public static getInstance(): TabFaviconManager {
     if (!TabFaviconManager.instance) {
@@ -38,6 +39,35 @@ export class TabFaviconManager {
 
   constructor() {
     this.registerEventListeners();
+    void this.loadFromStorage();
+  }
+
+  private async loadFromStorage(): Promise<void> {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage?.session?.get) {
+        const data = await chrome.storage.session.get(TabFaviconManager.STORAGE_KEY);
+        if (data && data[TabFaviconManager.STORAGE_KEY] && typeof data[TabFaviconManager.STORAGE_KEY] === 'object') {
+          for (const [tidStr, val] of Object.entries(data[TabFaviconManager.STORAGE_KEY])) {
+            const tid = parseInt(tidStr, 10);
+            if (!isNaN(tid) && !this.originalFavicons.has(tid)) {
+              this.originalFavicons.set(tid, (val as string | null) ?? null);
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  private async saveToStorage(): Promise<void> {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage?.session?.set) {
+        const obj: Record<string, string | null> = {};
+        for (const [tid, val] of this.originalFavicons.entries()) {
+          obj[String(tid)] = val;
+        }
+        await chrome.storage.session.set({ [TabFaviconManager.STORAGE_KEY]: obj });
+      }
+    } catch {}
   }
 
   public registerEventListeners(): void {
@@ -47,6 +77,7 @@ export class TabFaviconManager {
     if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
       chrome.tabs.onRemoved.addListener((tabId) => {
         this.originalFavicons.delete(tabId);
+        void this.saveToStorage();
       });
     }
   }
@@ -68,6 +99,7 @@ export class TabFaviconManager {
       // If already recorded, do not overwrite original favicon
       if (!this.originalFavicons.has(tabId)) {
         this.originalFavicons.set(tabId, tab.favIconUrl ?? null);
+        void this.saveToStorage();
       }
 
       const agentDataUrl = AGENT_FAVICON_DATA_URL;
@@ -107,6 +139,7 @@ export class TabFaviconManager {
 
     const origUrl = this.originalFavicons.get(tabId);
     this.originalFavicons.delete(tabId);
+    void this.saveToStorage();
 
     try {
       await chrome.scripting.executeScript({

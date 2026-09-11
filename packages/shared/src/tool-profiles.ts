@@ -107,16 +107,16 @@ export const TOOL_CATEGORIES: Record<string, string> = {
     'chrome_attach_tab',
     'chrome_detach_tab',
     'get_windows_and_tabs',
-  ].join(" "),
+  ].join(' '),
   perceive: [
     'chrome_read_dom',
     'chrome_get_markdown',
-  'chrome_inspect_media',
+    'chrome_inspect_media',
     'chrome_grep',
     'chrome_get_web_content',
     'chrome_get_links',
     'chrome_get_dropdown_options',
-  ].join(" "),
+  ].join(' '),
   act: [
     'chrome_interact_index',
     'chrome_fill_index',
@@ -131,14 +131,16 @@ export const TOOL_CATEGORIES: Record<string, string> = {
     'chrome_burst_interact',
     'chrome_computer',
     'chrome_cdp_execute',
-  ].join(" "),
+    'chrome_request_human_intervention',
+    'chrome_undo_last_action',
+  ].join(' '),
   observe: [
     'chrome_screenshot',
     'chrome_scroll',
     'chrome_smart_scroll',
     'chrome_scroll_to_text',
     'chrome_console',
-  ].join(" "),
+  ].join(' '),
   manage: [
     'chrome_history',
     'chrome_bookmark_search',
@@ -149,7 +151,21 @@ export const TOOL_CATEGORIES: Record<string, string> = {
     'chrome_tab_group_list',
     'chrome_tab_group_ungroup',
     'chrome_tab_group_close',
-  ].join(" "),
+  ].join(' '),
+  diagnose: [
+    'chrome_javascript',
+    'chrome_storage',
+    'chrome_intercept_api',
+    'chrome_console',
+    'performance_start_trace',
+    'performance_stop_trace',
+    'performance_analyze_insight',
+  ].join(' '),
+  network: [
+    'chrome_network_request',
+    'chrome_network_capture',
+  ].join(' '),
+  crawl: Array.from(CRAWL_TOOL_NAMES).join(' '),
 };
 
 /** Filter the schema list for a profile. Unknown names are simply not exposed. */

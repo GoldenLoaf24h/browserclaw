@@ -46,9 +46,10 @@ On Windows, however, all existing approaches break down due to low-level OS and 
 
 Built on an industrial-grade three-tier architecture (WXT Vue 3 MV3 Extension + Fastify Native Host + Shared Schema) connected via Chrome Native Messaging, BrowserClaw exposes 52 schema-validated MCP tools. Unlike detached headless sandboxes (Playwright / Puppeteer), it lives inside your daily browser — keeping your active logins, cookies, enterprise SSO sessions, and extensions intact, while guaranteeing every dispatched action is a native trusted browser event (`isTrusted=true`).
 
-
 ### 💡 Standing on the Shoulders of Giants (References & Prior Art)
+
 BrowserClaw builds upon and synthesizes the cutting-edge insights from leading browser automation projects:
+
 - **[hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)**: The foundational Chrome MV3 extension + Native Messaging IPC bridge architecture.
 - **[browser-use/browser-use](https://github.com/browser-use/browser-use)**: Token-efficient DOM-first indexing, human-like execution workflows, and high-performance action serialization.
 - **[browseros-ai/BrowserOS](https://github.com/browseros-ai/BrowserOS)**: Autonomous DOM diffing (`includeDelta`), millisecond element grep (`chrome_grep`), and multi-step pipeline assertions.
@@ -61,27 +62,33 @@ BrowserClaw builds upon and synthesizes the cutting-edge insights from leading b
 > **Total User Effort**: Under 1 minute. Let your AI agent handle the environment configuration, while you download the prebuilt extension into Chrome.
 
 ### Step 1. Hand it off to your AI Agent
+
 Hand this project folder to your AI assistant (Claude Code, Cursor, Codex, Windsurf, Cline) or ask it:
-> *"Please set up BrowserClaw MCP server for me: https://github.com/GoldenLoaf24h/browserclaw"*
+
+> _"Please set up BrowserClaw MCP server for me: https://github.com/GoldenLoaf24h/browserclaw"_
 
 Your agent will run the local bridge setup:
+
 ```bash
 git clone https://github.com/GoldenLoaf24h/browserclaw.git
 cd browserclaw
 pnpm install && pnpm build
 cd app/native-server && node dist/scripts/register-dev.js
 ```
-*(Bearer token is automatically generated under `~/.chrome-mcp/bridge-token`; HTTP endpoint listens at `http://127.0.0.1:12306/mcp`)*
+
+_(Bearer token is automatically generated under `~/.chrome-mcp/bridge-token`; HTTP endpoint listens at `http://127.0.0.1:12306/mcp`)_
 
 ### Step 2. Install Extension in Chrome (Your Only Manual Step)
+
 1. Download **[browserclaw-extension-latest.zip](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** (~350 KB, clean prebuilt runtime).
 2. Unzip it to a permanent local folder (e.g., `browserclaw-extension`).
 3. In Chrome or Edge, open `chrome://extensions/` and toggle on **Developer mode** in the top-right corner.
 4. Click **Load unpacked** (top-left) and select the unzipped folder.
 
 ### Step 3. (AI Proactive Setup) Silent Debugger Mode
+
 > **Proactive Agent Guideline**: During environment setup, the AI assistant should proactively ask the user:
-> *"Would you like me to enable Chrome's native silent debugging flag (`--silent-debugger-extension-api`)? This completely suppresses the top "BrowserClaw is debugging this browser" infobar and prevents any viewport shifting or jitter during automation. If you'd like, I can configure your Chrome shortcut for you automatically."*
+> _"Would you like me to enable Chrome's native silent debugging flag (`--silent-debugger-extension-api`)? This completely suppresses the top "BrowserClaw is debugging this browser" infobar and prevents any viewport shifting or jitter during automation. If you'd like, I can configure your Chrome shortcut for you automatically."_
 >
 > If the user agrees, append `--silent-debugger-extension-api` to the Chrome launch shortcut or startup command.
 
@@ -98,7 +105,7 @@ Done! Your AI agent now possesses seamless, authenticated control over your brow
 
 - **`chrome_navigate`**: Navigate to any URL, refresh page, or navigate history (`"back"` / `"forward"`). Native `background: true` support guarantees tabs open silently in background without stealing foreground user focus.
 - **`chrome_switch_tab`**: Switch active tab or bind session tab affinity without UI interference.
-- **`chrome_close_tabs`**: Close specific tabs by ID array or close all tabs matching a target URL pattern.
+- **`chrome_close_tabs`**: Close specific tabs by ID array, close tabs matching a target URL pattern, or safely close active/session tabs (requires `confirm: true` or active session affinity to prevent accidental tab destruction).
 - **`chrome_move_tab`**: Move tabs to new indices or detach/transfer tabs across browser windows.
 - **`get_windows_and_tabs`**: Enumerate all open Chrome windows and tabs with IDs, active state, and titles.
 - **Full Tab Group Lifecycle (`TabGroupManager`)**:
@@ -117,7 +124,8 @@ Done! Your AI agent now possesses seamless, authenticated control over your brow
 <br/>
 
 - **`chrome_read_dom`**: Pruned DOM tree with 1-based element indices, real-time occlusion detection (`isOccluded`/`occludedBy`), and safe click points; typical 85%+ token compression ratio; supports `deltaOnly: true` for incremental fingerprint updates (< 200 tokens).
-- **`chrome_grep`**: Lightweight targeted search without dumping the whole DOM. Instantly returns matching 1-based indices and CSS selectors for interactive elements, full DOM nodes, or visible text lines (< 150 tokens).
+- **`chrome_grep`**: Lightweight targeted search without dumping the whole DOM. Instantly returns matching 1-based indices and CSS selectors for interactive elements, full DOM nodes, or visible text lines (< 150 tokens); features multi-frame tree traversal with hierarchical index remapping and property querying across `placeholder`, `aria-label`, and `value`.
+- **`chrome_get_web_content`**: Fetch web page content with event-driven page load completion waiting (`tabs.onUpdated` / `tabs.onRemoved`) and optional CSS scoping.
 - **`assets[]` Visual Media Index**: Automatically catalogues `<img>`, `<canvas>`, `<video>`, and CSS background images with viewport bounding boxes.
 - **`chrome_inspect_media`**: High-fidelity targeted media extraction. Extracts raw, lossless resolution bitmaps from Canvas/Images directly in-memory, or captures 200%+ super-sampled close-ups for noisy captchas and complex financial charts.
 - **`chrome_get_markdown`**: Clean structural Markdown conversion with `fit: true` noise stripping (removes headers, footers, navigation, and sidebar clutter).
@@ -137,10 +145,11 @@ Done! Your AI agent now possesses seamless, authenticated control over your brow
 - **`chrome_interact_index`**: 1-based index clicks and friction-drag (`end`/`steps`/`holdMs`/`dnd`) with center-first occlusion compensation and CDP delivery verification (`deliveryVerified: true`).
 - **`chrome_fill_index`**: Fast form filling by 1-based index, auto-focusing and dispatching trusted `input` and `change` events.
 - **`chrome_fill_form` / `chrome_fill_or_select`**: Multi-field batch filling and dropdown selection for legacy or non-indexed selectors.
-- **Enhanced Pipeline (`chrome_batch_actions`)**: Atomic multi-action pipeline with zero network lag between steps. Supports `type: 'assert'` for runtime state validation and `type: 'extract'` for in-pipeline data extraction into `extractedData`.
+- **Enhanced Pipeline (`chrome_batch_actions`)**: Atomic multi-action pipeline with zero network lag between steps. Supports `type: 'assert'` for runtime state validation, `type: 'extract'` for in-pipeline data extraction into `extractedData`, and cross-origin iframe coordinate translation guards.
 - **`chrome_burst_interact`**: Ultra-low latency burst clicks and keypress sequences for dynamic canvas games and moving targets.
-- **`chrome_computer`**: 16 native mouse and keyboard actions with `dwellMs` hold duration to defeat instant-click bot guards.
+- **`chrome_computer`**: 16 native mouse and keyboard actions with `dwellMs` hold duration to defeat instant-click bot guards; coordinate `left_click` directly dispatches native CDP mouse events (`Input.dispatchMouseEvent`, `isTrusted: true`).
 - **`chrome_keyboard`**: Physical keyboard keypress dispatch with modifier combos (Control+A, Enter, Tab).
+- **Cross-Platform macOS Key Bitmask**: Command (Meta) key bitmask accurately aligned to `mod = 4` across all batch actions and form fills.
 - **`chrome_upload_file`**: Headless file upload injection directly into file input elements without modal deadlocks.
 - **`chrome_handle_dialog`**: Automatically intercept and respond to native `alert`, `confirm`, and `prompt` JavaScript dialogs.
 - **1:1 ChatGPT Official Agent Cursor**: Isolated closed Shadow DOM overlay, bezier arc motion, velocity stretch springs, luminous blue trail, and instant fade-out upon physical human takeover.
@@ -153,7 +162,7 @@ Done! Your AI agent now possesses seamless, authenticated control over your brow
 
 <br/>
 
-- **`chrome_screenshot`**: Zero-disk screenshot pipeline (>450KB auto-degrades to inline thumbnail, bottom/right black-bar auto-recapture, and targeted image extraction via `assetIndex`).
+- **`chrome_screenshot`**: Zero-disk screenshot pipeline (>450KB auto-degrades to inline thumbnail, bottom/right black-bar auto-recapture, and targeted image extraction via `assetIndex`); uses offscreen CDP `Page.captureScreenshot` (`fromSurface: true`) for background tabs to prevent active window leaks and eliminate rAF hangs.
 - **`chrome_smart_scroll`**: Intelligent container overflow detection; scrolls the most prominent scrollable element and calculates accurate `pages_up` / `pages_down` remaining page counts.
 - **`chrome_scroll_to_text`**: TreeWalker semantic search scrolling; smoothly centers specific target text into viewport view.
 - **`chrome_scroll`**: Direct physical wheel scrolling by pixel deltas or fractional viewport pages.
@@ -181,15 +190,15 @@ Done! Your AI agent now possesses seamless, authenticated control over your brow
 <br/>
 
 - **`chrome_console`**: Real-time console log monitoring; captures `log`, `warn`, `error`, and unhandled promise rejections.
-- **`chrome_javascript`**: Secure in-page JavaScript evaluation with immediate return value serialization.
+- **`chrome_javascript`**: Secure in-page JavaScript evaluation with top-level await and automatic single-expression `return (...)` wrapping.
 - **`chrome_cdp_execute`**: Raw CDP escape hatch with polymorphic Target routing and auto-detach timeout guard.
 - **Performance Tracing Suite**:
   - `performance_start_trace`: Start high-resolution timeline tracing.
   - `performance_stop_trace`: Stop tracing and export DevTools timeline trace logs.
   - `performance_analyze_insight`: Diagnose Core Web Vitals, Long Tasks, CLS, and FID bottlenecks.
-- **Human Takeover Banner (`chrome_request_human_intervention`)**: Renders a frosted-glass top banner during 2FA, SMS verification, or slider captchas; resumes automatically on button click or `Enter`.
+- **Human Takeover Banner (`chrome_request_human_intervention`)**: Renders a frosted-glass top banner during 2FA, SMS verification, or slider captchas with programmatic DOM construction (immune to DOM XSS); resumes automatically on button click or `Enter`.
 - **Action Snapshots & Rollback (`chrome_undo_last_action`)**: 5-step circular history stack supporting automatic page back-navigation and form input value reversal.
-- **`chrome_tool_docs`**: Dynamic on-the-fly tool schema inspection and runtime category activation (`activateForSession: true`).
+- **`chrome_tool_docs`**: Dynamic on-the-fly tool schema inspection and runtime category activation (`activateForSession: true`) across 8 categories (`navigate`, `perceive`, `act`, `observe`, `manage`, `diagnose`, `network`, `crawl`), fully supported on both Fastify HTTP/SSE and Stdio transports.
 
 </details>
 
@@ -198,13 +207,13 @@ Done! Your AI agent now possesses seamless, authenticated control over your brow
 
 <br/>
 
-| Profile | Environment Variable | Tool Count | Schema Overhead | Best For |
-| :--- | :--- | :--- | :--- | :--- |
-| **full** (default) | *Unset* | **52** | ~19.5k tokens | Full low-level CDP access, diagnostic tracing, and storage management |
-| **core** | `CHROME_MCP_TOOL_PROFILE=core` | **24** | ~11.5k tokens | Daily browsing, semantic DOM indexing, form filling, and fast grep |
-| **crawl** | `CHROME_MCP_TOOL_PROFILE=crawl` | **15** | ~5.8k tokens | High-speed batch scraping, clean markdown, and API interception |
+| Profile            | Environment Variable            | Tool Count | Schema Overhead | Best For                                                              |
+| :----------------- | :------------------------------ | :--------- | :-------------- | :-------------------------------------------------------------------- |
+| **full** (default) | _Unset_                         | **52**     | ~19.5k tokens   | Full low-level CDP access, diagnostic tracing, and storage management |
+| **core**           | `CHROME_MCP_TOOL_PROFILE=core`  | **24**     | ~11.5k tokens   | Daily browsing, semantic DOM indexing, form filling, and fast grep    |
+| **crawl**          | `CHROME_MCP_TOOL_PROFILE=crawl` | **15**     | ~5.8k tokens    | High-speed batch scraping, clean markdown, and API interception       |
 
-> **Note**: Tools hidden by profiles can be inspected via `chrome_tool_docs` and activated on-the-fly via `activateForSession: true` without restarting the MCP server.
+> **Note**: Tools hidden by profiles can be inspected via `chrome_tool_docs` and activated on-the-fly via `activateForSession: true` without restarting the MCP server (supported in both SSE and Stdio modes).
 
 </details>
 
@@ -219,11 +228,21 @@ AI Agent Client (Claude Desktop / Cursor / Codex / Cline)
 Local Native Host (Fastify, 127.0.0.1:12306)
         │
         ▼ (Chrome Native Messaging IPC, <= 1MB frame ceiling)
-BrowserClaw Extension MV3 Service Worker
+BrowserClaw Extension MV3 Service Worker (chrome.storage.session persistence)
         │
-        ▼ (Isolated World Inpage Engine & Direct CDP Channel)
+        ▼ (Isolated World Inpage Engine & Direct CDP Channel with Domain RefCounts)
 Active Chrome Browser Session (isTrusted: true, zero-orphan tab groups)
 ```
+
+### Core Architecture & Hardening Guarantees
+
+- **MV3 Session Storage Persistence**: `SessionTabAffinityManager`, `TabGroupManager`, and `TabFaviconManager` synchronize their state with `chrome.storage.session`, ensuring uninterrupted multi-turn agent affinity even when Chrome's background service worker sleeps.
+- **CDP Domain-Level Reference Counting**: `CDPSessionManager` coordinates `enableDomain` / `disableDomain` across tools, permanently pinning core domains (`Page`, `Network`) to prevent settle and dialog monitors from being accidentally disabled.
+- **Anti-Hang Force Detachment**: Debugger detachment under `timeout-guard` bypasses refcounts to immediately execute `chrome.debugger.detach`, recovering safely from frozen renderers.
+- **Strict Sender Authentication**: `chrome.runtime.onMessage` validates `_sender.id === chrome.runtime.id` and blocks any request where `_sender.tab` is present, strictly forbidding untrusted content scripts or external extensions from triggering tool executions.
+- **DOM XSS Defense & Cross-Frame Isolation**: Programmatic DOM construction (`createElement`/`createTextNode`) eliminates template string injection; isolated frame messaging scopes queries to target frames and eliminates WeakRef element map pollution.
+- **Zero-Leak Offscreen Background Capture**: Non-active tabs are screenshotted using CDP `Page.captureScreenshot` (`fromSurface: true`), preventing active-tab visual leaks and rAF hangs.
+- **Protocol Parity & Safe Tab Control**: `chrome_close_tabs` requires `confirm: true` or session affinity to guard active tabs; `chrome_javascript` auto-wraps single expressions with `return (...)`; `chrome_get_web_content` employs event-driven page load waits (`onUpdated`/`onRemoved`).
 
 ---
 
@@ -231,12 +250,12 @@ Active Chrome Browser Session (isTrusted: true, zero-orphan tab groups)
 
 BrowserClaw is architected from the ground up for seamless operation across all operating systems and Chromium-derived environments:
 
-| Platform / Environment | Native Messaging Path | Shell Wrapper | OS-Specific Adaptations |
-| :--- | :--- | :--- | :--- |
-| **Windows** (10 / 11, x64 / ARM64) | `%APPDATA%\Google\Chrome\NativeMessagingHosts` + Registry | `run_host.bat` (auto node_path.txt) | Immune to `WinError 32` file locks; auto-handles Control key combos and `net session` elevation |
-| **macOS** (Apple Silicon & Intel) | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` | `run_host.sh` (9-tier Node discovery) | Auto-adapts to Homebrew (`/opt/homebrew`), Volta, asdf, NVM; auto-maps `Meta` (Command+A) keys |
-| **Linux** (x86_64 & aarch64) | `~/.config/google-chrome/NativeMessagingHosts` (XDG standard) | `run_host.sh` (XDG state logging) | Compliant with `$XDG_STATE_HOME`; zero display-server locks for headless or desktop automation |
-| **Supported Browsers** | Chrome, Edge, Chromium, Brave, Arc, Opera | Direct Native Manifest | Multi-browser simultaneous discovery (`detectInstalledBrowsers`); Firefox target supported via WXT |
+| Platform / Environment             | Native Messaging Path                                              | Shell Wrapper                         | OS-Specific Adaptations                                                                                   |
+| :--------------------------------- | :----------------------------------------------------------------- | :------------------------------------ | :-------------------------------------------------------------------------------------------------------- |
+| **Windows** (10 / 11, x64 / ARM64) | `%APPDATA%\Google\Chrome\NativeMessagingHosts` + Registry          | `run_host.bat` (auto node_path.txt)   | Immune to `WinError 32` file locks; auto-handles Control key combos and `net session` elevation           |
+| **macOS** (Apple Silicon & Intel)  | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` | `run_host.sh` (9-tier Node discovery) | Auto-adapts to Homebrew (`/opt/homebrew`), Volta, asdf, NVM; auto-maps `Meta` (Command+A, `mod = 4`) keys |
+| **Linux** (x86_64 & aarch64)       | `~/.config/google-chrome/NativeMessagingHosts` (XDG standard)      | `run_host.sh` (XDG state logging)     | Compliant with `$XDG_STATE_HOME`; zero display-server locks for headless or desktop automation            |
+| **Supported Browsers**             | Chrome, Edge, Chromium, Brave, Arc, Opera                          | Direct Native Manifest                | Multi-browser simultaneous discovery (`detectInstalledBrowsers`); Firefox target supported via WXT        |
 
 ---
 
@@ -248,12 +267,12 @@ pnpm typecheck        # Repo-wide tsc --noEmit & vue-tsc
 pnpm lint && pnpm format
 ```
 
-| Test Suite | Command | Test Cases |
-| :--- | :--- | :--- |
-| **Extension Unit (Vitest)** | `pnpm --filter chrome-mcp-server test` | **125 passed (100%)** |
-| **Hardening Regression (node:test)** | `node test/p0-p1-hardening.test.ts` | **21 passed (100%)** |
-| **Native Bridge (Jest)** | `pnpm --filter mcp-chrome-bridge test` | **30 passed (100%)** |
-| **Type Check** | `pnpm --filter chrome-mcp-server compile` | **0 error** |
+| Test Suite                           | Command                                   | Test Cases                             |
+| :----------------------------------- | :---------------------------------------- | :------------------------------------- |
+| **Extension Unit (Vitest)**          | `pnpm --filter chrome-mcp-server test`    | **139 passed (100% across 26 suites)** |
+| **Hardening Regression (node:test)** | `node test/p0-p1-hardening.test.ts`       | **21 passed (100%)**                   |
+| **Native Bridge (Jest)**             | `pnpm --filter mcp-chrome-bridge test`    | **30 passed (100%)**                   |
+| **Type Check**                       | `pnpm --filter chrome-mcp-server compile` | **0 error**                            |
 
 ---
 

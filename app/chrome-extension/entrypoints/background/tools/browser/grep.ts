@@ -87,20 +87,70 @@ export class GrepTool extends BaseBrowserToolExecutor {
         };
       }
 
-      const prunerResults = await executeInPage<PrunedDOMTreeResult>(
-        { tabId },
-        'inPageDOMPruner',
-        [
-          {
-            viewportThreshold: 1000,
-            highlight: false,
-          },
-        ],
-      );
+      let prunerResults: Array<{ frameId?: number; result?: PrunedDOMTreeResult }> = [];
+      try {
+        prunerResults = await executeInPage<PrunedDOMTreeResult>(
+          { tabId, allFrames: true },
+          'inPageDOMPruner',
+          [
+            {
+              viewportThreshold: 1000,
+              highlight: false,
+            },
+          ],
+        );
+      } catch {
+        // Fallback to main frame only if allFrames fails
+        prunerResults = await executeInPage<PrunedDOMTreeResult>(
+          { tabId },
+          'inPageDOMPruner',
+          [
+            {
+              viewportThreshold: 1000,
+              highlight: false,
+            },
+          ],
+        );
+      }
 
-      const mainRes = prunerResults?.[0]?.result;
-      const elements: IndexedElement[] = mainRes?.indexedElements || [];
-      const indexMap = mainRes?.indexMap || {};
+      const mainFrame = prunerResults?.find((r) => r.frameId === 0) || prunerResults?.[0];
+      const elements: IndexedElement[] = [...(mainFrame?.result?.indexedElements || [])];
+      const indexMap: Record<number, any> = { ...(mainFrame?.result?.indexMap || {}) };
+
+      let currentIndex = elements.length + 1;
+      for (const frame of prunerResults || []) {
+        if (frame === mainFrame || !frame.result) continue;
+        const subElements = frame.result.indexedElements;
+        if (subElements && subElements.length > 0) {
+          const frameOffset = currentIndex - 1;
+          for (const el of subElements) {
+            const remappedIndex = currentIndex++;
+            elements.push({
+              ...el,
+              index: remappedIndex,
+            });
+            indexMap[remappedIndex] = {
+              selector: el.attributes?.id
+                ? `#${el.attributes.id}`
+                : `${el.tagName}[data-mcp-idx="${remappedIndex}"]`,
+              frameId: String(frame.frameId),
+              tagName: el.tagName,
+            };
+          }
+
+          if (typeof frame.frameId === 'number' && frame.frameId !== 0) {
+            try {
+              await executeInPage(
+                { tabId, frameIds: [frame.frameId] },
+                'inPageReindexFrame',
+                [frameOffset, false],
+              );
+            } catch (reindexErr) {
+              console.warn(`Failed to synchronize subframe ${frame.frameId} index map in grep:`, reindexErr);
+            }
+          }
+        }
+      }
       const matches: Array<{
         index: number;
         tagName: string;
@@ -116,13 +166,18 @@ export class GrepTool extends BaseBrowserToolExecutor {
         }
 
         const elText = el.text || '';
+        const placeholder =
+          (el as any).placeholder || el.attributes?.['placeholder'] || el.attributes?.placeholder;
+        const ariaLabel =
+          (el as any).ariaLabel || el.attributes?.['aria-label'] || el.attributes?.ariaLabel;
+        const value = (el as any).value || el.attributes?.['value'] || el.attributes?.value;
         const searchableParts = [
           elText,
           el.role,
           el.tagName,
-          (el as any).placeholder,
-          (el as any).ariaLabel,
-          (el as any).value,
+          placeholder,
+          ariaLabel,
+          value,
         ].filter(Boolean).join(' ');
 
         if (pattern.test(searchableParts)) {

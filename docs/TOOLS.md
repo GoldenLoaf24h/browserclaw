@@ -38,8 +38,9 @@ Switch to a specific browser tab
 
 Close one or more browser tabs
 
-- `tabIds` — Array of tab IDs to close. If not provided, will close the active tab.
+- `tabIds` — Array of tab IDs to close. If not provided, will close the active tab (requires confirm: true or session affinity).
 - `url` — Close tabs matching this URL. Can be used instead of tabIds.
+- `confirm` — Explicit confirmation required to close the active tab when tabIds or url are not specified.
 
 ### `chrome_move_tab`
 
@@ -357,6 +358,20 @@ Execute raw Chrome DevTools Protocol (CDP) commands directly on a target tab. Gi
 - `params` — Parameters object passed to the CDP method.
 - `timeoutMs` — Timeout in milliseconds for this CDP command. Default: 10000.
 
+### `chrome_request_human_intervention`
+
+Request user assistance for high-friction barriers (SMS 2FA, puzzle captcha, payment confirmation). Renders an in-page glassmorphism overlay bar with explanation, moves agent cursor to standby, and resumes cleanly when human finishes or clicks continue.
+
+- `reason`（必填） — Clear instruction explaining what the human user needs to do
+- `timeoutMs` — Timeout in milliseconds (default: 60000)
+- `tabId` — Target tab ID
+
+### `chrome_undo_last_action`
+
+Rolls back the most recent mutating action on this tab (e.g. reverts form field input to previous value, or triggers browser history back navigation for mistaken links).
+
+- `tabId` — Target tab ID
+
 
 ## 观察与滚动 / Observation & Scrolling
 
@@ -520,7 +535,37 @@ Close all tabs in a tab group and delete the group.
 - `groupId`（必填） — The ID of the tab group to close
 
 
-## 其他工具 / Remaining tools
+## 代码诊断与调试 / Diagnostics & Debugging
+
+### `chrome_javascript`
+
+Execute JavaScript code in a browser tab and return the result. Uses CDP Runtime.evaluate with awaitPromise and returnByValue; automatically falls back to chrome.scripting.executeScript if the debugger is busy. Output is sanitized (sensitive data redacted) and truncated by default.
+
+- `code`（必填） — JavaScript code to execute. Runs inside an async function body, so top-level await and "return ..." are supported.
+- `tabId` — Target tab ID. If omitted, uses the current active tab.
+- `timeoutMs` — Execution timeout in milliseconds (default: 15000).
+- `maxOutputBytes` — Maximum output size in bytes after sanitization (default: 51200). Output exceeding this limit will be truncated.
+
+### `chrome_storage`
+
+Read localStorage, sessionStorage, and cookies for the current tab. Cookies include HttpOnly entries that document.cookie cannot see.
+
+- `types` — Which stores to read (default: all three)
+- `filter` — Only return entries whose key or value contains this substring (case-insensitive)
+- `limit` — Maximum entries returned per store (default 200)
+- `includeHttpOnly` — Include HttpOnly cookies (default true). Their values are redacted (valueIncluded: false) regardless; set includeHttpOnly:false to drop the entries en
+- `tabId` — Target tab ID (optional)
+- `windowId` — Target window ID (optional)
+- `sessionId` — Session ID for tab affinity (optional)
+
+### `chrome_intercept_api`
+
+Intercepts backend JSON API responses matching a URL pattern (e.g. "*/api/v1/data*") via CDP Network domain, bypassing messy HTML DOM scraping to obtain 100% structured ground-truth data.
+
+- `urlPattern`（必填） — Glob pattern to match API endpoint URL
+- `triggerAction:inspect_recent|wait_next` — Wait for next response or inspect most recent match (default: inspect_recent)
+- `timeoutMs` — Timeout in milliseconds (default: 10000)
+- `tabId` — Target tab ID
 
 ### `performance_start_trace`
 
@@ -543,6 +588,9 @@ Provides a lightweight summary of the last recorded trace. For deep insights (CW
 
 - `insightName` — Optional insight name for future deep analysis (e.g., "DocumentLatency"). Currently informational only.
 - `timeoutMs` — Timeout for deep analysis via native host (milliseconds). Default 60000. Increase for large traces.
+
+
+## 网络拦截与捕获 / Network Interception & Capture
 
 ### `chrome_network_request`
 
@@ -568,54 +616,13 @@ Unified network capture tool. Use action="start" to begin capturing, action="sto
 - `inactivityTimeout` — Stop after inactivity in milliseconds (default: 60000). Set 0 to disable.
 - `includeStatic` — Include static resources like images/scripts/styles (default: false)
 
-### `chrome_javascript`
 
-Execute JavaScript code in a browser tab and return the result. Uses CDP Runtime.evaluate with awaitPromise and returnByValue; automatically falls back to chrome.scripting.executeScript if the debugger is busy. Output is sanitized (sensitive data redacted) and truncated by default.
-
-- `code`（必填） — JavaScript code to execute. Runs inside an async function body, so top-level await and "return ..." are supported.
-- `tabId` — Target tab ID. If omitted, uses the current active tab.
-- `timeoutMs` — Execution timeout in milliseconds (default: 15000).
-- `maxOutputBytes` — Maximum output size in bytes after sanitization (default: 51200). Output exceeding this limit will be truncated.
-
-### `chrome_storage`
-
-Read localStorage, sessionStorage, and cookies for the current tab. Cookies include HttpOnly entries that document.cookie cannot see.
-
-- `types` — Which stores to read (default: all three)
-- `filter` — Only return entries whose key or value contains this substring (case-insensitive)
-- `limit` — Maximum entries returned per store (default 200)
-- `includeHttpOnly` — Include HttpOnly cookies (default true). Their values are redacted (valueIncluded: false) regardless; set includeHttpOnly:false to drop the entries en
-- `tabId` — Target tab ID (optional)
-- `windowId` — Target window ID (optional)
-- `sessionId` — Session ID for tab affinity (optional)
+## 其他工具 / Remaining tools
 
 ### `chrome_tool_docs`
 
-Return compact parameter documentation for a category of BrowserClaw tools (navigate | perceive | act | observe | manage | crawl). Use when a workflow needs a tool that is not in the current profile view.
+Return compact parameter documentation for a category of BrowserClaw tools (navigate | perceive | act | observe | manage | crawl | diagnose | network). Use when a workflow needs a tool that is not in the current profile view.
 
-- `category:navigate|perceive|act|observe|manage|crawl`（必填） — Tool category to document
+- `category:navigate|perceive|act|observe|manage|crawl|diagnose|network`（必填） — Tool category to document
 - `activateForSession` — When true, dynamically exposes all tools in this category for the current MCP session without server restart. Default: false
-
-### `chrome_request_human_intervention`
-
-Request user assistance for high-friction barriers (SMS 2FA, puzzle captcha, payment confirmation). Renders an in-page glassmorphism overlay bar with explanation, moves agent cursor to standby, and resumes cleanly when human finishes or clicks continue.
-
-- `reason`（必填） — Clear instruction explaining what the human user needs to do
-- `timeoutMs` — Timeout in milliseconds (default: 60000)
-- `tabId` — Target tab ID
-
-### `chrome_undo_last_action`
-
-Rolls back the most recent mutating action on this tab (e.g. reverts form field input to previous value, or triggers browser history back navigation for mistaken links).
-
-- `tabId` — Target tab ID
-
-### `chrome_intercept_api`
-
-Intercepts backend JSON API responses matching a URL pattern (e.g. "*/api/v1/data*") via CDP Network domain, bypassing messy HTML DOM scraping to obtain 100% structured ground-truth data.
-
-- `urlPattern`（必填） — Glob pattern to match API endpoint URL
-- `triggerAction:inspect_recent|wait_next` — Wait for next response or inspect most recent match (default: inspect_recent)
-- `timeoutMs` — Timeout in milliseconds (default: 10000)
-- `tabId` — Target tab ID
 

@@ -16,12 +16,14 @@ The test suite validates the modernization and browser-use engine integration sp
 ## 2. Architecture of the Test Suite
 
 ### 2.1 Technology Stack & Design Principles
+
 - **Runtime**: Native Node.js LTS (v22+) with `--experimental-strip-types`, enabling direct execution of TypeScript test files without transpilation overhead or fragile external bundlers.
 - **Assertion & Harness**: Native `node:test` and `node:assert/strict` ensuring zero external devDependency fragility, high-speed execution, and full Windows OS compatibility.
 - **Opaque-Box Testing**: Tests interact strictly via observable protocol interfaces (MCP JSON-RPC over HTTP/SSE, stdio streams, Chrome Native Messaging protocol packets, CDP commands, and DOM index structures) rather than inspecting internal private variables.
 - **Progressive Testability**: Features in active development (M1, M2, M3) can be verified against high-fidelity mock harnesses adhering strictly to the interface contracts in `PROJECT.md`, while remaining immediately switchable to live system processes in M4.
 
 ### 2.2 Directory & Module Layout
+
 ```
 test/
 ├── e2e/
@@ -76,27 +78,28 @@ test/
 
 Each test case derives its expected output from authoritative source requirements documented in `PROJECT.md` and `ORIGINAL_REQUEST.md`:
 
-| Feature ID | Feature Name | Authoritative Source | Primary Verification Criteria |
-|---|---|---|---|
-| **F1** | Multi-client HTTP/SSE Concurrency | `PROJECT.md` §Interface Contracts; `ORIGINAL_REQUEST.md` §R1 | Independent `Server` per session; Client A tool invocation does not route or mutate Client B; session close is isolated. |
-| **F2** | ERR_HTTP_HEADERS_SENT Elimination | `ORIGINAL_REQUEST.md` §R1; Node.js HTTP invariants | Fastify `reply.hijack()` called; checks on `headersSent` / `writableEnded`; zero uncaught header exceptions under client abort or errors. |
-| **F3** | stdio Clean Termination (<1s) | `ORIGINAL_REQUEST.md` §Acceptance | Process exits within <= 1000ms upon `stdin` EOF/close; watchdog handles parent PID exit; zero zombie/orphan processes. |
-| **F4** | Extension Handshake Self-Healing | `PROJECT.md` §Feature 4; `ORIGINAL_REQUEST.md` §R1 | 2-way handshake; 2s ping/pong heartbeat; recovery from port drop/reconnect within <= 3000ms to ready status. |
-| **F5** | MCP Tool Security Annotations | `PROJECT.md` §Feature 5; MCP Spec 2024-11 | Every tool schema includes `annotations` object with `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`. |
-| **F6** | File Upload & file:// Protocol Support | `ORIGINAL_REQUEST.md` §R1, §Acceptance | CDP `DOM.setFileInputFiles` succeeds on standard, hidden, and dynamic file inputs; Windows `file://` path normalization; triggers `change` event. |
-| **F7** | Index-Based Element Interaction | `PROJECT.md` §Feature 7; browser-use reference | Interactive elements assigned compact 1-based sequential indices; `chrome_interact_index` triggers click; `chrome_fill_index` focuses/clears/inputs text. |
-| **F8** | DOM Pruning & Visibility Filtering | `PROJECT.md` §Interface Contracts; `ORIGINAL_REQUEST.md` §Acceptance | 6-stage pruning; viewport 1000px check; occlusion filtering; achieves >= 85% compression ratio on 1000+ node DOM while preserving 100% of interactive elements. |
-| **F9** | Batch Action Execution Pipeline | `PROJECT.md` §Interface Contracts; browser-use multi-act | Compound action lists execute sequentially; runtime URL drift or static navigation triggers safe interruption; returns detailed partial execution results. |
-| **F10** | Structured Markdown & Visual Bounding Boxes | `PROJECT.md` §Feature 10; browser-use markdown extractor | Clean hierarchical markdown extraction; scripts/styles/JSON blobs stripped; bounding boxes provide accurate layout coordinates. |
-| **F11** | Monorepo Build & Typecheck Cleanliness | `PROJECT.md` §Feature 11; `ORIGINAL_REQUEST.md` §R3 | `pnpm build` succeeds; root `typecheck` passes cleanly; package exports resolve properly for ESM and CJS. |
-| **F12** | Automated Unit & Integration Tests | `PROJECT.md` §Feature 12; `ORIGINAL_REQUEST.md` §Acceptance | Unit and integration test suites execute cleanly via `pnpm test`; coverage includes session manager, stdio shutdown, DOM pruning. |
-| **F13** | Final E2E Acceptance & Adversarial Hardening | `PROJECT.md` §Feature 13; `ORIGINAL_REQUEST.md` §Acceptance | Full opaque-box E2E pipeline passes 100%; stress testing under concurrent load; input sanitization against adversarial injections. |
+| Feature ID | Feature Name                                 | Authoritative Source                                                 | Primary Verification Criteria                                                                                                                                   |
+| ---------- | -------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **F1**     | Multi-client HTTP/SSE Concurrency            | `PROJECT.md` §Interface Contracts; `ORIGINAL_REQUEST.md` §R1         | Independent `Server` per session; Client A tool invocation does not route or mutate Client B; session close is isolated.                                        |
+| **F2**     | ERR_HTTP_HEADERS_SENT Elimination            | `ORIGINAL_REQUEST.md` §R1; Node.js HTTP invariants                   | Fastify `reply.hijack()` called; checks on `headersSent` / `writableEnded`; zero uncaught header exceptions under client abort or errors.                       |
+| **F3**     | stdio Clean Termination (<1s)                | `ORIGINAL_REQUEST.md` §Acceptance                                    | Process exits within <= 1000ms upon `stdin` EOF/close; watchdog handles parent PID exit; zero zombie/orphan processes.                                          |
+| **F4**     | Extension Handshake Self-Healing             | `PROJECT.md` §Feature 4; `ORIGINAL_REQUEST.md` §R1                   | 2-way handshake; 2s ping/pong heartbeat; recovery from port drop/reconnect within <= 3000ms to ready status.                                                    |
+| **F5**     | MCP Tool Security Annotations                | `PROJECT.md` §Feature 5; MCP Spec 2024-11                            | Every tool schema includes `annotations` object with `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`.                                      |
+| **F6**     | File Upload & file:// Protocol Support       | `ORIGINAL_REQUEST.md` §R1, §Acceptance                               | CDP `DOM.setFileInputFiles` succeeds on standard, hidden, and dynamic file inputs; Windows `file://` path normalization; triggers `change` event.               |
+| **F7**     | Index-Based Element Interaction              | `PROJECT.md` §Feature 7; browser-use reference                       | Interactive elements assigned compact 1-based sequential indices; `chrome_interact_index` triggers click; `chrome_fill_index` focuses/clears/inputs text.       |
+| **F8**     | DOM Pruning & Visibility Filtering           | `PROJECT.md` §Interface Contracts; `ORIGINAL_REQUEST.md` §Acceptance | 6-stage pruning; viewport 1000px check; occlusion filtering; achieves >= 85% compression ratio on 1000+ node DOM while preserving 100% of interactive elements. |
+| **F9**     | Batch Action Execution Pipeline              | `PROJECT.md` §Interface Contracts; browser-use multi-act             | Compound action lists execute sequentially; runtime URL drift or static navigation triggers safe interruption; returns detailed partial execution results.      |
+| **F10**    | Structured Markdown & Visual Bounding Boxes  | `PROJECT.md` §Feature 10; browser-use markdown extractor             | Clean hierarchical markdown extraction; scripts/styles/JSON blobs stripped; bounding boxes provide accurate layout coordinates.                                 |
+| **F11**    | Monorepo Build & Typecheck Cleanliness       | `PROJECT.md` §Feature 11; `ORIGINAL_REQUEST.md` §R3                  | `pnpm build` succeeds; root `typecheck` passes cleanly; package exports resolve properly for ESM and CJS.                                                       |
+| **F12**    | Automated Unit & Integration Tests           | `PROJECT.md` §Feature 12; `ORIGINAL_REQUEST.md` §Acceptance          | Unit and integration test suites execute cleanly via `pnpm test`; coverage includes session manager, stdio shutdown, DOM pruning.                               |
+| **F13**    | Final E2E Acceptance & Adversarial Hardening | `PROJECT.md` §Feature 13; `ORIGINAL_REQUEST.md` §Acceptance          | Full opaque-box E2E pipeline passes 100%; stress testing under concurrent load; input sanitization against adversarial injections.                              |
 
 ---
 
 ## 4. Four-Tier Test Suite Specification
 
 ### Tier 1: Feature Coverage (65+ tests, >= 5 tests per feature)
+
 - **F1 (Multi-client HTTP/SSE Concurrency)**:
   1. `test_f01_create_independent_sessions`: Creates separate sessions for Client A and Client B with distinct session IDs.
   2. `test_f01_concurrent_tool_dispatch`: Dispatches concurrent tool invocations on Client A and Client B without crosstalk.
@@ -177,6 +180,7 @@ Each test case derives its expected output from authoritative source requirement
   5. `test_f13_adversarial_input_sanitization`: Handles malformed JSON, prototype pollution keys (`__proto__`), and script injection safely.
 
 ### Tier 2: Boundary & Corner Cases (65+ tests, >= 5 tests per feature)
+
 - **F1**:
   1. `test_f01_zero_clients`: System maintains zero CPU/memory spin with 0 active clients.
   2. `test_f01_max_concurrent_clients_50`: 50 concurrent client connections handled without descriptor starvation.
@@ -257,6 +261,7 @@ Each test case derives its expected output from authoritative source requirement
   5. `test_f13_conflicting_state_mutations`: Concurrent contradictory commands (e.g. click vs navigate) queued and executed deterministically.
 
 ### Tier 3: Cross-Feature Combinations (16 pairwise interaction tests)
+
 - `C01`: **F1 + F7**: Client A and Client B querying DOM and interacting with different indices concurrently on different tabs.
 - `C02`: **F1 + F9**: Concurrent clients submitting complex batch actions simultaneously without cross-talk.
 - `C03`: **F1 + F3**: stdio transport and HTTP transport running simultaneously without port or session contention.
@@ -275,6 +280,7 @@ Each test case derives its expected output from authoritative source requirement
 - `C16`: **F2 + F10**: Streaming large extracted markdown document over SSE without HTTP header write conflicts.
 
 ### Tier 4: Real-World Application Scenarios (5 realistic application workflows)
+
 - `S01`: **Multi-Step E-Commerce Checkout**:
   1. Navigate to e-commerce catalog page.
   2. Extract pruned DOM (1200 nodes compressed to 45 tokens).
@@ -313,13 +319,17 @@ Each test case derives its expected output from authoritative source requirement
 ## 5. Test Runner & Execution Guide
 
 ### 5.1 Standalone Runner
+
 Run the master E2E test suite covering all 4 tiers:
+
 ```bash
 node --experimental-strip-types test/e2e/runner.ts
 ```
 
 ### 5.2 Targeted Tier Execution
+
 Run specific tiers or feature suites:
+
 ```bash
 # Tier 1 only
 node --experimental-strip-types --test test/e2e/tier1-feature-coverage/*.test.ts
@@ -335,7 +345,9 @@ node --experimental-strip-types --test test/e2e/tier4-real-world-scenarios/*.tes
 ```
 
 ### 5.3 Automated Integration Command
+
 The root package runner executes the full E2E test suite:
+
 ```bash
 pnpm test:e2e
 ```
