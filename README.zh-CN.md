@@ -39,6 +39,30 @@ BrowserClaw 是一套面向 AI Agent 的工业级模型上下文协议（MCP）�
 
 ---
 
+## ⚖️ 开源方案全景横向对比
+
+| 特性 / 架构维度 | **BrowserClaw (本项目)** | **browser-use** | **Stagehand (Browserbase)** | **Playwright MCP** | **browserclaw (idan-rubin)** |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **运行宿主环境** | **你日常的真实 Chrome (扩展)** | 无头 / 独立 Chrome 实例 | 云端托管 / 远程无头浏览器 | 本地无头 Chromium | Playwright 独立脚本库 |
+| **复用既有登录态与 Cookie** | ✅ **100% 原生继承** | ⚠️ 配置繁琐易失效 | ❌ 临时干净沙盒 | ❌ 临时干净沙盒 | ❌ 临时干净沙盒 |
+| **Windows 文件排他锁免疫** | ✅ **Native Messaging (无锁冲突)** | ❌ 遭遇 `WinError 32` 崩溃 | N/A (云端无头) | N/A (云端无头) | ❌ 遭遇 `SingletonLock` 争用 |
+| **后台静默执行 (防抢焦)** | ✅ **零弹窗 / 零警告横幅** | ❌ CDP 强制弹窗确认 | ⚠️ 仅限远程屏幕 | ⚠️ 虚拟显示器模拟 | ❌ 端口占用冲突隐患 |
+| **元素交互定位系统** | ✅ **DOM 1-based 索引 + 坐标标尺** | 纯 DOM 数字索引 | 自然语言大模型推断 | 原生 ARIA 快照 | ARIA 文本树 Ref 引用 |
+| **操作自驱局部 Diff** | ✅ **支持 (`includeDelta`)** | ❌ 需全量重评估 | ❌ 需全量重评估 | ❌ 需全量重评估 | ❌ 需全量重新快照 |
+| **定向轻量检索 (<100 Token)** | ✅ **支持 (`chrome_grep`)** | ❌ 仅能 Dump 全量 DOM | ❌ 依赖自然语言推测 | ❌ 仅能 Dump 全量 DOM | ❌ 仅能 Dump 全量 DOM |
+| **真人体感虚拟光标** | ✅ **1:1 弹簧动力学悬浮层** | ❌ 无视觉悬浮层 | ❌ 无视觉悬浮层 | ❌ 无视觉悬浮层 | ❌ 无视觉悬浮层 |
+| **标签页生命周期隔离** | ✅ **专属色彩 Chrome 标签分组** | ❌ 杂乱标签堆积 | ❌ 无分组隔离 | ❌ 无分组隔离 | ❌ 无分组隔离 |
+| **2FA / 滑块人机协作接管** | ✅ **毛玻璃顶栏挂起 + 一键恢复** | ❌ 超时报错死锁 | ⚠️ 手动控制台暂停 | ❌ 无接管设计 | ⚠️ 仅代码异常捕获 |
+| **底层逃生通道** | ✅ **`cdp_execute` (防挂熔断)** | ⚠️ Python 裸调 CDP | ❌ 仅限 Playwright API | ❌ 受限于固定工具集 | ⚠️ Playwright 页面接口 |
+
+### 🔍 客观局限与当前设计边界
+在绝大多数日常浏览器操作场景中，BrowserClaw 具备明显优势，但我们坚持开源坦诚原则，明确指出当前架构的三项边界：
+1. **仅适配 Chromium 内核**：BrowserClaw 深度依赖 Chromium 扩展 API 与 CDP 协议（Chrome、Edge、Brave、Opera），暂不兼容 Firefox (Gecko) 或 Safari (WebKit)。
+2. **本地桌面操作定位**：专为你个人日常使用的浏览器与本地 AI 智能体（Cursor、Claude Code、Codex）打造，定位不是云端无头测试集群（无法像云端 SaaS 一样瞬间并发拉起 1,000 个无头 Docker）。
+3. **Native Messaging 1MB 传输限制**：遵循 Chrome 本地进程通信安全规范，单条 JSON 消息负载上限为 1MB。对于超大图片或长视频提取，推荐直接通过本地绝对文件路径引用。
+
+---
+
 ## 🚀 极速上手 (让 AI 帮你完成配置)
 
 ### 步骤 1：把仓库交给你的 AI Agent
@@ -62,18 +86,104 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 ---
 
-## 🛠️ 核心工具全览 (52 个 MCP 工具)
+## 🛠️ 全量工具分类全览 (52 个 MCP 工具)
 
-BrowserClaw 将 52 个 Schema 校验的工具划分为三大动态 Profile（**Core: 24**, **Crawl: 15**, **Full: 52**）。完整参数字典详见 **[docs/TOOLS.md](./docs/TOOLS.md)**。
+全量 52 个 Schema 校验的工具按功能归纳为以下 6 大类别。**点击对应分类即可展开查看工具清单。**
+完整 JSON Schema 与入参定义请参阅 **[docs/TOOLS.md](./docs/TOOLS.md)**。
 
-| 类别 | 工具数 | 核心代表能力 |
-| :--- | :---: | :--- |
-| **导航与标签管理** | 7 | `navigate` (后台防偷焦), `switch_tab`, `close_tabs`, `tab_groups` |
-| **内容分析与检索** | 10 | `read_dom` (剪枝交互树), `get_markdown`, `grep` (定向秒搜), `get_links` |
-| **页面交互与流水线** | 8 | `interact_index` (自驱Diff), `fill_index`, `batch_actions` (断言/提取流水线) |
-| **视觉与高清捕获** | 5 | `screenshot` (像素标尺网格), `inspect_media` (无损图片/Canvas提取) |
-| **网络捕获与拦截** | 6 | `intercept_api` (静默捕获接口JSON), `network_capture`, `get_cookies` |
-| **控制与人机协作** | 16 | `request_human_intervention` (毛玻璃接管), `undo_last_action`, `cdp_execute` |
+<details>
+<summary><b>🌐 1. 导航与标签页管理 (7 个工具)</b></summary>
+
+<br/>
+
+- **`chrome_navigate`**：URL 网页跳转、前进、后退或整页刷新。原生支持 `background: true`，后台静默打开绝不抢占前台焦点。
+- **`chrome_switch_tab`**：平滑切换活跃标签页，或绑定 Agent 会话与特定标签页的上下文亲和度。
+- **`chrome_close_tabs`**：按 ID 数组、URL 通配规则批量关闭标签页，安全关闭前台页面需显式 `confirm: true` 保护。
+- **`chrome_move_tab`**：精确调整标签页在窗口中的索引位置，或在不同浏览器窗口之间迁移/分离标签页。
+- **`get_windows_and_tabs`**：枚举当前打开的所有 Chrome 窗口与标签页的元数据（ID、标题、URL 与激活状态）。
+- **`chrome_attach_tab`**：显式挂载特定标签页的底层 Chrome DevTools Protocol 调试器连接。
+- **`chrome_detach_tab`**：显式解除特定标签页的调试器挂载。
+
+</details>
+
+<details>
+<summary><b>📄 2. 内容感知、检索与数据提取 (7 个工具)</b></summary>
+
+<br/>
+
+- **`chrome_read_dom`**：极简剪枝 DOM 交互树，带 1-based 纯数字索引，Token 消耗压缩 85%+。
+- **`chrome_grep`**：毫秒级正则/文本定向检索，返回匹配项与索引，超大页面免除 Dump 全量 DOM。
+- **`chrome_get_markdown`**：提取页面排版优美、纯净结构化的 Markdown 文本，阅读长文与资料总结首选。
+- **`chrome_inspect_media`**：内存无损提取 `<img>` 与 `<canvas>` 原始图像 Data URL，支持 200%+ 超采样局部特写裁切。
+- **`chrome_get_web_content`**：事件驱动型页面加载等待与正文文本提取。
+- **`chrome_get_links`**：提取当前页面中的全部超链接地址（URL）与对应锚文本。
+- **`chrome_get_dropdown_options`**：直接读取原生或自定义 `<select>` 下拉选择器的全部可用候选项。
+
+</details>
+
+<details>
+<summary><b>🖱️ 3. 页面交互、输入与流水线 (15 个工具)</b></summary>
+
+<br/>
+
+- **`chrome_interact_index`**：核心物理级点击/悬停/双击，原生支持 `includeDelta: true` 自动回传局部变动。
+- **`chrome_fill_index`**：纯原生物理输入，支持清空重填与 `includeDelta: true` 变动核验。
+- **`chrome_batch_actions`**：闭环批处理流水线，单次网络调用按序执行点击、填充、等待，内置 `assert` 断言与 `extract` 提取。
+- **`chrome_smart_scroll`**：智能自适应滚屏，具备视口溢出检测与剩余滚动页数（`pages_down`）感知反馈。
+- **`chrome_scroll`**：按像素或方向精确滚动整页或特定可滚动容器。
+- **`chrome_scroll_to_text`**：自动在页面中检索目标文本并平滑滚动使其居中展现。
+- **`chrome_keyboard`**：派发单键（Enter/Tab/Esc）、组合快捷键（Ctrl+C/V）或指定元素文本聚焦输入。
+- **`chrome_upload_file`**：动态拦截本地文件选择对话框，或直接向 `<input type="file">` 注入绝对路径。
+- **`chrome_handle_dialog`**：响应或预设针对 JavaScript 原生弹窗（Alert / Confirm / Prompt）的自动处理策略。
+- **`chrome_handle_download`**：追踪、监听并管理浏览器底层正在进行的原生文件下载。
+- **`chrome_burst_interact`**：超低延迟连击序列，适用于即时连击或高并发点击场景。
+- **`chrome_computer`**：兼容 Anthropic Computer Use 协议的统一光标与键盘物理控制接口。
+- **`chrome_cdp_execute`**：工业级底层 CDP 逃生通道，支持 Target 多态路由与超时防死锁自动脱离。
+- **`chrome_request_human_intervention`**：页面毛玻璃暗化并挂起，让渡控制权供人类完成滑块/2FA，完成后一键无缝恢复。
+- **`chrome_undo_last_action`**：5 步环形栈撤销引擎，单步回滚最近一次页面跳转或表单输入。
+
+</details>
+
+<details>
+<summary><b>👁️ 4. 视觉感知与视口控制 (3 个工具)</b></summary>
+
+<br/>
+
+- **`chrome_screenshot`**：捕获视口或整页截图，可选叠加高对比度半透明像素标尺网格（Visual Fallback 必备）。
+- **`chrome_get_mouse_position`**：实时查询虚拟光标在当前视口中的物理坐标位置。
+- **`chrome_console`**：捕获、实时监听并过滤页面中的 JavaScript Console 日志与未捕获异常。
+
+</details>
+
+<details>
+<summary><b>📡 5. 网络拦截与存储管理 (6 个工具)</b></summary>
+
+<br/>
+
+- **`chrome_intercept_api`**：静默嗅探并解码匹配 URL 模式的后端接口返回，直接提取结构化 JSON 数据。
+- **`chrome_network_capture`**：开启或停止全链路网络请求录制（涵盖状态码、响应头与传输载荷）。
+- **`chrome_network_request`**：通过当前浏览器会话代理发送原生 HTTP 请求，继承当前站点的 Cookie 与会话头。
+- **`chrome_storage`**：读取、写入或清理当前站点的 `localStorage`、`sessionStorage` 与 Cookie 数据。
+- **`chrome_javascript`**：在页面隔离环境中执行任意自定义 JavaScript 脚本（支持单行表达式自动 return）。
+- **`chrome_tool_docs`**：动态查询工具文档，支持在会话级按需解锁全量工具分类（`activateForSession: true`）。
+
+</details>
+
+<details>
+<summary><b>🗂️ 6. 标签分组、书签、历史与诊断 (9 个工具)</b></summary>
+
+<br/>
+
+- **`chrome_tab_group_create`**：创建带专属色彩与任务标题的 Chrome 标签分组（默认名称：“Agent”）。
+- **`chrome_tab_group_update`**：动态修改标签组标题、主题颜色或切换折叠状态。
+- **`chrome_tab_group_list`**：枚举当前窗口内的所有活跃标签分组及其关联标签。
+- **`chrome_tab_group_ungroup`**：将指定标签页从分组中解散移出。
+- **`chrome_tab_group_close`**：一键关闭组内所有标签并彻底销毁空分组（零孤儿残留）。
+- **`chrome_history`**：按关键词或自定义时间跨度检索浏览器历史访问记录。
+- **`chrome_bookmark_search` / `add` / `delete`**：检索、新增或删除 Chrome 收藏夹书签。
+- **`performance_start_trace` / `stop_trace` / `analyze_insight`**：录制并深入分析 Chromium 底层性能 Trace 指标。
+
+</details>
 
 ---
 
