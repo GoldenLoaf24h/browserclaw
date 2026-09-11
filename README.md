@@ -1,8 +1,39 @@
-# BrowserClaw
+<div align="center">
+  <img src="./docs/images/logo.png" width="100" alt="BrowserClaw Logo" />
+  <h1>BrowserClaw</h1>
+  <p>Turn the Chrome you <b>actually use</b> into an ultra-fast, controllable, readable, and verifiable automation environment for AI agents.</p>
+  <p>
+    <a href="./README.zh-CN.md">📖 简体中文说明</a> ·
+    <a href="./docs/TOOLS.md">Tool Reference</a> ·
+    <a href="./docs/TROUBLESHOOTING.md">Troubleshooting</a> ·
+    <a href="https://github.com/GoldenLoaf24h/browserclaw/releases">GitHub Releases</a>
+  </p>
+</div>
 
-> Turn the Chrome you **actually use** into an ultra-fast, controllable, readable, and verifiable automation environment for AI agents.
->
-> 📖 [简体中文说明](./README.zh-CN.md) · [Tool Reference](./docs/TOOLS.md) · [Troubleshooting](./docs/TROUBLESHOOTING.md) · [GitHub Releases](https://github.com/GoldenLoaf24h/browserclaw/releases)
+---
+
+## 💡 Background & Motivation
+
+When deploying local AI agents (Hermes, Codex, Claude Code), browser automation is critical for real-time web retrieval, data extraction, and authenticated workflows. Ideally, agents should directly inherit the developer's active browser logins (Google, GitHub, internal SSO dashboards) and operate silently in the background without human intervention.
+
+On Windows, however, all existing approaches break down due to low-level OS and Chromium constraints:
+
+1. **Isolated Sandboxes (Playwright / Puppeteer / browser-use)**:
+   - **Broken Logins**: Isolated profiles cannot inherit existing credentials, breaking flows on 2FA or captchas.
+   - **Windows File Lock Collision (`WinError 32`)**: Attempting to hot-copy `User Data` to emulate login reuse fails immediately on Windows. Chromium holds strict **exclusive sharing locks** on `Cookies` and session databases while running, causing immediate `[WinError 32: The process cannot access the file because it is being used by another process]` crashes.
+   - **Zombie Processes**: Process tree detachments frequently leave lingering headless `chrome.exe` instances that eat RAM and GPU resources.
+
+2. **Native Remote Debugging (`--remote-debugging-port`)**:
+   - **Intrusive Security Modals**: Modern Chromium displays a mandatory security dialog requiring a human to manually click "Allow" upon every external debugger attach, completely destroying unattended automation.
+   - **No Dynamic Attach**: Cannot be attached to a running browser; requires killing all user windows and restarting with debugging flags.
+   - **Directory Lock Deadlocks**: Multi-process access to the user profile triggers database locks or browser crashes.
+
+3. **Lack of Windows-First Tooling**:
+   - Popular lightweight alternatives consistently prioritize macOS/Linux, leaving Windows developers stranded.
+
+**BrowserClaw** was engineered specifically to overcome this dilemma. By combining **Chrome Native Messaging + a Manifest V3 Extension**, it unlocks seamless session reuse and 100% unattended automation without killing processes or tripping Windows file locks.
+
+---
 
 BrowserClaw is an industrial-grade browser automation engine built on top of [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome) (MIT): featuring a three-tier architecture (WXT Vue 3 MV3 Chrome Extension + Fastify Native Host + Shared Type Schema), connected through Chrome Native Messaging, exposing CDP capabilities as **52 schema-validated MCP tools**.
 

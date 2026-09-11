@@ -1,8 +1,39 @@
-# BrowserClaw
+<div align="center">
+  <img src="./docs/images/logo.png" width="100" alt="BrowserClaw Logo" />
+  <h1>BrowserClaw</h1>
+  <p>把你<b>正在使用</b>的 Chrome 变成 AI agent 可控、可读、可验证的高性能操作环境。</p>
+  <p>
+    <a href="./README.md">📖 English Version</a> ·
+    <a href="./docs/TOOLS.md">工具参考</a> ·
+    <a href="./docs/TROUBLESHOOTING.md">故障排查</a> ·
+    <a href="https://github.com/GoldenLoaf24h/browserclaw/releases">GitHub Releases</a>
+  </p>
+</div>
 
-> 把你**正在使用**的 Chrome 变成 AI agent 可控、可读、可验证的操作环境。
->
-> 📖 English version: [README.md](./README.md) · 工具参考: [docs/TOOLS.md](./docs/TOOLS.md) · 故障排查: [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)
+---
+
+## 💡 项目背景与初衷
+
+在本地运行 AI Agent（Hermes、Codex、Claude Code）时，调用浏览器进行数据检索与自动化交互是高频刚需。理想状态下，Agent 应当能直接复用开发者主浏览器现有的登录态（Google、GitHub、社区论坛、校企后台等），并在后台静默完成任务，无需人工干预。
+
+但在 Windows 平台下，现存的主流方案均存在底层硬伤：
+
+1. **无头沙盒与配置复制派（Playwright / Puppeteer / browser-use）**：
+   - **登录态割裂**：采用独立沙盒环境，无法继承日常登录凭据，面对 2FA 和验证码时流程即刻阻断。
+   - **配置热复制触发 `[WinError 32]`**：部分框架试图将主浏览器的 `User Data` 拷贝到临时目录来“伪复用”登录态。在 Windows 下，主 Chrome 只要运行，内核对 `Cookies`、`Session_*` 等文件施加严格的**排他共享锁（Exclusive Lock）**，直接崩溃抛出 `[WinError 32: 另一个程序正在使用此文件，进程无法访问]`。
+   - **资源泄漏**：Windows 句柄继承机制容易在进程异常退出时残留无头 `chrome.exe` 僵尸进程，持续霸占系统内存。
+
+2. **原生 CDP 远程调试（`--remote-debugging-port`）**：
+   - **强制人工确认（致命阻断）**：现代 Chromium 加强了安全门禁，外部进程每次挂接调试端口时均会弹出全屏安全提示，必须人工手动点击“允许”，彻底破坏了自动化的无人值守特性。
+   - **不支持动态注入**：主浏览器已运行时无法中途开放调试端口，必须关闭所有已有标签页并强杀进程后重新带参拉起。
+   - **排他文件锁死锁**：多进程访问同一用户目录极易引发目录冲突与死锁崩溃。
+
+3. **第三方方案跳票**：
+   - 业内主打轻量化与免配置的方案长期优先支持 macOS 与 Linux，Windows 正式版迟迟未推出。
+
+**BrowserClaw** 由此诞生：基于 **Chrome Native Messaging + MV3 扩展** 架构，无需杀进程、无惧文件锁、无需手动点弹窗，真正实现 Windows 平台上的**登录态无感复用**与**100% 完全无人值守**。
+
+---
 
 BrowserClaw 是 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)（MIT）的深度优化分支：WXT (Vue 3) MV3 扩展 + Fastify 原生宿主 + 共享 schema 包三层架构，经 Chrome Native Messaging 连接，把 CDP 能力封装为 **46 个 schema 校验的 MCP 工具**。
 
