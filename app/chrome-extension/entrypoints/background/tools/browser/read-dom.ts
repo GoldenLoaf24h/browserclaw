@@ -13,6 +13,7 @@ export interface ReadDOMParams {
   sessionContext?: string;
   cursor?: number;
   limit?: number;
+  deltaOnly?: boolean;
   maxTextLength?: number;
   /**
    * Opt in to the bulky per-element detail blocks (indexedElements + indexMap).
@@ -165,7 +166,64 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         mergedData.treeString += `\n[Visual Assets: ${mergedData.assets.length} found. Pass assetIndex to chrome_screenshot to view one.]\n${assetLines}`;
       }
 
-      // Record snapshot in cache manager (P1-6)
+              // Delta DOM support: return only changed/added/removed diffs
+        if (args.deltaOnly && tab.id) {
+          const diff = snapshotCacheManager.diffWithPrevious(tab.id, mergedData.indexedElements || []);
+          snapshotCacheManager.setSnapshot(tab.id, {
+            url: tab.url || '',
+            elementCount: mergedData.elementCount,
+            elements: mergedData.indexedElements,
+          });
+
+          if (diff.isDelta && diff.unchanged) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      success: true,
+                      unchanged: true,
+                      revision: diff.revision,
+                      totalElements: diff.totalCurrent,
+                      message: 'Page DOM unchanged since last snapshot. No new or modified interactive elements.',
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+              isError: false,
+            };
+          }
+
+          if (diff.isDelta) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      success: true,
+                      isDelta: true,
+                      revision: diff.revision,
+                      addedCount: diff.added.length,
+                      modifiedCount: diff.modified.length,
+                      removedIndices: diff.removed,
+                      added: diff.added,
+                      modified: diff.modified,
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+              isError: false,
+            };
+          }
+        }
+
+        // Record snapshot in cache manager (P1-6)
       const snapshot = snapshotCacheManager.setSnapshot(tab.id, {
         url: tab.url || '',
         elementCount: mergedData.elementCount,

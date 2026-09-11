@@ -1,0 +1,79 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { InterceptApiTool } from '../entrypoints/background/tools/browser/intercept-api';
+import { cdpSessionManager } from '@/utils/cdp-session-manager';
+
+describe('InterceptApiTool (Structured API Sniffing)', () => {
+  let tool: InterceptApiTool;
+
+  beforeEach(() => {
+    tool = new InterceptApiTool();
+    (globalThis as any).chrome = {
+      tabs: {
+        get: vi.fn(async (id: number) => ({ id, windowId: 1 })),
+        query: vi.fn(async () => [{ id: 1, active: true, windowId: 1 }]),
+      },
+      debugger: {
+        onEvent: {
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+        },
+      },
+    };
+  });
+
+  it('rejects calls without urlPattern', async () => {
+    const res = await tool.execute({ urlPattern: '' } as any);
+    expect(res.isError).toBe(true);
+    expect((res.content[0] as any).text).toContain('urlPattern is required');
+  });
+
+  it('intercepts live responses via CDP Network domain and decodes JSON', async () => {
+    vi.spyOn(cdpSessionManager, 'sendCommand').mockImplementation(async (_tabId, method, params: any) => {
+      if (method === 'Network.enable') return {};
+      if (method === 'Network.getResponseBody') {
+        return {
+          body: JSON.stringify({ code: 200, items: [{ id: 1, name: 'Item A' }] }),
+          base64Encoded: false,
+        };
+      }
+      return {};
+    });
+
+    let attachedListener: any;
+    (chrome.debugger.onEvent.addListener as any).mockImplementation((fn: any) => {
+      attachedListener = fn;
+    });
+
+    const execPromise = tool.execute({
+      tabId: 1,
+      urlPattern: '*/api/goods/list*',
+      triggerAction: 'wait_next',
+      timeoutMs: 1000,
+    });
+
+    // Simulate incoming network response event matching pattern
+    setTimeout(() => {
+      if (attachedListener) {
+        attachedListener(
+          { tabId: 1 },
+          'Network.responseReceived',
+          {
+            requestId: 'req-123',
+            response: {
+              url: 'https://example.com/api/goods/list?page=1',
+              status: 200,
+              mimeType: 'application/json',
+            },
+          },
+        );
+      }
+    }, 50);
+
+    const res = await execPromise;
+    expect(res.isError).toBe(false);
+    const parsed = JSON.parse((res.content[0] as any).text);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data.code).toBe(200);
+    expect(parsed.data.items[0].name).toBe('Item A');
+  });
+});

@@ -26,6 +26,7 @@ export const CORE_TOOL_NAMES: Set<string> = new Set([
   // Perceive
   'chrome_read_dom',
   'chrome_get_markdown',
+  'chrome_inspect_media',
   // Act (best-in-class primary tools only; redundant selector/batch duplicates pruned)
   'chrome_interact_index',
   'chrome_fill_index',
@@ -78,6 +79,7 @@ export const CRAWL_TOOL_NAMES: ReadonlySet<string> = new Set([
   'chrome_navigate',
   'chrome_get_web_content',
   'chrome_get_markdown',
+  'chrome_inspect_media',
   'chrome_read_dom',
   'chrome_smart_scroll',
   'chrome_scroll',
@@ -107,6 +109,7 @@ export const TOOL_CATEGORIES: Record<string, string> = {
   perceive: [
     'chrome_read_dom',
     'chrome_get_markdown',
+  'chrome_inspect_media',
     'chrome_get_web_content',
     'chrome_get_links',
     'chrome_get_dropdown_options',

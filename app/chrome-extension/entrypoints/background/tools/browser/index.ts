@@ -49,3 +49,7 @@ export { toolDocsTool } from './tool-docs';
 export { cdpExecuteTool } from './cdp-execute';
 export { tabGroupManager } from './tab-group-manager';
 export { tabFaviconManager } from './tab-favicon';
+export { inspectMediaTool } from './inspect-media';
+export { humanInterventionTool } from './human-intervention';
+export { undoLastActionTool } from './undo-action';
+export { interceptApiTool } from './intercept-api';

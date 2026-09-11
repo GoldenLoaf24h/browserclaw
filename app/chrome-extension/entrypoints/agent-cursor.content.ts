@@ -575,7 +575,108 @@ function initAgentCursor() {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!message || typeof message !== 'object') return false;
 
-    if (message.type === 'AGENT_CURSOR_MOVE') {
+          if (message.type === 'HUMAN_INTERVENTION_REQUEST') {
+        const { reason } = message;
+        // Move virtual cursor smoothly to standby corner
+        moveTo(window.innerWidth - 60, 40, null, false);
+
+        let banner = shadow.getElementById('codex-human-intervention-banner');
+        if (banner) banner.remove();
+
+        banner = document.createElement('div');
+        banner.id = 'codex-human-intervention-banner';
+        banner.style.cssText = [
+          'position: fixed',
+          'top: 24px',
+          'left: 50%',
+          'transform: translateX(-50%)',
+          'z-index: 2147483647',
+          'background: rgba(15, 23, 42, 0.92)',
+          'backdrop-filter: blur(16px)',
+          '-webkit-backdrop-filter: blur(16px)',
+          'border: 1px solid rgba(51, 156, 255, 0.5)',
+          'border-radius: 9999px',
+          'box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(51, 156, 255, 0.35)',
+          'color: #ffffff',
+          'padding: 10px 22px',
+          'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          'font-size: 14px',
+          'line-height: 20px',
+          'display: flex',
+          'align-items: center',
+          'gap: 16px',
+          'pointer-events: auto',
+          'user-select: none',
+          'animation: codexSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
+        ].join('; ');
+
+        banner.innerHTML = `
+          <style>
+            @keyframes codexSlideIn {
+              from { opacity: 0; transform: translate(-50%, -20px) scale(0.96); }
+              to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+            }
+            @keyframes codexPulse {
+              0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 156, 255, 0.7); }
+              70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(51, 156, 255, 0); }
+              100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 156, 255, 0); }
+            }
+          </style>
+          <div style="width: 10px; height: 10px; border-radius: 50%; background: #339cff; animation: codexPulse 1.8s infinite;"></div>
+          <div style="font-weight: 500; max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            <span style="color: #93c5fd; font-weight: 600;">Agent 需人工协助：</span>${reason}
+          </div>
+          <button id="codex-btn-continue" style="
+            background: #339cff;
+            color: #ffffff;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            outline: none;
+          ">完成并继续 (Enter)</button>
+        `;
+
+        shadow.appendChild(banner);
+
+        const cleanup = () => {
+          window.removeEventListener('keydown', onKey);
+          if (banner && banner.parentNode) {
+            banner.style.transition = 'opacity 0.25s, transform 0.25s';
+            banner.style.opacity = '0';
+            banner.style.transform = 'translate(-50%, -15px) scale(0.95)';
+            setTimeout(() => banner?.remove(), 260);
+          }
+        };
+
+        const onDone = () => {
+          cleanup();
+          sendResponse({ ok: true, action: 'completed_by_user' });
+        };
+
+        const onKey = (e: KeyboardEvent) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            onDone();
+          }
+        };
+
+        banner.querySelector('#codex-btn-continue')?.addEventListener('click', onDone);
+        window.addEventListener('keydown', onKey);
+        return true;
+      }
+
+      if (message.type === 'HUMAN_INTERVENTION_CANCEL') {
+        const banner = shadow.getElementById('codex-human-intervention-banner');
+        if (banner) banner.remove();
+        sendResponse({ ok: true });
+        return true;
+      }
+
+      if (message.type === 'AGENT_CURSOR_MOVE') {
       const { x, y, moveSequence, immediate } = message;
       moveTo(x, y, typeof moveSequence === 'number' ? moveSequence : null, immediate === true);
       sendResponse({ ok: true });

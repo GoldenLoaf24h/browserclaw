@@ -53,6 +53,10 @@ export const TOOL_NAMES = {
     STORAGE: 'chrome_storage',
     GET_LINKS: 'chrome_get_links',
     TOOL_DOCS: 'chrome_tool_docs',
+    INSPECT_MEDIA: 'chrome_inspect_media',
+    REQUEST_HUMAN_INTERVENTION: 'chrome_request_human_intervention',
+    UNDO_LAST_ACTION: 'chrome_undo_last_action',
+    INTERCEPT_API: 'chrome_intercept_api',
     CDP_EXECUTE: 'chrome_cdp_execute',
   },
 };
@@ -2231,6 +2235,7 @@ export const TOOL_SCHEMAS: Tool[] = [
       type: 'object',
       properties: {
         category: { type: 'string', enum: ['navigate', 'perceive', 'act', 'observe', 'manage', 'crawl'], description: 'Tool category to document' },
+        activateForSession: { type: 'boolean', description: 'When true, dynamically exposes all tools in this category for the current MCP session without server restart. Default: false' },
       },
       required: ['category'],
     },
@@ -2269,6 +2274,88 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
       },
       required: ['method'],
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.INSPECT_MEDIA,
+    annotations: {
+      title: 'Inspect Media Element',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    description:
+      'Inspect and extract high-fidelity media assets (images, canvas, captchas, icons) directly by element index or selector. Uses in-memory lossless extraction for <img>/<canvas>, with super-sampled 200%+ crop fallback for complex DOM containers.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        index: { type: 'number', description: '1-based element index from chrome_read_dom' },
+        selector: { type: 'string', description: 'CSS selector fallback' },
+        zoom: { type: 'number', description: 'Super-sampling zoom factor (default: 2.0)' },
+        tabId: { type: 'number', description: 'Target tab ID' },
+      },
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.REQUEST_HUMAN_INTERVENTION,
+    annotations: {
+      title: 'Request Human Intervention',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    description:
+      'Request user assistance for high-friction barriers (SMS 2FA, puzzle captcha, payment confirmation). Renders an in-page glassmorphism overlay bar with explanation, moves agent cursor to standby, and resumes cleanly when human finishes or clicks continue.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', description: 'Clear instruction explaining what the human user needs to do' },
+        timeoutMs: { type: 'number', description: 'Timeout in milliseconds (default: 60000)' },
+        tabId: { type: 'number', description: 'Target tab ID' },
+      },
+      required: ['reason'],
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.UNDO_LAST_ACTION,
+    annotations: {
+      title: 'Undo Last Action',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    description:
+      'Rolls back the most recent mutating action on this tab (e.g. reverts form field input to previous value, or triggers browser history back navigation for mistaken links).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tabId: { type: 'number', description: 'Target tab ID' },
+      },
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.INTERCEPT_API,
+    annotations: {
+      title: 'Intercept API Response',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    description:
+      'Intercepts backend JSON API responses matching a URL pattern (e.g. "*/api/v1/data*") via CDP Network domain, bypassing messy HTML DOM scraping to obtain 100% structured ground-truth data.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        urlPattern: { type: 'string', description: 'Glob pattern to match API endpoint URL' },
+        triggerAction: { type: 'string', enum: ['inspect_recent', 'wait_next'], description: 'Wait for next response or inspect most recent match (default: inspect_recent)' },
+        timeoutMs: { type: 'number', description: 'Timeout in milliseconds (default: 10000)' },
+        tabId: { type: 'number', description: 'Target tab ID' },
+      },
+      required: ['urlPattern'],
     },
   },
 ];

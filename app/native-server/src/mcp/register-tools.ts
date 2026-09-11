@@ -14,6 +14,7 @@ import {
   profileBlockedMessage,
   resolveToolProfile,
   TOOL_SCHEMAS,
+  TOOL_CATEGORIES,
 } from 'chrome-mcp-shared';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
@@ -21,10 +22,17 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 const TOOL_PROFILE = resolveToolProfile(process.env.CHROME_MCP_TOOL_PROFILE);
 const EXPOSED_TOOLS = filterToolSchemas(TOOL_SCHEMAS, TOOL_PROFILE);
 
+// Per-session dynamic tool activation store
+const sessionExtraTools = new Map<string, Set<string>>();
+
+
 export const setupTools = (server: Server, serverSessionId?: string) => {
   // List tools handler
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return { tools: EXPOSED_TOOLS };
+    const extra = serverSessionId ? sessionExtraTools.get(serverSessionId) : undefined;
+    if (!extra || extra.size === 0) return { tools: EXPOSED_TOOLS };
+    const combined = TOOL_SCHEMAS.filter((t) => EXPOSED_TOOLS.some((e) => e.name === t.name) || extra.has(t.name));
+    return { tools: combined };
   });
 
   // Call tool handler
@@ -51,7 +59,9 @@ const handleToolCall = async (
   try {
     // A tool that exists but is hidden by the profile should say so, not
     // masquerade as "not found" (the extension would report exactly that).
-    if (!EXPOSED_TOOLS.some((t) => t.name === name)) {
+    const extra = sessionId ? sessionExtraTools.get(sessionId) : undefined;
+    const isAllowed = EXPOSED_TOOLS.some((t) => t.name === name) || (extra && extra.has(name));
+    if (!isAllowed) {
       const known = TOOL_SCHEMAS.some((t) => t.name === name);
       return {
         content: [
@@ -78,6 +88,15 @@ const handleToolCall = async (
     }
 
     // 发送请求到Chrome扩展并等待响应
+        // Dynamic activation hook for chrome_tool_docs
+    if (name === 'chrome_tool_docs' && args?.activateForSession && args?.category) {
+      const catList = TOOL_CATEGORIES[args.category] ? TOOL_CATEGORIES[args.category].split(' ') : [];
+      if (sessionId && catList.length > 0) {
+        const set = sessionExtraTools.get(sessionId) || new Set<string>();
+        for (const tName of catList) set.add(tName);
+        sessionExtraTools.set(sessionId, set);
+      }
+    }
     const response = await nativeMessagingHostInstance.sendRequestToExtensionAndWait(
       {
         name,

@@ -1,3 +1,4 @@
+import { actionHistoryManager } from '@/utils/action-history-manager';
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
@@ -81,6 +82,14 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           // "backspace retreats focus" logic (e.g. OTP inputs) and steal the
           // subsequent insertText into the previous box.
           const isKnownEmpty = typeof coords.value === 'string' && coords.value === '';
+            if (typeof coords.value === 'string') {
+              actionHistoryManager.pushAction(targetTabId, {
+                type: 'fill',
+                index: args.index,
+                prevValue: coords.value,
+                timestamp: Date.now(),
+              });
+            }
 
           await cdpSessionManager.withSession(targetTabId, 'fill-index', async () => {
             await raceCdp(targetTabId, 'Input.dispatchMouseEvent', {
