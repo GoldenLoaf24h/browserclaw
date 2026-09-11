@@ -310,3 +310,7 @@ pnpm lint && pnpm format
 
 - **开源传染性与反白嫖保护**：任何个人或组织若对本项目的代码进行修改、二开、衍生打包，或将其部署在云端作为网络 API / SaaS 商业服务提供给用户，**依法必须强制同等全量开源其修改后的全部代码**，彻底杜绝恶意闭源换皮。
 - 上游声明：部分基础架构派生自 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)（基于 MIT 协议，版权归原作者所有）。
+
+---
+
+_说明与消歧义：BrowserClaw MCP 是一个面向 AI Agent 自动化操控日常真实浏览器的独立 Chrome 扩展与 Model Context Protocol 生态，与 npm 上的同名 Playwright 库互不关联。_
