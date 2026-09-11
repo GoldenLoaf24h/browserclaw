@@ -6,7 +6,7 @@
 
 ## 1. 架构速览与工作机制
 
-`mcp-chrome` 是一套基于 **模型上下文协议 (Model Context Protocol, MCP)** 的现代化工业级本地浏览器控制系统：
+`BrowserClaw` 是一套基于 **模型上下文协议 (Model Context Protocol, MCP)** 的现代化工业级本地浏览器控制系统：
 - **浏览器扩展 (Chrome Extension)**：运行在本地 Chrome 中，通过 Chrome DevTools Protocol (CDP) 注入原生物理级事件（`isTrusted: true`），维护纯内存弱引用 DOM 索引树。
 - **本地网桥服务 (Native Server)**：运行在本地 `127.0.0.1:12306`（或自定义端口），提供标准的 MCP JSON-RPC 接口（支持 Streamable HTTP、SSE 与 stdio 传输）。
 - **进程通信宿主 (Native Messaging Host)**：通过标准输入输出（stdio）与 Chrome 建立安全双向管道，具备 1000KB 截断保护与会话隔离机制。
@@ -68,7 +68,7 @@
 ```json
 {
   "mcpServers": {
-    "mcp-chrome": {
+    "browserclaw": {
       "url": "http://127.0.0.1:12306/sse",
       "headers": {
         "Authorization": "Bearer <从 ~/.chrome-mcp/bridge-token 读取的内容>"
@@ -82,7 +82,7 @@
 ```json
 {
   "mcpServers": {
-    "mcp-chrome": {
+    "browserclaw": {
       "command": "node",
       "args": [
         "<repo-root>\\app\\native-server\\dist\\cli.js",
@@ -101,7 +101,7 @@
 ```json
 {
   "mcpServers": {
-    "mcp-chrome": {
+    "browserclaw": {
       "command": "node",
       "args": [
         "<repo-root>/app/native-server/dist/cli.js",
@@ -120,7 +120,7 @@
 ```json
 {
   "mcpServers": {
-    "mcp-chrome": {
+    "browserclaw": {
       "command": "node",
       "args": [
         "<repo-root>/app/native-server/dist/cli.js",
@@ -180,7 +180,14 @@
      ```
   3. 若元素极为微小，可指定 `targetIndex` 启用局部高清扩充（ROI 将微小元素居中扩充至 400×400 高清切片）。
 
-### 准则四：自适应变动沉淀与自愈引导
+### 准则四：自驱动 Diff 携带机制（省 50% 交互往返）
+- 调用 `chrome_interact_index`、`chrome_fill_index` 或 `chrome_batch_actions` 时，**务必开启 `includeDelta: true`**。
+- 系统在操作执行后会自动比对局部 DOM，在响应中直接回传 `delta: { added, modified, removed }`。Agent 无需再次发起 `chrome_read_dom` 即可确认界面是否弹出下拉菜单或弹窗。
+
+### 准则五：海量页面定向轻量检索（`chrome_grep`）
+- 面对节点数 > 500 的大型或长列表页面，避免盲目 dump 全量 DOM，优先调用 `chrome_grep({ query: "登录" })` 秒级定位元素索引，单次 Token 消耗降低 90%+。
+
+### 准则六：自适应变动沉淀与自愈引导
 - **变动沉淀等待（Action Settle）**：
   - 工具参数自带 `waitForSettle: true`。操作执行后，系统内部的 Watchdog 会监听 DOM MutationObserver 与活跃网络请求。当页面静默无新增请求时，仅需 50ms 即可快速返回；遇长加载自动平滑等待，兼顾极速与稳定性。
 - **索引过期自愈机制**：
@@ -201,6 +208,10 @@
 | `chrome_screenshot` | `enableGrid: true`, `targetIndex` | 截取视口图像，可选叠加半透明坐标标尺或聚焦微小元素 | Canvas 画布、复杂验证码或无 DOM 节点图形 |
 | `chrome_upload_file` | `index` 或 `clickTargetIndex`, `filePath` | 动态拦截弹窗或直接向文件输入框注入本地绝对路径 | 网页文件上传、头像更换 |
 | `chrome_get_markdown` | 无 | 提取页面的清晰结构化 Markdown 内容 | 网页内容阅读、文献资料总结 |
+| `chrome_grep` | `query`, `searchType` | 毫秒级正则/文本定向检索，返回匹配项及索引 | 长列表或大页面极速定位目标元素 |
+| `chrome_inspect_media` | `index` 或 `selector` | 无损内存提取图片原始高画质 Data URL 或局部超采样截图 | 验证码、图表、商品原图精准识别 |
+| `chrome_request_human_intervention` | `reason`, `timeoutMs` | 唤起毛玻璃顶栏挂起流程并让渡控制权给用户 | 遭遇滑块验证、2FA 或安全支付时 |
+| `chrome_undo_last_action` | 无 | 单步回滚最近一次页面跳转或表单填充 | 操作失误时的容错与快速撤销 |
 
 ---
 

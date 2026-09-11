@@ -24,7 +24,7 @@ BrowserClaw 由本地构建的三部分组成：扩展（MV3）、原生宿主�
 | CDP_DISPATCH_TIMEOUT | 目标 tab 在后台且批量竞速超时，激活 tab 或重试 |
 | Security check failed: Domain changed | 上次截图域名与当前 tab 不一致，重新截图 |
 | Tool X is not exposed under the ... profile | 当前 profile 隐藏了该工具，用 chrome_tool_docs 查参数或改回 full |
-| Tool X is not a BrowserClaw tool | 工具名不存在，tools/list 查看当前 46 个 |
+| Tool X is not a BrowserClaw tool | 工具名不存在，tools/list 查看当前 52 个（或 core 24 / crawl 15 / full 52） |
 
 ## 4. 构建问题
 
