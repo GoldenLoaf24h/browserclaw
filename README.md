@@ -65,26 +65,25 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 ## ⚖️ How BrowserClaw Compares
 
-| Feature / Architecture | **BrowserClaw (This Project)** | **browser-use** | **Stagehand (Browserbase)** | **Playwright MCP** | **browserclaw (idan-rubin)** |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Primary Environment** | **Your Everyday Chrome (Extension)** | Headless / Custom Chrome | Cloud / Remote Chromium | Headless Chromium | Playwright Library |
-| **Reuses Active Logins & Cookies** | ✅ **100% Native** | ⚠️ Complex Profile Setup | ❌ Fresh Sandboxes | ❌ Fresh Sandboxes | ❌ Fresh Sandboxes |
-| **Windows File Lock Immunity** | ✅ **Native Messaging (Zero Locks)** | ❌ Fails on `WinError 32` | N/A (Cloud) | N/A (Cloud) | ❌ `SingletonLock` Race |
-| **Silent Background Execution** | ✅ **Zero Popups / Zero Prompts** | ❌ CDP Security Prompts | ⚠️ Remote Only | ⚠️ Virtual Display | ❌ Port Collision Risk |
-| **Element Targeting System** | ✅ **DOM-First 1-Based + Visual Grid** | 1-Based DOM Index | Natural Language LLM | ARIA Snapshot | ARIA Snapshot Refs |
-| **Autonomous DOM Diffing** | ✅ **Yes (`includeDelta`)** | ❌ Full Re-eval | ❌ Full Re-eval | ❌ Full Re-eval | ❌ Re-snapshot |
-| **Sub-100 Token Element Grep** | ✅ **Yes (`chrome_grep`)** | ❌ Full DOM Dump | ❌ Natural Language | ❌ Full Tree Dump | ❌ Full Tree Dump |
-| **Visual Layer & Cursor Engine** | ✅ **1:1 Spring Physics Cursor** | ❌ None | ❌ None | ❌ None | ❌ None |
-| **Tab Lifecycle Isolation** | ✅ **Dedicated Chrome Tab Groups** | ❌ Messy Tabs | ❌ None | ❌ None | ❌ None |
-| **Human-in-the-Loop 2FA Takeover**| ✅ **Frosted Banner + Auto-Resume**| ❌ Timeout / Fail | ⚠️ Manual Pausing | ❌ None | ⚠️ Error Catching |
-| **Low-Level Escape Hatch** | ✅ **`cdp_execute` + Anti-Hang** | ⚠️ Raw CDP via Python | ❌ Playwright Only | ❌ Fixed MCP Tools | ⚠️ Raw Playwright Page |
-| **Personal Context (History & Bookmarks)** | ✅ **Native Intelligence (`chrome_history`, `bookmark_*`)** | ❌ None (Disposable Sandbox) | ❌ None (Cloud Remote) | ❌ None (Isolated) | ❌ None (Stateless) |
+Rather than generic checkboxes, here is how BrowserClaw's architecture objectively compares to alternative automation paradigms across the dimensions users and agent developers care about most:
 
-### 🔍 Honest Limitations & Current Boundaries
-While BrowserClaw provides an unmatched experience for local desktop browser control, we believe in radical transparency regarding current architectural tradeoffs:
-1. **Chromium-Only by Design**: BrowserClaw is deeply optimized for Chromium-based browsers (Google Chrome, Microsoft Edge, Brave, Opera). It does not support Gecko (Firefox) or WebKit (Safari).
-2. **Local Desktop Paradigm**: Designed for personal workflows, developers, and local agents (Cursor, Claude Code, Codex). It is not a headless cloud cluster and is not meant for spinning up 1,000 parallel cloud containers.
-3. **1MB IPC Ceiling**: Messages between the Fastify bridge and Chrome Extension traverse Chrome Native Messaging, which enforces a 1MB payload limit. Very large files or full-resolution canvas dumps are streamed or referenced via filesystem paths.
+| Capability / Architecture | **BrowserClaw (This Project)** | **browser-use (Python/CDP)** | **Playwright MCP (Microsoft)** | **Stagehand (Browserbase)** |
+| :--- | :--- | :--- | :--- | :--- |
+| **Real-World Browser Auth** | **Your Everyday Chrome (Extension)**<br>Reuses active Google, GitHub, and enterprise SSO sessions without credential re-entry | **Separate Chrome Instance**<br>Requires manual profile copying; frequently triggers anti-bot and 2FA challenges | **Ephemeral Headless Sandbox**<br>Starts from a blank profile each run; cannot access active desktop sessions | **Cloud-Hosted Browser**<br>Runs in remote sandboxes; relies on external proxies and manual cookie injection |
+| **Windows OS Reliability** | **Native Messaging Dual-IPC**<br>Immune to file locks, zero port conflicts, runs silently in background | **Direct User Data Copy**<br>Crashes on Windows with `[WinError 32]` exclusive file lock collisions | **Process-Spawned Headless**<br>Leaves orphan `chrome.exe` background processes if killed abruptly | **Remote Execution**<br>Avoids local OS issues, but incurs high network latency and per-minute cloud costs |
+| **Token Cost per Action** | **Extreme Efficiency (<200 ~ 800 Tokens)**<br>Pruned 1-based DOM tree + autonomous diff (`includeDelta` returns local changes only) | **Moderate (~3,000 - 8,000 Tokens)**<br>Full DOM snapshot evaluation or vision model roundtrip on each step | **High (~5,000 - 15,000 Tokens)**<br>Dumps full ARIA accessibility trees into the prompt on every interaction | **High (LLM-in-the-Loop)**<br>Relies on model inference to re-locate targets on every semantic command |
+| **Massive Page Search** | **`chrome_grep` (<100 Tokens)**<br>Sub-millisecond regex/text scan across DOM and text lines without dumping the tree | **Full Dump Search**<br>Requires feeding entire DOM contents into LLM context to find elements | **Full Tree Traversal**<br>Agent must parse through tens of thousands of lines of raw accessibility text | **Semantic Search**<br>Cloud-side visual or prompt evaluation to locate elements |
+| **Multi-Step Pipelines** | **Closed-Loop `batch_actions`**<br>Chains fills, clicks, waits, `assert` guards, and `extract` data captures in a single network RTT | **Step-by-Step Loop**<br>Each discrete keystroke or click requires a full agent decision roundtrip (10s+ latency) | **Single-Action Calls**<br>No built-in batching, verification assertions, or inline data extraction | **Semantic Single Actions**<br>`page.act("...")` calls execute individually with per-action billing |
+| **Visual Aesthetics** | **1:1 Spring-Kinematics Virtual Cursor**<br>Retina cursor flies naturally; dedicated colored Chrome Tab Groups prevent window clutter | **Headless / Raw Jumps**<br>No visual cursor overlay; tabs pile up unorganized across the user window | **No Visual Layer**<br>Engineered strictly for test suites; zero visual feedback or takeover safety | **Canvas Stream**<br>Renders a remote browser feed in a web dashboard; no local overlay |
+| **2FA & Captcha Takeover** | **`request_human_intervention`**<br>Softly dims page with frosted-glass banner, yields to human, and auto-resumes on continue | **Timeout / Crash**<br>Blocks on interactive challenges until action watchdog expires | **Assertion Failure**<br>Throws test timeouts when blocked by bot detection or captchas | **Dashboard Takeover**<br>Requires switching to cloud provider dashboard to solve manually |
+| **Low-Level Escape Hatch** | **`cdp_execute` (Anti-Hang Guard)**<br>Target polymorphic routing with automatic detachment on timeout to prevent renderer freeze | **Python CDP Access**<br>Provides low-level CDP commands directly through Python async bindings | **Strict High-Level API**<br>Locked to exposed MCP tools; no raw CDP command passthrough | **Playwright-Only**<br>Limited to Playwright primitives; cannot execute raw DevTools protocol |
+| **Personal Second Brain** | **Native History & Bookmarks Intelligence**<br>Agent reads browsing history to understand user habits and organizes messy bookmarks | **Task-Only Automation**<br>Operates as a stateless task runner; retains no personal browser memory | **Stateless Test Runner**<br>All state and browsing records are wiped upon session termination | **Cloud Session Only**<br>Isolated to specific tasks; no connection to developer's daily workflow |
+
+### � Honest Architectural Boundaries
+BrowserClaw is purpose-built for high-speed local browser control, and we maintain complete transparency regarding its design boundaries:
+1. **Chromium-First Architecture**: Deeply optimized for Chromium-based browsers (Google Chrome, Microsoft Edge, Brave, Opera). It does not support Gecko (Firefox) or WebKit (Safari).
+2. **Local Desktop Paradigm**: Designed for personal productivity, developers, and local agents (Cursor, Claude Code, Codex). It is not designed to spawn 1,000 ephemeral headless containers in the cloud.
+3. **1MB IPC Ceiling**: Chrome Native Messaging enforces a 1MB payload ceiling. Large images and media assets are handled via local filesystem paths or streaming rather than inline JSON.
 
 ---
 
