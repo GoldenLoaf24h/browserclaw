@@ -53,3 +53,4 @@ export { inspectMediaTool } from './inspect-media';
 export { humanInterventionTool } from './human-intervention';
 export { undoLastActionTool } from './undo-action';
 export { interceptApiTool } from './intercept-api';
+export { grepTool } from './grep';

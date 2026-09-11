@@ -15,6 +15,7 @@ import type { CdpEventObserver } from '../../../../utils/cdp-session-manager';
 import { parseUnifiedCoordinate, type PolymorphicCoordinate } from '../../../../utils/coordinate-parser';
 import { sessionTabAffinity } from '../../../../utils/session-tab-affinity';
 import { animateAgentCursor } from './agent-cursor';
+import { captureDeltaIfRequested } from '../../../../utils/delta-helper';
 
 export interface InteractIndexParams {
   index?: number;
@@ -33,6 +34,7 @@ export interface InteractIndexParams {
   waitForSettle?: boolean;
   settleTimeoutMs?: number;
   humanize?: boolean;
+  includeDelta?: boolean;
   sessionId?: string;
   sessionContext?: string;
 }
@@ -718,6 +720,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           ? `screenshot coordinate context expires in ${Math.round(ctxTtlMs / 1000)}s; re-capture to refresh`
           : undefined;
 
+      const delta = await captureDeltaIfRequested(tabId, args.includeDelta);
+
       return {
         content: [
           {
@@ -742,6 +746,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 settle: settleResult,
                 screenshotCtxWarning,
                 ...(affinityWarning ? { affinityWarning } : {}),
+                ...(delta ? { delta } : {}),
                 ...(deliveryVerified === undefined
                   ? {}
                   : deliveryVerified

@@ -91,7 +91,7 @@ export interface SessionTabAffinityContext {
 }
 
 export interface BatchActionItem {
-  type: 'click' | 'fill' | 'hover' | 'scroll' | 'press_key' | 'wait' | 'key' | 'fill_form';
+  type: 'click' | 'fill' | 'hover' | 'scroll' | 'press_key' | 'wait' | 'key' | 'fill_form' | 'assert' | 'extract';
   index?: number;
   ref?: string | number;
   selector?: string;
@@ -110,12 +110,23 @@ export interface BatchActionItem {
   clear?: boolean;
   waitForSettle?: boolean;
   settleTimeoutMs?: number;
+  // For type: 'assert'
+  expectedText?: string;
+  condition?: 'contains' | 'equals' | 'visible' | 'not_visible';
+  abortOnFailure?: boolean;
+  // For type: 'extract'
+  property?: 'text' | 'value' | 'attribute';
+  attributeName?: string;
+  variableName?: string;
 }
 
 export interface BatchActionResult {
   success: boolean;
   completedActions: number;
   totalActions: number;
+  extractedData?: Record<string, string>;
+  assertions?: Array<{ actionIndex: number; passed: boolean; condition?: string; error?: string }>;
+  delta?: any;
   results: Array<{ actionIndex: number; success: boolean; error?: string; output?: any }>;
   interruptedReason?: string;
   settle?: PageSettleResult;

@@ -8,6 +8,7 @@ import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { raceCdp, DialogOpenedError, createDialogInterruptResponse } from '@/utils/race-cdp';
 import { sessionTabAffinity } from '@/utils/session-tab-affinity';
 import { animateAgentCursor } from './agent-cursor';
+import { captureDeltaIfRequested } from '@/utils/delta-helper';
 
 export interface FillIndexParams {
   index: number;
@@ -18,6 +19,7 @@ export interface FillIndexParams {
   windowId?: number;
   waitForSettle?: boolean;
   settleTimeoutMs?: number;
+  includeDelta?: boolean;
   sessionId?: string;
   sessionContext?: string;
 }
@@ -196,6 +198,11 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
 
       if (fillIdxAffinityWarning) {
         (outcome as any).affinityWarning = fillIdxAffinityWarning;
+      }
+
+      const delta = await captureDeltaIfRequested(targetTabId, args.includeDelta);
+      if (delta) {
+        (outcome as any).delta = delta;
       }
 
       return {

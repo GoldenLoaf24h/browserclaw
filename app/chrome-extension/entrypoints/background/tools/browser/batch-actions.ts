@@ -7,6 +7,7 @@ import { waitForPageSettle } from '@/utils/action-watchdog';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { raceCdp as raceCdpBatch, DialogOpenedError, createDialogInterruptResponse } from '@/utils/race-cdp';
 import { resolveTargetLocation } from './unified-locator';
+import { captureDeltaIfRequested } from '@/utils/delta-helper';
 
 export interface BatchActionsParams {
   actions: BatchActionItem[];
@@ -14,6 +15,7 @@ export interface BatchActionsParams {
   windowId?: number;
   waitForSettle?: boolean;
   settleTimeoutMs?: number;
+  includeDelta?: boolean;
   sessionId?: string;
   sessionContext?: string;
 }
@@ -150,11 +152,13 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
       }
       const tabId = tab.id;
 
-      const initialUrl = tab.url || '';
-      const actionResults: Array<{ actionIndex: number; success: boolean; error?: string; output?: any }> = [];
-      let interruptedReason: string | undefined;
+        const initialUrl = tab.url || '';
+        const actionResults: Array<{ actionIndex: number; success: boolean; error?: string; output?: any }> = [];
+        const extractedData: Record<string, string> = {};
+        const assertions: Array<{ actionIndex: number; passed: boolean; condition?: string; error?: string }> = [];
+        let interruptedReason: string | undefined;
 
-      let spaDriftNotice: string | undefined;
+        let spaDriftNotice: string | undefined;
 
       for (let i = 0; i < actions.length; i++) {
         const item = actions[i];
@@ -649,6 +653,115 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               break;
             }
 
+            case 'assert': {
+              let actualText = '';
+              let isVisible = false;
+              if (typeof item.index === 'number') {
+                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [item.index]);
+                let coords = res?.[0]?.result;
+                if (!coords?.success) {
+                  const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageGetElementCoordinates', [item.index]);
+                  const match = frameResults.find((r) => r.result?.success);
+                  if (match?.result) coords = match.result;
+                }
+                if (coords?.success) {
+                  isVisible = true;
+                  actualText = String(coords.text ?? coords.value ?? '');
+                }
+              } else if (item.selector) {
+                const selRes = await this.safeExecuteScript(tabId, {
+                  target: { tabId },
+                  func: (sel: string) => {
+                    const el = document.querySelector(sel);
+                    if (!el) return { found: false };
+                    const rect = el.getBoundingClientRect();
+                    const visible = rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).visibility !== 'hidden';
+                    return {
+                      found: true,
+                      visible,
+                      text: (el as HTMLElement).innerText ?? el.textContent ?? '',
+                      value: (el as HTMLInputElement).value ?? '',
+                    };
+                  },
+                  args: [item.selector],
+                });
+                const data = selRes?.[0]?.result as any;
+                if (data?.found) {
+                  isVisible = Boolean(data.visible);
+                  actualText = String(data.text || data.value || '');
+                }
+              }
+
+              const condition = item.condition || 'contains';
+              const expected = item.expectedText ?? '';
+              let passed = false;
+
+              switch (condition) {
+                case 'visible':
+                  passed = isVisible;
+                  break;
+                case 'not_visible':
+                  passed = !isVisible;
+                  break;
+                case 'equals':
+                  passed = actualText.trim() === expected.trim();
+                  break;
+                case 'contains':
+                default:
+                  passed = actualText.includes(expected);
+                  break;
+              }
+
+              assertions.push({
+                actionIndex: i,
+                passed,
+                condition,
+                error: passed ? undefined : `Assertion failed: expected "${expected}" with condition "${condition}", got "${actualText}" (visible=${isVisible})`,
+              });
+
+              if (!passed && item.abortOnFailure !== false) {
+                throw new Error(`Assertion failed at action ${i}: condition "${condition}" not met for expected "${expected}". Actual: "${actualText}"`);
+              }
+
+              stepOutput = { asserted: true, passed, condition, actualText, isVisible };
+              break;
+            }
+
+            case 'extract': {
+              let extractedValue = '';
+              const prop = item.property || 'text';
+              if (typeof item.index === 'number') {
+                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [item.index]);
+                let coords = res?.[0]?.result;
+                if (!coords?.success) {
+                  const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageGetElementCoordinates', [item.index]);
+                  const match = frameResults.find((r) => r.result?.success);
+                  if (match?.result) coords = match.result;
+                }
+                if (coords?.success) {
+                  extractedValue = prop === 'value' ? String(coords.value ?? '') : String(coords.text ?? '');
+                }
+              } else if (item.selector) {
+                const selRes = await this.safeExecuteScript(tabId, {
+                  target: { tabId },
+                  func: (sel: string, p: string, attr?: string) => {
+                    const el = document.querySelector(sel);
+                    if (!el) return '';
+                    if (p === 'attribute' && attr) return el.getAttribute(attr) ?? '';
+                    if (p === 'value') return (el as HTMLInputElement).value ?? '';
+                    return (el as HTMLElement).innerText ?? el.textContent ?? '';
+                  },
+                  args: [item.selector, prop, item.attributeName || ''],
+                });
+                extractedValue = String(selRes?.[0]?.result ?? '');
+              }
+
+              const varName = item.variableName || `var_${i}`;
+              extractedData[varName] = extractedValue;
+              stepOutput = { extracted: true, variableName: varName, value: extractedValue, property: prop };
+              break;
+            }
+
             default:
               throw new Error(`Unsupported batch action type: ${(item as any).type}`);
           }
@@ -684,6 +797,8 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
         batchSettle = await waitForPageSettle(tabId, { timeoutMs: args.settleTimeoutMs });
       }
 
+      const delta = await captureDeltaIfRequested(tabId, args.includeDelta);
+
       const totalCompleted = actionResults.filter((r) => r.success).length;
       const batchResult: BatchActionResult & { spaDriftNotice?: string } = {
         success: totalCompleted === actions.length,
@@ -693,6 +808,9 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
         interruptedReason,
         settle: batchSettle,
         spaDriftNotice,
+        ...(Object.keys(extractedData).length > 0 ? { extractedData } : {}),
+        ...(assertions.length > 0 ? { assertions } : {}),
+        ...(delta ? { delta } : {}),
       };
 
       return {

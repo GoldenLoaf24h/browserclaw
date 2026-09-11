@@ -58,6 +58,7 @@ export const TOOL_NAMES = {
     UNDO_LAST_ACTION: 'chrome_undo_last_action',
     INTERCEPT_API: 'chrome_intercept_api',
     CDP_EXECUTE: 'chrome_cdp_execute',
+    GREP: 'chrome_grep',
   },
 };
 
@@ -1492,6 +1493,11 @@ export const TOOL_SCHEMAS: Tool[] = [
           description:
             'Simulate realistic human-like cursor trajectory with micro-jitter before clicking (default: false)',
         },
+        includeDelta: {
+          type: 'boolean',
+          description:
+            'Automatically capture and return DOM changes caused by this interaction in the delta field (default: false)',
+        },
         sessionId: {
           type: 'string',
           description: 'Optional session identifier to bind affinity to a specific tab context',
@@ -1529,6 +1535,11 @@ export const TOOL_SCHEMAS: Tool[] = [
           type: 'number',
           description: 'Maximum settle timeout in milliseconds (default: 1500, range: 200-10000)',
         },
+        includeDelta: {
+          type: 'boolean',
+          description:
+            'Automatically capture and return DOM changes caused by filling in the delta field (default: false)',
+        },
         sessionId: {
           type: 'string',
           description: 'Optional session identifier to bind affinity to a specific tab context',
@@ -1558,7 +1569,7 @@ export const TOOL_SCHEMAS: Tool[] = [
             properties: {
               type: {
                 type: 'string',
-                enum: ['click', 'fill', 'hover', 'scroll', 'press_key', 'wait', 'key', 'fill_form'],
+                enum: ['click', 'fill', 'hover', 'scroll', 'press_key', 'wait', 'key', 'fill_form', 'assert', 'extract'],
                 description: 'Action type to perform',
               },
               index: { type: 'number', description: 'Element index (for click, fill, hover)' },
@@ -1596,6 +1607,22 @@ export const TOOL_SCHEMAS: Tool[] = [
                 type: 'number',
                 description: 'Maximum settle timeout in milliseconds for this action (default: 1500)',
               },
+              // For type: 'assert'
+              expectedText: { type: 'string', description: 'Expected text substring or exact match' },
+              condition: {
+                type: 'string',
+                enum: ['contains', 'equals', 'visible', 'not_visible'],
+                description: 'Assertion condition (default: "contains")',
+              },
+              abortOnFailure: { type: 'boolean', description: 'Abort batch if assertion fails (default: true)' },
+              // For type: 'extract'
+              property: {
+                type: 'string',
+                enum: ['text', 'value', 'attribute'],
+                description: 'Property to extract (default: "text")',
+              },
+              attributeName: { type: 'string', description: 'Attribute name when property is "attribute"' },
+              variableName: { type: 'string', description: 'Key name under extractedData to store the result' },
             },
             required: ['type'],
           },
@@ -1611,6 +1638,11 @@ export const TOOL_SCHEMAS: Tool[] = [
         settleTimeoutMs: {
           type: 'number',
           description: 'Maximum settle timeout in milliseconds (default: 1500, range: 200-10000)',
+        },
+        includeDelta: {
+          type: 'boolean',
+          description:
+            'Automatically capture and return DOM changes caused by the batch in the delta field (default: false)',
         },
         sessionId: {
           type: 'string',
@@ -2356,6 +2388,35 @@ export const TOOL_SCHEMAS: Tool[] = [
         tabId: { type: 'number', description: 'Target tab ID' },
       },
       required: ['urlPattern'],
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.GREP,
+    annotations: {
+      title: 'Search Page (Grep)',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    description:
+      'Search the page without dumping full DOM tree. Supports searching interactive elements (returning indices for chrome_interact_index), all DOM nodes, or raw visible text lines.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search term or regex pattern' },
+        isRegex: { type: 'boolean', description: 'Whether to evaluate query as a regular expression (default: false)' },
+        searchType: {
+          type: 'string',
+          enum: ['interactive_only', 'all_dom', 'page_text'],
+          description:
+            'Search target: "interactive_only" (default, matches clickable/fillable elements and returns indices), "all_dom" (matches all elements), "page_text" (scans visible text lines).',
+        },
+        limit: { type: 'number', description: 'Maximum matching results to return (default: 20, max: 50)' },
+        tabId: { type: 'number', description: 'Target tab ID (optional)' },
+        sessionId: { type: 'string', description: 'Session identifier for tab affinity (optional)' },
+      },
+      required: ['query'],
     },
   },
 ];
