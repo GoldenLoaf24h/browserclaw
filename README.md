@@ -40,6 +40,29 @@ BrowserClaw is a high-performance Model Context Protocol (MCP) platform that giv
 
 ---
 
+## 🚀 Quick Start
+
+### 1. Let your AI agent set up the backend
+Ask your AI assistant (Claude Code, Cursor, Windsurf, Codex):
+> *"Please set up BrowserClaw MCP server for me: https://github.com/GoldenLoaf24h/browserclaw"*
+
+Or run manually:
+```bash
+git clone https://github.com/GoldenLoaf24h/browserclaw.git
+cd browserclaw && pnpm install && pnpm build
+cd app/native-server && node dist/scripts/register-dev.js
+```
+*(Token saved at `~/.chrome-mcp/bridge-token`; server listens on `http://127.0.0.1:12306/mcp`)*
+
+### 2. Load the Extension in Chrome
+1. Download **[browserclaw-extension-latest.zip](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** (or use `app/chrome-extension/.output/chrome-mv3`).
+2. Open `chrome://extensions`, enable **Developer mode** (top-right).
+3. Click **Load unpacked** and select the folder.
+
+> 🤫 **Pro Tip (Silent Debugging)**: Add `--silent-debugger-extension-api` to your Chrome launch shortcut to completely hide Chrome's top *"BrowserClaw is debugging this browser"* bar.
+
+---
+
 ## ⚖️ How BrowserClaw Compares
 
 | Feature / Architecture | **BrowserClaw (This Project)** | **browser-use** | **Stagehand (Browserbase)** | **Playwright MCP** | **browserclaw (idan-rubin)** |
@@ -62,29 +85,6 @@ While BrowserClaw provides an unmatched experience for local desktop browser con
 1. **Chromium-Only by Design**: BrowserClaw is deeply optimized for Chromium-based browsers (Google Chrome, Microsoft Edge, Brave, Opera). It does not support Gecko (Firefox) or WebKit (Safari).
 2. **Local Desktop Paradigm**: Designed for personal workflows, developers, and local agents (Cursor, Claude Code, Codex). It is not a headless cloud cluster and is not meant for spinning up 1,000 parallel cloud containers.
 3. **1MB IPC Ceiling**: Messages between the Fastify bridge and Chrome Extension traverse Chrome Native Messaging, which enforces a 1MB payload limit. Very large files or full-resolution canvas dumps are streamed or referenced via filesystem paths.
-
----
-
-## 🚀 Quick Start
-
-### 1. Let your AI agent set up the backend
-Ask your AI assistant (Claude Code, Cursor, Windsurf, Codex):
-> *"Please set up BrowserClaw MCP server for me: https://github.com/GoldenLoaf24h/browserclaw"*
-
-Or run manually:
-```bash
-git clone https://github.com/GoldenLoaf24h/browserclaw.git
-cd browserclaw && pnpm install && pnpm build
-cd app/native-server && node dist/scripts/register-dev.js
-```
-*(Token saved at `~/.chrome-mcp/bridge-token`; server listens on `http://127.0.0.1:12306/mcp`)*
-
-### 2. Load the Extension in Chrome
-1. Download **[browserclaw-extension-latest.zip](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** (or use `app/chrome-extension/.output/chrome-mv3`).
-2. Open `chrome://extensions`, enable **Developer mode** (top-right).
-3. Click **Load unpacked** and select the folder.
-
-> 🤫 **Pro Tip (Silent Debugging)**: Add `--silent-debugger-extension-api` to your Chrome launch shortcut to completely hide Chrome's top *"BrowserClaw is debugging this browser"* bar.
 
 ---
 

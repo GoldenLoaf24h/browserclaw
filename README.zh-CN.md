@@ -40,6 +40,29 @@ BrowserClaw 是一套面向 AI Agent 的工业级模型上下文协议（MCP）�
 
 ---
 
+## 🚀 极速上手 (让 AI 帮你完成配置)
+
+### 步骤 1：把仓库交给你的 AI Agent
+直接对你的 AI 助手（Claude Code、Cursor、Windsurf、Codex）发送：
+> *“请帮我配置并启动 BrowserClaw MCP 服务：https://github.com/GoldenLoaf24h/browserclaw”*
+
+或手动在本地终端执行：
+```bash
+git clone https://github.com/GoldenLoaf24h/browserclaw.git
+cd browserclaw && pnpm install && pnpm build
+cd app/native-server && node dist/scripts/register-dev.js
+```
+*(高熵 Token 自动生成于 `~/.chrome-mcp/bridge-token`，服务监听 `http://127.0.0.1:12306/mcp`)*
+
+### 步骤 2：在 Chrome 中加载扩展
+1. 下载 **[最新纯净扩展包](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)**（或直接使用本工程 `app/chrome-extension/.output/chrome-mv3`）。
+2. 在 Chrome / Edge 地址栏打开 `chrome://extensions`，开启右上角**“开发者模式”**。
+3. 点击左上角**“加载已解压的扩展程序”**，选择该文件夹。
+
+> 🤫 **进阶技巧（彻底隐藏调试横条）**：在桌面 Chrome 快捷方式启动参数中加入 `--silent-debugger-extension-api`，浏览器将完全隐藏顶部长黄条，页面零位移静默运行。
+
+---
+
 ## ⚖️ 开源方案全景横向对比
 
 | 特性 / 架构维度 | **BrowserClaw (本项目)** | **browser-use** | **Stagehand (Browserbase)** | **Playwright MCP** | **browserclaw (idan-rubin)** |
@@ -62,29 +85,6 @@ BrowserClaw 是一套面向 AI Agent 的工业级模型上下文协议（MCP）�
 1. **仅适配 Chromium 内核**：BrowserClaw 深度依赖 Chromium 扩展 API 与 CDP 协议（Chrome、Edge、Brave、Opera），暂不兼容 Firefox (Gecko) 或 Safari (WebKit)。
 2. **本地桌面操作定位**：专为你个人日常使用的浏览器与本地 AI 智能体（Cursor、Claude Code、Codex）打造，定位不是云端无头测试集群（无法像云端 SaaS 一样瞬间并发拉起 1,000 个无头 Docker）。
 3. **Native Messaging 1MB 传输限制**：遵循 Chrome 本地进程通信安全规范，单条 JSON 消息负载上限为 1MB。对于超大图片或长视频提取，推荐直接通过本地绝对文件路径引用。
-
----
-
-## 🚀 极速上手 (让 AI 帮你完成配置)
-
-### 步骤 1：把仓库交给你的 AI Agent
-直接对你的 AI 助手（Claude Code、Cursor、Windsurf、Codex）发送：
-> *“请帮我配置并启动 BrowserClaw MCP 服务：https://github.com/GoldenLoaf24h/browserclaw”*
-
-或手动在本地终端执行：
-```bash
-git clone https://github.com/GoldenLoaf24h/browserclaw.git
-cd browserclaw && pnpm install && pnpm build
-cd app/native-server && node dist/scripts/register-dev.js
-```
-*(高熵 Token 自动生成于 `~/.chrome-mcp/bridge-token`，服务监听 `http://127.0.0.1:12306/mcp`)*
-
-### 步骤 2：在 Chrome 中加载扩展
-1. 下载 **[最新纯净扩展包](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)**（或直接使用本工程 `app/chrome-extension/.output/chrome-mv3`）。
-2. 在 Chrome / Edge 地址栏打开 `chrome://extensions`，开启右上角**“开发者模式”**。
-3. 点击左上角**“加载已解压的扩展程序”**，选择该文件夹。
-
-> 🤫 **进阶技巧（彻底隐藏调试横条）**：在桌面 Chrome 快捷方式启动参数中加入 `--silent-debugger-extension-api`，浏览器将完全隐藏顶部长黄条，页面零位移静默运行。
 
 ---
 
