@@ -46,6 +46,14 @@ On Windows, however, all existing approaches break down due to low-level OS and 
 
 Built on an industrial-grade three-tier architecture (WXT Vue 3 MV3 Extension + Fastify Native Host + Shared Schema) connected via Chrome Native Messaging, BrowserClaw exposes 52 schema-validated MCP tools. Unlike detached headless sandboxes (Playwright / Puppeteer), it lives inside your daily browser — keeping your active logins, cookies, enterprise SSO sessions, and extensions intact, while guaranteeing every dispatched action is a native trusted browser event (`isTrusted=true`).
 
+
+### 💡 Standing on the Shoulders of Giants (References & Prior Art)
+BrowserClaw builds upon and synthesizes the cutting-edge insights from leading browser automation projects:
+- **[hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)**: The foundational Chrome MV3 extension + Native Messaging IPC bridge architecture.
+- **[browser-use/browser-use](https://github.com/browser-use/browser-use)**: Token-efficient DOM-first indexing, human-like execution workflows, and high-performance action serialization.
+- **[browseros-ai/BrowserOS](https://github.com/browseros-ai/BrowserOS)**: Autonomous DOM diffing (`includeDelta`), millisecond element grep (`chrome_grep`), and multi-step pipeline assertions.
+- **[ChatGPT Official Extension](https://chromewebstore.google.com/detail/chatgpt/hehggadaopoacecdllhhajmbjkdcmajg)**: Spring kinematics virtual cursor overlay (`agent-cursor`), and dedicated Chrome Tab Groups lifecycle isolation.
+
 ---
 
 ## 🚀 Quick Start (Let AI do the work!)

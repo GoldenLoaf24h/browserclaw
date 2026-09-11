@@ -46,6 +46,13 @@
 
 基于 WXT (Vue 3) MV3 扩展 + Fastify 原生宿主 + 共享 Schema 的三层工业级架构，BrowserClaw 经由 Chrome 原生通信管道封装并暴露了 52 个 Schema 校验的 MCP 工具。与无头独立沙盒方案不同，它原生常驻于您的主力浏览器中，无感复用现有的全部登录凭据、Cookie 与扩展环境，并确保全链路交互均为浏览器原生可信事件（`isTrusted=true`）。
 
+### 💡 站在巨人的肩膀上（参考与致谢的开源项目）
+BrowserClaw 在设计与实现过程中，深入吸收并融合了业内前沿开源项目的核心精髓：
+- **[hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)**：提供坚实的 Chrome MV3 扩展 + Native Messaging 本地双向 IPC 基础底座；
+- **[browser-use/browser-use](https://github.com/browser-use/browser-use)**：借鉴其极致省 Token 的 1-based DOM 索引理念与类真人操作流水线；
+- **[browseros-ai/BrowserOS](https://github.com/browseros-ai/BrowserOS)**：引入操作自驱局部 Diff 回传（`includeDelta`）、毫秒级轻量检索（`chrome_grep`）与流水线断言闭环；
+- **[ChatGPT 官方 Chrome 扩展](https://chromewebstore.google.com/detail/chatgpt/hehggadaopoacecdllhhajmbjkdcmajg)**：1:1 复刻弹簧动力学虚拟鼠标悬浮层，以及专属色彩的 Chrome Tab Groups 生命周期管理。
+
 ---
 
 ## 🚀 极速上手 (把项目交给 AI 即可！)
