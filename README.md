@@ -54,7 +54,7 @@ Unlike headless browser drivers (Playwright, Puppeteer, Selenium), BrowserClaw r
 
 ### Step 1. Hand it off to your AI Agent
 Hand this project folder to your AI assistant (Claude Code, Cursor, Codex, Windsurf, Cline) or ask it:
-> *"Please set up BrowserClaw MCP server for me."*
+> *"Please set up BrowserClaw MCP server for me: https://github.com/GoldenLoaf24h/browserclaw"*
 
 Your agent will run the local bridge setup:
 ```bash

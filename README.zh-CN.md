@@ -54,7 +54,7 @@ BrowserClaw 是 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)（MI
 
 ### 第 1 步：把项目交给你的 AI Agent
 将本仓库目录直接提供给你的 AI 编程助手（Claude Code、Cursor、Codex、Windsurf、Cline），并对它说：
-> *“帮我配置并启动 BrowserClaw MCP 服务器”*
+> *“帮我配置并启动 BrowserClaw MCP 服务器：https://github.com/GoldenLoaf24h/browserclaw”*
 
 AI Agent 将自动执行后台桥接服务构建与原生注册：
 ```bash
