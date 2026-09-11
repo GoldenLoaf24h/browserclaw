@@ -13,6 +13,7 @@ import { screenshotRingBuffer } from '@/utils/screenshot-ring-buffer';
 import { compressImage } from '@/utils/image-utils';
 import { parseUnifiedCoordinate, type PolymorphicCoordinate } from '@/utils/coordinate-parser';
 import { sessionTabAffinity } from '@/utils/session-tab-affinity';
+import { animateAgentCursor } from './agent-cursor';
 
 type MouseButton = 'left' | 'right' | 'middle';
 
@@ -401,6 +402,8 @@ class ComputerTool extends BaseBrowserToolExecutor {
         }
 
         try {
+          // Animate virtual agent cursor before physical hover
+          await animateAgentCursor(tabId, coord.x, coord.y, { waitForArrival: true, timeoutMs: 350 });
           await cdpSessionManager.withSession(tabId, 'computer', async () => {
             // Move pointer to target. We can dispatch a single mouseMoved; browsers will generate mouseover/mouseenter as needed.
             await CDPHelper.dispatchMouseEvent(tabId, {

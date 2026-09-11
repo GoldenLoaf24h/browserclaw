@@ -8,6 +8,7 @@ import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { sessionTabAffinity } from '@/utils/session-tab-affinity';
 import { executeInPage } from './in-page-engine';
 import type { PolymorphicCoordinate } from '@/utils/coordinate-parser';
+import { animateAgentCursor } from './agent-cursor';
 
 /**
  * D3 (TESTING-NOTES #19): resolveAffinityTab falls back to the user's ACTIVE
@@ -196,6 +197,8 @@ class ClickTool extends BaseBrowserToolExecutor {
           (modifiers?.shiftKey ? 8 : 0);
         try {
           const probeArmed = await armDeliveryProbe(tabId, ['mousedown', 'mouseup', 'click']);
+          // Animate virtual agent cursor before physical click
+          await animateAgentCursor(tabId, loc.x, loc.y, { waitForArrival: true, timeoutMs: 350 });
           await cdpSessionManager.withSession(tabId, 'click-tool', async () => {
             await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
               type: 'mouseMoved',
@@ -443,6 +446,8 @@ class FillTool extends BaseBrowserToolExecutor {
         let deliveryVerified: boolean | undefined;
         try {
           const probeArmed = await armDeliveryProbe(tabId, ['focus', 'input', 'change']);
+          // Animate virtual agent cursor before physical click-to-focus
+          await animateAgentCursor(tabId, loc.x, loc.y, { waitForArrival: true, timeoutMs: 350 });
           await cdpSessionManager.withSession(tabId, 'fill-tool', async () => {
             // Click to focus
             await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {

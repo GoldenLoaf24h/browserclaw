@@ -6,6 +6,7 @@ import { waitForPageSettle } from '@/utils/action-watchdog';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { raceCdp, DialogOpenedError, createDialogInterruptResponse } from '@/utils/race-cdp';
 import { sessionTabAffinity } from '@/utils/session-tab-affinity';
+import { animateAgentCursor } from './agent-cursor';
 
 export interface FillIndexParams {
   index: number;
@@ -71,6 +72,10 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
         if (coords?.success && typeof coords.x === 'number' && typeof coords.y === 'number') {
           const targetX = coords.x;
           const targetY = coords.y;
+
+          // Animate virtual agent cursor to target input before click and type
+          await animateAgentCursor(targetTabId, targetX, targetY, { waitForArrival: true, timeoutMs: 350 });
+
           // Skip the Ctrl+A + Backspace clear sequence when the field is already
           // empty: a trusted Backspace on an empty box can trigger page-level
           // "backspace retreats focus" logic (e.g. OTP inputs) and steal the

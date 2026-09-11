@@ -1,0 +1,604 @@
+export default defineContentScript({
+  matches: ['<all_urls>'],
+  runAt: 'document_start',
+  main() {
+    initAgentCursor();
+  },
+});
+
+// ============================================================================
+// BrowserClaw Virtual Mouse (Agent Cursor) - 1:1 ChatGPT Physics Replica
+// ============================================================================
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface SpringConfig {
+  dampingFraction: number;
+  response: number;
+}
+
+interface SpringState {
+  value: number;
+  target: number;
+  velocity: number;
+  force: number;
+  dampingFraction: number;
+  response: number;
+  scriptTime: number;
+  simulationTime: number;
+}
+
+interface BezierSegment {
+  control1: Point;
+  control2: Point;
+  end: Point;
+}
+
+interface BezierPath {
+  start: Point;
+  startControl: Point;
+  end: Point;
+  endControl: Point;
+  arc: Point | null;
+  arcIn: Point | null;
+  arcOut: Point | null;
+  segments: BezierSegment[];
+}
+
+const CURSOR_SIZE = 24;
+const HALF_SIZE = CURSOR_SIZE / 2;
+const ASSET_WIDTH = 23;
+const ASSET_HEIGHT = 24;
+const ASSET_OFFSET_X = 12;
+const ASSET_OFFSET_Y = -2.5;
+const ASSET_ROTATION_DEG = 44;
+const GLOW_CSS_VAR = '--browser-agent-cursor-glow-color';
+const GLOW_COLOR = '#339cff';
+const GLOW_FILTER = `drop-shadow(0 0 6px color-mix(in srgb, var(${GLOW_CSS_VAR}) 90%, transparent)) drop-shadow(0 0 15px color-mix(in srgb, var(${GLOW_CSS_VAR}) 48%, transparent))`;
+
+const DT_STEP = 1 / 240;
+const FRAME_DURATION = 1 / 60;
+const DISTANCE_THRESHOLD_SCOOT = 196;
+const VELOCITY_THRESHOLD_ARRIVED = 12;
+const POSITION_THRESHOLD_ARRIVED = 0.85;
+
+const SPRING_POS: SpringConfig = { dampingFraction: 0.9, response: 0.19 };
+const SPRING_ROT: SpringConfig = { dampingFraction: 0.9, response: 0.12 };
+const SPRING_STRETCH: SpringConfig = { dampingFraction: 0.85, response: 0.2 };
+const SPRING_VISIBILITY: SpringConfig = { dampingFraction: 0.86, response: 0.42 };
+const SPRING_SCOOT_AXIS: SpringConfig = { dampingFraction: 0.9, response: 0.12 };
+const SPRING_SCOOT_ROT: SpringConfig = { dampingFraction: 0.82, response: 0.055 };
+const SPRING_SCOOT_STRETCH: SpringConfig = { dampingFraction: 0.86, response: 0.12 };
+
+function createSpring(val: number, target: number, cfg: SpringConfig): SpringState {
+  return {
+    value: val,
+    target,
+    velocity: 0,
+    force: 0,
+    dampingFraction: cfg.dampingFraction,
+    response: cfg.response,
+    scriptTime: 0,
+    simulationTime: 0,
+  };
+}
+
+function resetSpring(s: SpringState, val: number) {
+  s.value = val;
+  s.target = val;
+  s.velocity = 0;
+  s.force = 0;
+  s.scriptTime = 0;
+  s.simulationTime = 0;
+}
+
+function stepSpringSub(s: SpringState, stiffness: number, damping: number) {
+  const halfDt = DT_STEP / 2;
+  const velMid = s.velocity + s.force * halfDt;
+  s.value += velMid * DT_STEP;
+  s.force = velMid * -damping + (s.target - s.value) * stiffness;
+  s.velocity = velMid + s.force * halfDt;
+}
+
+function isSpringSettled(s: SpringState): boolean {
+  const velSqr = s.velocity * s.velocity;
+  const forceSqr = s.force * s.force;
+  if (Math.max(velSqr, forceSqr) > 0.001 * 0.001 * 3600) return false;
+  const diff = s.target - s.value;
+  return Math.abs(diff) <= 0.005;
+}
+
+function stepSpring(s: SpringState, dt: number) {
+  const resp = Math.max(0.001, s.response);
+  const maxStiffness = 1 / (2 * DT_STEP * DT_STEP);
+  const stiffness = Math.min((Math.PI * 2) ** 2 / (resp * resp), maxStiffness);
+  const damping = Math.sqrt(stiffness) * 2 * s.dampingFraction;
+
+  s.scriptTime += Math.max(0, dt);
+  if (s.scriptTime - s.simulationTime > 1) {
+    s.simulationTime = s.scriptTime - FRAME_DURATION;
+  }
+  while (s.simulationTime < s.scriptTime) {
+    stepSpringSub(s, stiffness, damping);
+    s.simulationTime += DT_STEP;
+  }
+  if (isSpringSettled(s)) {
+    s.value = s.target;
+  }
+}
+
+function dist(a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
+}
+
+function normAngle(deg: number): number {
+  const m = deg % 360;
+  return m < 0 ? m + 360 : m;
+}
+
+function angleDiff(from: number, to: number): number {
+  let d = to - from;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return d;
+}
+
+function setAngleTarget(s: SpringState, targetDeg: number) {
+  s.target = s.value + angleDiff(s.value, targetDeg);
+}
+
+function cubicBezier(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
+  const it = 1 - t;
+  const c0 = it * it * it;
+  const c1 = 3 * it * it * t;
+  const c2 = 3 * it * t * t;
+  const c3 = t * t * t;
+  return {
+    x: p0.x * c0 + p1.x * c1 + p2.x * c2 + p3.x * c3,
+    y: p0.y * c0 + p1.y * c1 + p2.y * c2 + p3.y * c3,
+  };
+}
+
+function cubicBezierTangent(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
+  const it = 1 - t;
+  return {
+    x: 3 * it * it * (p1.x - p0.x) + 6 * it * t * (p2.x - p1.x) + 3 * t * t * (p3.x - p2.x),
+    y: 3 * it * it * (p1.y - p0.y) + 6 * it * t * (p2.y - p1.y) + 3 * t * t * (p3.y - p2.y),
+  };
+}
+
+function evaluateBezierPath(path: BezierPath, t: number): { point: Point; tangent: Point } {
+  const cl = clamp(t, 0, 1);
+  const segIndex = cl === 1 ? path.segments.length - 1 : Math.floor(cl * path.segments.length);
+  const seg = path.segments[segIndex] || path.segments[0];
+  const startPt = segIndex === 0 ? path.start : path.segments[segIndex - 1].end;
+  const localT = cl === 1 ? 1 : cl * path.segments.length - segIndex;
+  return {
+    point: cubicBezier(startPt, seg.control1, seg.control2, seg.end, localT),
+    tangent: cubicBezierTangent(startPt, seg.control1, seg.control2, seg.end, localT),
+  };
+}
+
+function tangentToDegrees(tangent: Point): number {
+  const len = Math.sqrt(tangent.x * tangent.x + tangent.y * tangent.y);
+  if (len < 0.001) return normAngle(-44);
+  return normAngle(Math.atan2(tangent.y / len, tangent.x / len) * (180 / Math.PI) + 90);
+}
+
+function buildArcCandidates(start: Point, end: Point, bounds: { width: number; height: number }): BezierPath {
+  const d = dist(start, end);
+  const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+  const normal = d > 0 ? { x: -(end.y - start.y) / d, y: (end.x - start.x) / d } : { x: 0, y: -1 };
+  const arcHeight = clamp(d * 0.25, 40, 220);
+  const arcPt = { x: mid.x + normal.x * arcHeight, y: mid.y + normal.y * arcHeight };
+
+  return {
+    start,
+    startControl: { x: start.x + (arcPt.x - start.x) * 0.5, y: start.y + (arcPt.y - start.y) * 0.5 },
+    end,
+    endControl: { x: end.x + (arcPt.x - end.x) * 0.5, y: end.y + (arcPt.y - end.y) * 0.5 },
+    arc: arcPt,
+    arcIn: null,
+    arcOut: null,
+    segments: [
+      {
+        control1: { x: start.x + (arcPt.x - start.x) * 0.45, y: start.y + (arcPt.y - start.y) * 0.45 },
+        control2: { x: arcPt.x - (end.x - start.x) * 0.15, y: arcPt.y - (end.y - start.y) * 0.15 },
+        end: arcPt,
+      },
+      {
+        control1: { x: arcPt.x + (end.x - start.x) * 0.15, y: arcPt.y + (end.y - start.y) * 0.15 },
+        control2: { x: end.x - (end.x - arcPt.x) * 0.45, y: end.y - (end.y - arcPt.y) * 0.45 },
+        end,
+      },
+    ],
+  };
+}
+
+interface AgentCursorState {
+  point: Point;
+  rotation: number;
+  scootAxisRotation: number;
+  thinkStartedAt: number | null;
+  positionXSpring: SpringState;
+  positionYSpring: SpringState;
+  rotationSpring: SpringState;
+  stretchSpring: SpringState;
+  visibilitySpring: SpringState;
+  scootAxisSpring: SpringState;
+  scootRotationSpring: SpringState;
+  scootStretchSpring: SpringState;
+  motion:
+    | { mode: 'scoot'; start: Point; end: Point; axisRotation: number; rotationTarget: number; progressSpring: SpringState }
+    | { mode: 'bezier'; path: BezierPath; progressSpring: SpringState }
+    | null;
+}
+
+function initCursorState(pt: Point): AgentCursorState {
+  return {
+    point: pt,
+    rotation: normAngle(-44),
+    scootAxisRotation: 0,
+    thinkStartedAt: null,
+    positionXSpring: createSpring(pt.x, pt.x, SPRING_POS),
+    positionYSpring: createSpring(pt.y, pt.y, SPRING_POS),
+    rotationSpring: createSpring(normAngle(-44), normAngle(-44), SPRING_ROT),
+    stretchSpring: createSpring(1, 1, SPRING_STRETCH),
+    visibilitySpring: createSpring(0, 0, SPRING_VISIBILITY),
+    scootAxisSpring: createSpring(0, 0, SPRING_SCOOT_AXIS),
+    scootRotationSpring: createSpring(0, 0, SPRING_SCOOT_ROT),
+    scootStretchSpring: createSpring(1, 1, SPRING_SCOOT_STRETCH),
+    motion: null,
+  };
+}
+
+function initAgentCursor() {
+  if (window.top !== window.self) return; // Top-level window only
+
+  const OVERLAY_ROOT_ID = 'codex-agent-overlay-root';
+  let existing = document.getElementById(OVERLAY_ROOT_ID);
+  if (existing) return;
+
+  const host = document.createElement('div');
+  host.id = OVERLAY_ROOT_ID;
+  host.dataset.browserclawAgentOverlayRoot = 'true';
+  document.documentElement.appendChild(host);
+
+  const shadow = host.attachShadow({ mode: 'closed' });
+
+  const style = document.createElement('style');
+  style.textContent = `
+    .codex-agent-overlay {
+      all: initial;
+      z-index: 2147483646;
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+    }
+    @media print {
+      .codex-agent-overlay {
+        display: none;
+      }
+    }
+  `;
+  shadow.appendChild(style);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'codex-agent-overlay';
+  overlay.setAttribute('aria-hidden', 'true');
+
+  const cursorContainer = document.createElement('div');
+  cursorContainer.style.position = 'absolute';
+  cursorContainer.style.width = `${CURSOR_SIZE}px`;
+  cursorContainer.style.height = `${CURSOR_SIZE}px`;
+  cursorContainer.style.left = '0';
+  cursorContainer.style.top = '0';
+  cursorContainer.style.transformOrigin = `${HALF_SIZE}px ${HALF_SIZE}px`;
+  cursorContainer.style.willChange = 'transform, opacity, filter';
+
+  const offsetWrapper = document.createElement('div');
+  offsetWrapper.style.transform = `translate3d(${ASSET_OFFSET_X}px, ${ASSET_OFFSET_Y}px, 0)`;
+
+  const assetImg = document.createElement('img');
+  assetImg.alt = '';
+  assetImg.draggable = false;
+  assetImg.width = ASSET_WIDTH;
+  assetImg.height = ASSET_HEIGHT;
+  assetImg.src = chrome.runtime.getURL('images/cursor-chat.png');
+  assetImg.style.display = 'block';
+  assetImg.style.setProperty(GLOW_CSS_VAR, GLOW_COLOR);
+  assetImg.style.filter = GLOW_FILTER;
+  assetImg.style.transform = `rotate(${ASSET_ROTATION_DEG}deg) scale(1)`;
+  assetImg.style.transformOrigin = '0 0';
+
+  offsetWrapper.appendChild(assetImg);
+  cursorContainer.appendChild(offsetWrapper);
+  overlay.appendChild(cursorContainer);
+  shadow.appendChild(overlay);
+
+  let cursorState = initCursorState({
+    x: Math.round(window.innerWidth * 0.5),
+    y: Math.round(window.innerHeight * 0.5),
+  });
+
+  let isRunningAnimation = false;
+  let lastFrameTime = performance.now();
+  let pendingMoveSequence: number | null = null;
+  let userTakeoverDetected = false;
+
+  const triggerArrivalCallback = (seq: number | null) => {
+    if (seq !== null) {
+      chrome.runtime.sendMessage({
+        type: 'AGENT_CURSOR_ARRIVED',
+        moveSequence: seq,
+      }).catch(() => {});
+    }
+  };
+
+  const renderCursor = () => {
+    const now = performance.now();
+    let rotation = cursorState.rotation;
+
+    // Thinking breathing wobble if idle
+    if (cursorState.thinkStartedAt !== null) {
+      const elapsedSec = (now - cursorState.thinkStartedAt) / 1000;
+      if (elapsedSec < 1.41) {
+        const envelope = Math.sin(Math.min(1, elapsedSec / 1.41) * Math.PI);
+        const wave = Math.sin((elapsedSec / 0.66) * Math.PI * 2) * envelope;
+        rotation += wave * 12.5;
+      } else {
+        cursorState.thinkStartedAt = null;
+      }
+    }
+
+    const vis = clamp(cursorState.visibilitySpring.value, 0, 1);
+    const scaleVis = 0.4 + 0.6 * vis;
+    const blurPx = 5 * (1 - vis);
+    const stretch = cursorState.stretchSpring.value;
+    const scootStretch = clamp(cursorState.scootStretchSpring.value, 0, 1);
+    const scootRot = cursorState.scootRotationSpring.value;
+    const axisRot = cursorState.scootAxisRotation;
+
+    const transforms: string[] = [
+      `translate3d(${Math.round((cursorState.point.x - HALF_SIZE) * 10) / 10}px, ${Math.round((cursorState.point.y - HALF_SIZE) * 10) / 10}px, 0)`,
+    ];
+
+    if (Math.abs(axisRot) > 0.001 || Math.abs(scootStretch - 1) > 0.001) {
+      transforms.push(`rotate(${axisRot}deg)`, `scale(1, ${scootStretch})`, `rotate(${-axisRot}deg)`);
+    }
+
+    transforms.push(`rotate(${normAngle(rotation + scootRot)}deg)`, `scale(${stretch * scaleVis}, ${scaleVis})`);
+
+    cursorContainer.style.transform = transforms.join(' ');
+    cursorContainer.style.opacity = `${vis}`;
+    cursorContainer.style.filter = `blur(${Math.round(blurPx * 10) / 10}px)`;
+  };
+
+  const tick = (time: number) => {
+    isRunningAnimation = false;
+    const dt = Math.min(0.1, Math.max(FRAME_DURATION, (time - lastFrameTime) / 1000));
+    lastFrameTime = time;
+
+    // Step all springs
+    stepSpring(cursorState.visibilitySpring, dt);
+    stepSpring(cursorState.stretchSpring, dt);
+    stepSpring(cursorState.scootStretchSpring, dt);
+    stepSpring(cursorState.scootRotationSpring, dt);
+
+    const motion = cursorState.motion;
+    let arrivedThisFrame = false;
+
+    if (motion?.mode === 'scoot') {
+      stepSpring(motion.progressSpring, dt);
+      cursorState.positionXSpring.target = motion.end.x;
+      cursorState.positionYSpring.target = motion.end.y;
+      setAngleTarget(cursorState.scootAxisSpring, motion.axisRotation);
+      setAngleTarget(cursorState.rotationSpring, normAngle(-44));
+
+      const prg = motion.progressSpring.value;
+      const sinArc = Math.sin(clamp(prg, 0, 1) * Math.PI);
+      cursorState.stretchSpring.target = 1;
+      cursorState.scootStretchSpring.target = 1 - sinArc * 0.15;
+      cursorState.scootRotationSpring.target = motion.rotationTarget * sinArc;
+
+      stepSpring(cursorState.positionXSpring, dt);
+      stepSpring(cursorState.positionYSpring, dt);
+      stepSpring(cursorState.rotationSpring, dt);
+      stepSpring(cursorState.scootAxisSpring, dt);
+
+      cursorState.point = { x: cursorState.positionXSpring.value, y: cursorState.positionYSpring.value };
+      cursorState.rotation = cursorState.rotationSpring.value;
+      cursorState.scootAxisRotation = cursorState.scootAxisSpring.value;
+
+      if (prg >= 0.99 && dist(cursorState.point, motion.end) <= POSITION_THRESHOLD_ARRIVED) {
+        cursorState.point = motion.end;
+        resetSpring(cursorState.positionXSpring, motion.end.x);
+        resetSpring(cursorState.positionYSpring, motion.end.y);
+        cursorState.motion = null;
+        cursorState.thinkStartedAt = time;
+        arrivedThisFrame = true;
+      }
+    } else if (motion?.mode === 'bezier') {
+      cursorState.scootStretchSpring.target = 1;
+      cursorState.scootRotationSpring.target = 0;
+      stepSpring(motion.progressSpring, dt);
+
+      const prg = clamp(motion.progressSpring.value, 0, 1);
+      const evalPt = evaluateBezierPath(motion.path, prg);
+      const tangentDeg = tangentToDegrees(evalPt.tangent);
+
+      cursorState.positionXSpring.target = evalPt.point.x;
+      cursorState.positionYSpring.target = evalPt.point.y;
+      setAngleTarget(cursorState.rotationSpring, tangentDeg);
+      setAngleTarget(cursorState.scootAxisSpring, 0);
+
+      const prevPt = { ...cursorState.point };
+      stepSpring(cursorState.positionXSpring, dt);
+      stepSpring(cursorState.positionYSpring, dt);
+      stepSpring(cursorState.rotationSpring, dt);
+      stepSpring(cursorState.scootAxisSpring, dt);
+
+      cursorState.point = { x: cursorState.positionXSpring.value, y: cursorState.positionYSpring.value };
+      cursorState.rotation = cursorState.rotationSpring.value;
+      cursorState.scootAxisRotation = cursorState.scootAxisSpring.value;
+
+      const speed = dist(prevPt, cursorState.point) / dt;
+      cursorState.stretchSpring.target = clamp(1 - speed / 5500, 0.65, 1);
+
+      if (prg >= 0.99 && dist(cursorState.point, motion.path.end) <= POSITION_THRESHOLD_ARRIVED) {
+        cursorState.point = motion.path.end;
+        resetSpring(cursorState.positionXSpring, motion.path.end.x);
+        resetSpring(cursorState.positionYSpring, motion.path.end.y);
+        resetSpring(cursorState.stretchSpring, 1);
+        cursorState.motion = null;
+        cursorState.thinkStartedAt = time;
+        arrivedThisFrame = true;
+      }
+    } else {
+      // Free spring settling
+      stepSpring(cursorState.positionXSpring, dt);
+      stepSpring(cursorState.positionYSpring, dt);
+      stepSpring(cursorState.rotationSpring, dt);
+      cursorState.point = { x: cursorState.positionXSpring.value, y: cursorState.positionYSpring.value };
+      cursorState.rotation = cursorState.rotationSpring.value;
+    }
+
+    renderCursor();
+
+    if (arrivedThisFrame) {
+      const seq = pendingMoveSequence;
+      pendingMoveSequence = null;
+      triggerArrivalCallback(seq);
+    }
+
+    // Check if loop needs to keep ticking
+    const isMoving = cursorState.motion !== null;
+    const isBreathing = cursorState.thinkStartedAt !== null;
+    const isSpringing =
+      !isSpringSettled(cursorState.positionXSpring) ||
+      !isSpringSettled(cursorState.positionYSpring) ||
+      !isSpringSettled(cursorState.rotationSpring) ||
+      !isSpringSettled(cursorState.stretchSpring) ||
+      !isSpringSettled(cursorState.visibilitySpring);
+
+    if (isMoving || isBreathing || isSpringing) {
+      startAnimationLoop();
+    }
+  };
+
+  const startAnimationLoop = () => {
+    if (!isRunningAnimation) {
+      isRunningAnimation = true;
+      requestAnimationFrame(tick);
+    }
+  };
+
+  const moveTo = (targetX: number, targetY: number, moveSequence: number | null, immediate = false) => {
+    userTakeoverDetected = false;
+    pendingMoveSequence = moveSequence;
+    cursorState.visibilitySpring.target = 1;
+    cursorState.thinkStartedAt = null;
+
+    const target: Point = {
+      x: clamp(targetX, 0, window.innerWidth),
+      y: clamp(targetY, 0, window.innerHeight),
+    };
+
+    const distance = dist(cursorState.point, target);
+
+    if (immediate || distance < 1) {
+      cursorState.point = target;
+      resetSpring(cursorState.positionXSpring, target.x);
+      resetSpring(cursorState.positionYSpring, target.y);
+      resetSpring(cursorState.stretchSpring, 1);
+      cursorState.motion = null;
+      renderCursor();
+      triggerArrivalCallback(moveSequence);
+      return;
+    }
+
+    if (distance <= DISTANCE_THRESHOLD_SCOOT) {
+      const dx = target.x - cursorState.point.x;
+      const dy = target.y - cursorState.point.y;
+      const axis = Math.atan2(dy, dx) * (180 / Math.PI);
+      cursorState.motion = {
+        mode: 'scoot',
+        start: { ...cursorState.point },
+        end: target,
+        axisRotation: axis,
+        rotationTarget: clamp((dx * 0.75 - dy * 0.62) / distance, -1, 1) * 70,
+        progressSpring: createSpring(0, 1, { dampingFraction: 0.94, response: 0.19 }),
+      };
+    } else {
+      const path = buildArcCandidates(cursorState.point, target, {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+      cursorState.motion = {
+        mode: 'bezier',
+        path,
+        progressSpring: createSpring(0, 1, { dampingFraction: 0.88, response: 0.28 }),
+      };
+    }
+
+    startAnimationLoop();
+  };
+
+  const hideCursor = () => {
+    cursorState.visibilitySpring.target = 0;
+    cursorState.thinkStartedAt = null;
+    startAnimationLoop();
+  };
+
+  // Detect user takeover: when user interacts with mouse or keyboard, smoothly fade out
+  const onUserInteraction = (e: Event) => {
+    if (e.isTrusted && !userTakeoverDetected) {
+      userTakeoverDetected = true;
+      hideCursor();
+    }
+  };
+
+  window.addEventListener('mousemove', onUserInteraction, { passive: true });
+  window.addEventListener('mousedown', onUserInteraction, { passive: true });
+  window.addEventListener('keydown', onUserInteraction, { passive: true });
+
+  // Message listener for Background commands
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (!message || typeof message !== 'object') return false;
+
+    if (message.type === 'AGENT_CURSOR_MOVE') {
+      const { x, y, moveSequence, immediate } = message;
+      moveTo(x, y, typeof moveSequence === 'number' ? moveSequence : null, immediate === true);
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message.type === 'AGENT_CURSOR_HIDE') {
+      hideCursor();
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message.type === 'AGENT_CURSOR_STATE') {
+      const cursor = message.state?.cursor;
+      if (cursor && typeof cursor.x === 'number' && typeof cursor.y === 'number') {
+        moveTo(cursor.x, cursor.y, cursor.moveSequence ?? null, cursor.animateMovement === false);
+      } else if (message.state?.isVisible === false) {
+        hideCursor();
+      }
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    return false;
+  });
+}

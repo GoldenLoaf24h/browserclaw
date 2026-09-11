@@ -66,6 +66,7 @@ export default defineConfig({
       {
         resources: [
           '/inject-scripts/*', // 允许内容脚本注入的助手文件
+          '/images/*',
         ],
         matches: ['<all_urls>'],
       },

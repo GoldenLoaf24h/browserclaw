@@ -14,6 +14,7 @@ import { computeHumanizedPoints } from '../../../../utils/mouse-trajectory';
 import type { CdpEventObserver } from '../../../../utils/cdp-session-manager';
 import { parseUnifiedCoordinate, type PolymorphicCoordinate } from '../../../../utils/coordinate-parser';
 import { sessionTabAffinity } from '../../../../utils/session-tab-affinity';
+import { animateAgentCursor } from './agent-cursor';
 
 export interface InteractIndexParams {
   index?: number;
@@ -383,6 +384,10 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           `Failed to resolve valid pixel coordinates for interaction`,
         );
       }
+
+      // Animate virtual agent cursor to target position before physical interaction
+      await animateAgentCursor(tabId, x, y, { waitForArrival: true, timeoutMs: 350 });
+
       const modifierMask = computeModifierMask(args.modifiers);
       let usedNativeCDP = false;
       // 2. Perform event dispatch
