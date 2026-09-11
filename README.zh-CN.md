@@ -296,6 +296,11 @@ pnpm lint && pnpm format
 | [AGENT_CONFIG_GUIDE.md](./AGENT_CONFIG_GUIDE.md) | 各 MCP 客户端接入配置 |
 | [TEST_INFRA.md](./TEST_INFRA.md) | E2E 测试基础设施规格 |
 
-## License
+---
 
-MIT — 见 [LICENSE](./LICENSE)。上游 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome) 版权归其作者。
+## 📄 开源许可证 (License)
+
+本项目采用 **GNU Affero General Public License v3.0 (AGPL-3.0)** 强开源保护协议 — 详见 [LICENSE](./LICENSE)。
+
+- **开源传染性与反白嫖保护**：任何个人或组织若对本项目的代码进行修改、二开、衍生打包，或将其部署在云端作为网络 API / SaaS 商业服务提供给用户，**依法必须强制同等全量开源其修改后的全部代码**，彻底杜绝恶意闭源换皮。
+- 上游声明：部分基础架构派生自 [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)（基于 MIT 协议，版权归原作者所有）。

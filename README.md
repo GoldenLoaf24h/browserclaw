@@ -255,4 +255,8 @@ pnpm lint && pnpm format
 
 ## 📄 License
 
-MIT License — see [LICENSE](./LICENSE). Upstream hangwin/mcp-chrome is copyright its original authors.
+GNU Affero General Public License v3.0 (AGPL-3.0) — see [LICENSE](./LICENSE).
+
+BrowserClaw is strictly protected under the AGPL-3.0 license: anyone modifying, bundling, or offering this software as a cloud service / SaaS API is legally mandated to open source their complete modified source code under the same license.
+
+Portions of this software are derived from upstream hangwin/mcp-chrome (licensed under MIT, copyright its original authors).

@@ -50,5 +50,6 @@
     "**/*.{json,md,yaml,html,css}": [
       "prettier --write"
     ]
-  }
+  },
+  "license": "AGPL-3.0"
 }
