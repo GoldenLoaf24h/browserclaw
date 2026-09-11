@@ -78,7 +78,27 @@ Done! Your AI agent now possesses seamless, authenticated control over your brow
 ## 🛠️ Features & Capabilities (Expandable Categories)
 
 <details open>
-<summary><b>👁️ Perception Layer — Giving Agents Clear Sight</b></summary>
+<summary><b>🌐 1. Navigation & Tab Management (7 Tools)</b></summary>
+
+<br/>
+
+- **`chrome_navigate`**: Navigate to any URL, refresh page, or navigate history (`"back"` / `"forward"`). Native `background: true` support guarantees tabs open silently in background without stealing foreground user focus.
+- **`chrome_switch_tab`**: Switch active tab or bind session tab affinity without UI interference.
+- **`chrome_close_tabs`**: Close specific tabs by ID array or close all tabs matching a target URL pattern.
+- **`chrome_move_tab`**: Move tabs to new indices or detach/transfer tabs across browser windows.
+- **`get_windows_and_tabs`**: Enumerate all open Chrome windows and tabs with IDs, active state, and titles.
+- **Full Tab Group Lifecycle (`TabGroupManager`)**:
+  - `chrome_tab_group_create`: Create designated colored tab groups with custom task titles (default: "Agent").
+  - `chrome_tab_group_update`: Dynamically rename, recolor, or toggle collapsed state of tab groups.
+  - `chrome_tab_group_list`: List all active groups in the window and their associated tabs.
+  - `chrome_tab_group_ungroup`: Remove specific tabs from their parent group.
+  - `chrome_tab_group_close`: Close all tabs in a group and automatically purge the group with zero orphan residue.
+- **`chrome_attach_tab` / `chrome_detach_tab`**: Explicitly attach or detach CDP debugging sessions with tab affinity.
+
+</details>
+
+<details open>
+<summary><b>👁️ 2. Perception & Content Extraction (7 Tools)</b></summary>
 
 <br/>
 
@@ -87,40 +107,80 @@ Done! Your AI agent now possesses seamless, authenticated control over your brow
 - **`assets[]` Visual Media Index**: Automatically catalogues `<img>`, `<canvas>`, `<video>`, and CSS background images with viewport bounding boxes.
 - **`chrome_inspect_media`**: High-fidelity targeted media extraction. Extracts raw, lossless resolution bitmaps from Canvas/Images directly in-memory, or captures 200%+ super-sampled close-ups for noisy captchas and complex financial charts.
 - **`chrome_get_markdown`**: Clean structural Markdown conversion with `fit: true` noise stripping (removes headers, footers, navigation, and sidebar clutter).
+- **`chrome_get_links`**: Complete link graph extraction (absolute URLs, anchor texts, internal/external, and nofollow flags).
+- **`chrome_get_dropdown_options`**: Inspect all selectable options within native or simulated `<select>` dropdowns.
 - **`chrome_intercept_api`**: CDP Network-domain silent sniffing and JSON response interception. Retrieves structured ground-truth API payloads directly, bypassing complex HTML scraping.
 
 </details>
 
 <details>
-<summary><b>⚡ Precision Interaction Layer — Precision Action & Zero Roundtrip Lag</b></summary>
+<summary><b>⚡ 3. Precision Interaction & Form Automation (13 Tools)</b></summary>
 
 <br/>
 
 - **Unified 4-Tier Locator**: Fallback degradation chain (`ref` → `selector` → `text/role` → `coordinate`) shared across all interaction tools.
 - **Self-Driven Diff Piggybacking**: Pass `includeDelta: true` in `chrome_interact_index`, `chrome_fill_index`, or `chrome_batch_actions` to receive incremental DOM changes directly inside the action response, cutting agent roundtrips by 50%.
 - **`chrome_interact_index`**: 1-based index clicks and friction-drag (`end`/`steps`/`holdMs`/`dnd`) with center-first occlusion compensation and CDP delivery verification (`deliveryVerified: true`).
+- **`chrome_fill_index`**: Fast form filling by 1-based index, auto-focusing and dispatching trusted `input` and `change` events.
+- **`chrome_fill_form` / `chrome_fill_or_select`**: Multi-field batch filling and dropdown selection for legacy or non-indexed selectors.
 - **Enhanced Pipeline (`chrome_batch_actions`)**: Atomic multi-action pipeline with zero network lag between steps. Supports `type: 'assert'` for runtime state validation and `type: 'extract'` for in-pipeline data extraction into `extractedData`.
+- **`chrome_burst_interact`**: Ultra-low latency burst clicks and keypress sequences for dynamic canvas games and moving targets.
+- **`chrome_computer`**: 16 native mouse and keyboard actions with `dwellMs` hold duration to defeat instant-click bot guards.
+- **`chrome_keyboard`**: Physical keyboard keypress dispatch with modifier combos (Control+A, Enter, Tab).
+- **`chrome_upload_file`**: Headless file upload injection directly into file input elements without modal deadlocks.
+- **`chrome_handle_dialog`**: Automatically intercept and respond to native `alert`, `confirm`, and `prompt` JavaScript dialogs.
 - **1:1 ChatGPT Official Agent Cursor**: Isolated closed Shadow DOM overlay, bezier arc motion, velocity stretch springs, luminous blue trail, and instant fade-out upon physical human takeover.
-- **Chrome Tab Groups with Zero-Orphan Cleanup**: Automatically organizes agent-spawned tabs under a dedicated colored Tab Group ("Agent") and purges empty groups upon completion.
 - **Luminous Glowing Favicon**: Displays a real-time pulsing SVG glow on tabs being operated by the agent, cleanly restored upon task completion.
 
 </details>
 
 <details>
-<summary><b>🤝 Human-in-the-Loop & Reliability</b></summary>
+<summary><b>🔭 4. Observation & Intelligent Scrolling (5 Tools)</b></summary>
 
 <br/>
 
-- **Human Takeover Banner (`chrome_request_human_intervention`)**: Renders a frosted-glass top banner during 2FA, SMS verification, or slider captchas; resumes automatically on button click or `Enter`.
-- **Action Snapshots & Rollback (`chrome_undo_last_action`)**: 5-step circular history stack supporting automatic page back-navigation and form input value reversal.
-- **CDP Escape Hatch (`chrome_cdp_execute`)**: Polymorphic Target routing (`tabId` / `targetId` / `sessionId`) with anti-hang timeout detachment protection.
-- **Zero-Disk Screenshots**: >450KB degrades to an inline thumbnail; black-bar sampling auto-recaptures once.
-- **Security Guardrails**: `chrome://` page blocking, cross-origin screenshot domain check, and Session Tab Affinity.
+- **`chrome_screenshot`**: Zero-disk screenshot pipeline (>450KB auto-degrades to inline thumbnail, bottom/right black-bar auto-recapture, and targeted image extraction via `assetIndex`).
+- **`chrome_smart_scroll`**: Intelligent container overflow detection; scrolls the most prominent scrollable element and calculates accurate `pages_up` / `pages_down` remaining page counts.
+- **`chrome_scroll_to_text`**: TreeWalker semantic search scrolling; smoothly centers specific target text into viewport view.
+- **`chrome_scroll`**: Direct physical wheel scrolling by pixel deltas or fractional viewport pages.
 
 </details>
 
 <details>
-<summary><b>🗂️ 52 Tools across 3 Profiles</b></summary>
+<summary><b>🗂️ 5. Browser Data & State Management (History, Bookmarks, Storage, Downloads - 9 Tools)</b></summary>
+
+<br/>
+
+- **`chrome_history`**: Search user browser history by query string with full visit timestamp and URL filtering.
+- **Complete Bookmark Management**:
+  - `chrome_bookmark_search`: Search bookmarks by title, URL, or folder hierarchy.
+  - `chrome_bookmark_add`: Add new bookmarks with custom titles and destination folder IDs.
+  - `chrome_bookmark_delete`: Remove obsolete bookmark nodes.
+- **`chrome_storage`**: Comprehensive storage inspection, reading, updating, and clearing across `localStorage`, `sessionStorage`, and `IndexedDB`.
+- **`chrome_handle_download`**: Intercept, monitor, and locate downloaded files on disk without dialog prompts.
+
+</details>
+
+<details>
+<summary><b>🛠️ 6. Diagnostics, Low-Level CDP & Human Collaboration (11 Tools)</b></summary>
+
+<br/>
+
+- **`chrome_console`**: Real-time console log monitoring; captures `log`, `warn`, `error`, and unhandled promise rejections.
+- **`chrome_javascript`**: Secure in-page JavaScript evaluation with immediate return value serialization.
+- **`chrome_cdp_execute`**: Raw CDP escape hatch with polymorphic Target routing and auto-detach timeout guard.
+- **Performance Tracing Suite**:
+  - `performance_start_trace`: Start high-resolution timeline tracing.
+  - `performance_stop_trace`: Stop tracing and export DevTools timeline trace logs.
+  - `performance_analyze_insight`: Diagnose Core Web Vitals, Long Tasks, CLS, and FID bottlenecks.
+- **Human Takeover Banner (`chrome_request_human_intervention`)**: Renders a frosted-glass top banner during 2FA, SMS verification, or slider captchas; resumes automatically on button click or `Enter`.
+- **Action Snapshots & Rollback (`chrome_undo_last_action`)**: 5-step circular history stack supporting automatic page back-navigation and form input value reversal.
+- **`chrome_tool_docs`**: Dynamic on-the-fly tool schema inspection and runtime category activation (`activateForSession: true`).
+
+</details>
+
+<details>
+<summary><b>📊 52 Tools across 3 Profiles (Core, Crawl, Full)</b></summary>
 
 <br/>
 
