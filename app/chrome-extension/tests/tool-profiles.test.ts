@@ -9,10 +9,10 @@ import {
 } from 'chrome-mcp-shared';
 
 /**
- * The 44-tool list costs ~57KB / ~16k tokens of fixed schema overhead in every
- * session. The core profile trims that to 26 tools / ~42KB. These tests pin the
- * contract: core stays a strict subset, every core name is a real tool, and the
- * saving stays material.
+ * The full tool list costs ~58KB / ~16k tokens of fixed schema overhead in every
+ * session. The refined core profile trims redundant/duplicate tools (click_element,
+ * fill_or_select, fill_form, burst_interact, scroll) in favor of best-in-class primary
+ * tools (interact_index, fill_index, batch_actions, smart_scroll).
  */
 describe('tool profiles', () => {
   it('defaults to full and only trims on an explicit core', () => {
@@ -42,7 +42,7 @@ describe('tool profiles', () => {
 
     // No ghost names: every entry in CORE_TOOL_NAMES must exist in the schema.
     for (const name of CORE_TOOL_NAMES) {
-      expect(fullNames.has(name), `${name} is not a real tool`).toBe(true);
+      expect(fullNames.has(name), String(name) + ' is not a real tool').toBe(true);
     }
     // And every returned schema must come from the core set.
     for (const tool of core) {
@@ -60,23 +60,34 @@ describe('tool profiles', () => {
       'chrome_batch_actions',
       'chrome_computer',
       'chrome_screenshot',
-      'chrome_scroll',
+      'chrome_smart_scroll',
       'chrome_navigate',
       'chrome_switch_tab',
       'get_windows_and_tabs',
       'chrome_handle_dialog',
       'chrome_upload_file',
     ]) {
-      expect(core.has(required), `${required} must stay in core`).toBe(true);
+      expect(core.has(required), String(required) + ' must stay in core').toBe(true);
     }
+  });
+
+  it('confirms redundant legacy tools are pruned from core to prevent agent choice confusion', () => {
+    const core = new Set(filterToolSchemas(TOOL_SCHEMAS, 'core').map((t: any) => t.name));
+
+    // Redundant selector/duplicate tools pruned from core
+    expect(core.has('chrome_click_element')).toBe(false);
+    expect(core.has('chrome_fill_or_select')).toBe(false);
+    expect(core.has('chrome_fill_form')).toBe(false);
+    expect(core.has('chrome_burst_interact')).toBe(false);
+    expect(core.has('chrome_scroll')).toBe(false);
+    expect(core.has('chrome_cdp_execute')).toBe(false); // cdp_execute belongs in full profile
   });
 
   it('trims a material share of the fixed schema cost', () => {
     const fullBytes = JSON.stringify(TOOL_SCHEMAS).length;
     const coreBytes = JSON.stringify(filterToolSchemas(TOOL_SCHEMAS, 'core')).length;
 
-    // Measured saving is ~25%. Assert a floor so a future regression that
-    // silently grows core (or shrinks the trim) fails loudly.
+    // Core is significantly leaner than full
     expect(coreBytes / fullBytes).toBeLessThan(0.8);
   });
 

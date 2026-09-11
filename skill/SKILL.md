@@ -293,3 +293,24 @@ For complete client configuration files and self-repair diagnostics:
 - **Client Configs**: See [`config/mcp-config.json`](./config/mcp-config.json) for Claude Desktop, Cursor, Windsurf, Cline, Roo Code, and Antigravity.
 - **Diagnostic Tool**: Run `node skill/config/doctor.mjs` to run a comprehensive health check on port `12306`, bridge token, Chrome extension connection, and Native Messaging Host registration.
 - **Troubleshooting Guide**: See [`config/TROUBLESHOOTING.md`](./config/TROUBLESHOOTING.md) for quick solutions to common connection or state issues.
+
+
+---
+
+## 3. The Escalation Ladder (Anti-Confusion & Decision Protocol)
+
+To eliminate agent decision confusion between high-level semantic tools and low-level CDP commands, adhere strictly to the **3-Tier Escalation Protocol**:
+
+1. **Tier 1 (High-Level Semantic Engine - Default 95%)**:
+   - chrome_interact_index / chrome_fill_index / chrome_batch_actions
+   - chrome_read_dom / chrome_get_markdown / chrome_smart_scroll / chrome_navigate
+   - Always default to Tier 1. It is 10x more token-efficient, prunes 85% DOM noise, and automatically drives the 1:1 agent cursor.
+
+2. **Tier 2 (Visual Fallback Engine - 4%)**:
+   - chrome_screenshot (1:1 viewport coordinate grid) -> chrome_computer
+   - Used for headless Canvas games, WebGL visualizations, or unlabeled SVG elements without DOM nodes.
+
+3. **Tier 3 (Raw CDP Escape Hatch - 1%)**:
+   - chrome_cdp_execute (Target polymorphic, auto-detach timeout guard)
+   - Never call for standard clicks, text inputs, or basic reading.
+   - Use ONLY when high-level tools repeatedly fail twice, or when low-level browser primitives are required (e.g. Network.getCookies, Emulation.setDeviceMetricsOverride, Page.printToPDF, or out-of-process iframe 	arget: { targetId }).

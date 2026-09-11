@@ -26,29 +26,22 @@ export const CORE_TOOL_NAMES: Set<string> = new Set([
   // Perceive
   'chrome_read_dom',
   'chrome_get_markdown',
-  'chrome_get_web_content',
-  // Act
+  // Act (best-in-class primary tools only; redundant selector/batch duplicates pruned)
   'chrome_interact_index',
   'chrome_fill_index',
   'chrome_batch_actions',
   'chrome_computer',
-    'chrome_cdp_execute',
-  'chrome_click_element',
-  'chrome_fill_or_select',
   'chrome_keyboard',
   'chrome_upload_file',
   'chrome_handle_dialog',
-  'chrome_fill_form',
-  'chrome_burst_interact',
   'chrome_get_dropdown_options',
   // Navigate
   'chrome_navigate',
   'chrome_switch_tab',
   'chrome_close_tabs',
   'get_windows_and_tabs',
-  // Observe
+  // Observe (smart_scroll only; legacy scroll pruned)
   'chrome_screenshot',
-  'chrome_scroll',
   'chrome_smart_scroll',
   'chrome_scroll_to_text',
   // Diagnose
@@ -56,7 +49,6 @@ export const CORE_TOOL_NAMES: Set<string> = new Set([
   'chrome_javascript',
   'chrome_handle_download',
   'chrome_storage',
-  'chrome_cdp_execute',
 ]);
 
 // Tool discovery is part of every profile: chrome_tool_docs is how an agent
