@@ -213,6 +213,19 @@ Active Chrome Browser Session (isTrusted: true, zero-orphan tab groups)
 
 ---
 
+## 🌍 Universal Cross-Platform Compatibility
+
+BrowserClaw is architected from the ground up for seamless operation across all operating systems and Chromium-derived environments:
+
+| Platform / Environment | Native Messaging Path | Shell Wrapper | OS-Specific Adaptations |
+| :--- | :--- | :--- | :--- |
+| **Windows** (10 / 11, x64 / ARM64) | `%APPDATA%\Google\Chrome\NativeMessagingHosts` + Registry | `run_host.bat` (auto node_path.txt) | Immune to `WinError 32` file locks; auto-handles Control key combos and `net session` elevation |
+| **macOS** (Apple Silicon & Intel) | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` | `run_host.sh` (9-tier Node discovery) | Auto-adapts to Homebrew (`/opt/homebrew`), Volta, asdf, NVM; auto-maps `Meta` (Command+A) keys |
+| **Linux** (x86_64 & aarch64) | `~/.config/google-chrome/NativeMessagingHosts` (XDG standard) | `run_host.sh` (XDG state logging) | Compliant with `$XDG_STATE_HOME`; zero display-server locks for headless or desktop automation |
+| **Supported Browsers** | Chrome, Edge, Chromium, Brave, Arc, Opera | Direct Native Manifest | Multi-browser simultaneous discovery (`detectInstalledBrowsers`); Firefox target supported via WXT |
+
+---
+
 ## 🧪 Quality Gate & Test Coverage
 
 ```bash

@@ -255,15 +255,16 @@ node dist/scripts/register-dev.js        # 用户级注册，无需管理员
 ## 工作原理
 
 ```
-MCP Client (stdio/HTTP) ──► Native Host (Fastify, 127.0.0.1:12306)
-        │  Bearer token 认证，会话隔离（10 分钟空闲回收）
-        ▼
-   Native Messaging（1MB 帧上限）
-        ▼
-Chrome Extension MV3 Service Worker
-        │  46 个工具执行器 + Unified Locator + Screenshot Context
-        ▼
-Inpage Engine（隔离世界注入，20 个页面内入口）──► CDP (DOM/Page/Input/Runtime)
+AI Agent 客户端 (Claude Desktop / Cursor / Codex / Cline)
+        │
+        ▼ (HTTP/SSE 或 Stdio JSON-RPC 带 Token 认证)
+本地原生宿主 (Fastify 原生进程, 127.0.0.1:12306)
+        │
+        ▼ (Chrome Native Messaging 原生管道, <= 1MB 帧保护)
+BrowserClaw 扩展 MV3 Service Worker
+        │
+        ▼ (隔离世界 Inpage Engine 与直连 CDP 通道)
+活跃 Chrome 浏览器会话 (isTrusted: true, 专属无孤儿标签分组)
 ```
 
 扩展 popup 提供连接开关与 agent 控制总开关（关闭后所有工具调用被拒绝）。
@@ -278,7 +279,7 @@ pnpm lint && pnpm format
 
 | 测试 | 命令 | 数量 |
 | --- | --- | --- |
-| 扩展单测（vitest） | `pnpm --filter chrome-mcp-server test` | 77 |
+| 扩展单测（vitest） | `pnpm --filter chrome-mcp-server test` | 125 项全部通过 (100%) |
 | 仓库回归（node:test） | `node --experimental-strip-types --test test/boost-*.test.ts test/p0-p1-hardening.test.ts` | 129 |
 | E2E（4 层） | `pnpm test` | 153 |
 
@@ -288,8 +289,8 @@ pnpm lint && pnpm format
 
 | 文档 | 内容 |
 | --- | --- |
-| [skill/SKILL.md](./skill/SKILL.md) | agent 操作手册：双引擎工作流、批处理、视觉回退、索引失效自愈 |
-| [docs/TOOLS.md](./docs/TOOLS.md) | 46 工具参数参考（schema 生成） |
+| [skill/SKILL.md](./skill/SKILL.md) | agent 操作手册：双引擎工作流、52 工具梯次升级协议、微模式实践 |
+| [docs/TOOLS.md](./docs/TOOLS.md) | 52 工具参数参考（schema 自动生成） |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 架构与数据流（mermaid） |
 | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) | 报错速查与连接排查 |
 | [AGENT_CONFIG_GUIDE.md](./AGENT_CONFIG_GUIDE.md) | 各 MCP 客户端接入配置 |
