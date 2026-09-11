@@ -18,6 +18,7 @@ interface TabSessionState {
 }
 
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
+export const CDP_IDLE_DETACH_TIMEOUT_MS = 600000; // 10 minutes session-aware retention to prevent infobar flicker and viewport shift
 
 class CDPSessionManager {
   private sessions = new Map<number, TabSessionState>();
@@ -294,8 +295,9 @@ class CDPSessionManager {
         return;
       }
 
-      // When refCount reaches 0, delay detach by 5 seconds to preserve transient
-      // pointer hover state across consecutive tool calls (e.g. multi-tier flyout menus)
+      // When refCount reaches 0, retain the session for 10 minutes (CDP_IDLE_DETACH_TIMEOUT_MS)
+      // across consecutive tool calls and agent reasoning turns to completely eliminate
+      // the annoying top infobar flicker and viewport shifting.
       if (this.idleTimers.has(tabId)) {
         clearTimeout(this.idleTimers.get(tabId));
       }
@@ -310,7 +312,7 @@ class CDPSessionManager {
               const rearm = setTimeout(() => {
                 this.idleTimers.delete(tabId);
                 void idleDetach();
-              }, 5000);
+              }, CDP_IDLE_DETACH_TIMEOUT_MS);
               this.idleTimers.set(tabId, rearm);
               return;
             }
@@ -326,7 +328,7 @@ class CDPSessionManager {
       };
       const timer = setTimeout(() => {
         void idleDetach();
-      }, 5000);
+      }, CDP_IDLE_DETACH_TIMEOUT_MS);
       this.idleTimers.set(tabId, timer);
     });
   }
