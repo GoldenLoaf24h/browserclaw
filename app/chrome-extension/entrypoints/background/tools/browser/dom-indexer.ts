@@ -65,6 +65,86 @@ function getSafeClickPointMap(): WeakMap<
 export const safeClickPointWeakMap = getSafeClickPointMap();
 
 /**
+ * Shadow DOM and composed tree traversal helpers.
+ * These enable penetrating Shadow DOM boundaries to find the true interactive target.
+ */
+export function composedParent(element: Element | null): Element | null {
+  if (!element) return null;
+  if ((element as any).assignedSlot) return (element as any).assignedSlot;
+  if (element.parentElement) return element.parentElement;
+  const root = element.getRootNode ? element.getRootNode() : null;
+  return root && root.nodeType === 11 ? (root as ShadowRoot).host : null;
+}
+
+export function composedChildren(element: Element): Element[] {
+  if (!element) return [];
+  if (element.tagName.toUpperCase() === 'SLOT') {
+    const assigned = (element as HTMLSlotElement).assignedElements?.({ flatten: true }) || [];
+    if (assigned.length > 0) return assigned;
+  }
+  const container = (element as HTMLElement).shadowRoot || element;
+  return Array.from(container.children || []) as Element[];
+}
+
+export function hitElementAtPoint(target: Element, x: number, y: number): Element | null {
+  const roots: (Document | ShadowRoot)[] = [];
+  let parent: Element | null = target;
+  while (parent) {
+    const root = parent.getRootNode ? parent.getRootNode() : null;
+    if (!root || typeof (root as any).elementsFromPoint !== 'function') break;
+    roots.push(root as Document | ShadowRoot);
+    if (root.nodeType === 9) break;
+    parent = (root as ShadowRoot).host as Element;
+  }
+  
+  let hitElement: Element | null = null;
+  for (let index = roots.length - 1; index >= 0; index--) {
+    const root = roots[index];
+    const elements = (root as any).elementsFromPoint(x, y) as Element[];
+    const innerElement = elements[0] || (root as any).elementFromPoint(x, y);
+    if (!innerElement) break;
+    hitElement = innerElement;
+    if (index > 0 && innerElement !== (roots[index - 1] as ShadowRoot).host) break;
+  }
+  return hitElement;
+}
+
+export function interceptingElementAtPoint(target: Element, x: number, y: number): Element | null {
+  const hitElement = hitElementAtPoint(target, x, y);
+  if (!hitElement) return null;
+  
+  let current: Element | null = hitElement;
+  while (current && current !== target) current = composedParent(current);
+  if (current === target) return null;
+  
+  current = target;
+  while (current && current !== hitElement) current = composedParent(current);
+  if (current === hitElement) return null; // It's the target itself or inside it
+  
+  return hitElement;
+}
+
+export function describeHitTarget(element: Element): string {
+  let modal: Element | null = element;
+  while (modal) {
+    const role = modal.getAttribute?.('role');
+    const ariaModal = modal.getAttribute?.('aria-modal');
+    if (role === 'dialog' || ariaModal === 'true') {
+      const name = modal.getAttribute?.('aria-label') || 
+                   modal.getAttribute?.('aria-labelledby') || 
+                   modal.querySelector?.('h1,h2,h3,h4,h5,h6')?.textContent?.trim();
+      return name ? `dialog "${name}"` : 'dialog';
+    }
+    modal = composedParent(modal);
+  }
+  
+  const tag = element.tagName.toLowerCase();
+  const id = element.id ? ` id="${element.id}"` : '';
+  const roleAttr = element.getAttribute?.('role') ? ` role="${element.getAttribute('role')}"` : '';
+  return `<${tag}${id}${roleAttr}>`;
+}
+
+/**
  * Whitelist check for interactive SVG nodes (e.g. icons, clickable vectors).
  * Prevents non-standard interactive SVG elements from being pruned as decorative.
  */
@@ -1239,6 +1319,126 @@ export function inPageDOMPruner(options?: {
   };
 }
 
+export function actionPointForElement(target: Element, view: Window): { x: number; y: number } | null {
+  const rects = Array.from(target.getClientRects?.() || []).filter(
+    (rect) => rect.width > 0 && rect.height > 0
+  );
+  if (rects.length === 0) {
+    const rect = target.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    rects.push(rect);
+  }
+  
+  let best = null;
+  for (const rect of rects) {
+    const left = Math.max(0, rect.left);
+    const top = Math.max(0, rect.top);
+    const right = Math.min(view.innerWidth, rect.right);
+    const bottom = Math.min(view.innerHeight, rect.bottom);
+    const visibleArea = Math.max(0, right - left) * Math.max(0, bottom - top);
+    
+    const centerX = (rect.left + rect.right) / 2;
+    const centerY = (rect.top + rect.bottom) / 2;
+    const distanceX = centerX - Math.max(0, Math.min(view.innerWidth, centerX));
+    const distanceY = centerY - Math.max(0, Math.min(view.innerHeight, centerY));
+    const viewportDistance = distanceX * distanceX + distanceY * distanceY;
+    
+    if (
+      !best ||
+      visibleArea > best.visibleArea ||
+      (visibleArea === best.visibleArea && viewportDistance < best.viewportDistance)
+    ) {
+      best = { rect, left, top, right, bottom, visibleArea, viewportDistance };
+    }
+  }
+  
+  if (best && best.visibleArea > 0) {
+    return {
+      x: (best.left + best.right) / 2,
+      y: (best.top + best.bottom) / 2,
+    };
+  }
+  
+  if (best) {
+    return {
+      x: (best.rect.left + best.rect.right) / 2,
+      y: (best.rect.top + best.rect.bottom) / 2,
+    };
+  }
+  return null;
+}
+
+export function scrollRequestForPoint(target: Element, x: number, y: number): { x: number; y: number; deltaX: number; deltaY: number } | null {
+  const view = target.ownerDocument?.defaultView;
+  if (!view) return null;
+  
+  let ancestor = composedParent(target);
+  while (ancestor) {
+    if (
+      ancestor !== target.ownerDocument.body &&
+      ancestor !== target.ownerDocument.documentElement
+    ) {
+      const style = view.getComputedStyle(ancestor);
+      const canScrollX =
+        /^(auto|scroll|overlay)$/.test(style.overflowX) &&
+        ancestor.scrollWidth > ancestor.clientWidth + 1;
+      const canScrollY =
+        /^(auto|scroll|overlay)$/.test(style.overflowY) &&
+        ancestor.scrollHeight > ancestor.clientHeight + 1;
+        
+      if (canScrollX || canScrollY) {
+        const rect = ancestor.getBoundingClientRect();
+        const area = {
+          left: Math.max(0, rect.left),
+          top: Math.max(0, rect.top),
+          right: Math.min(view.innerWidth, rect.right),
+          bottom: Math.min(view.innerHeight, rect.bottom),
+        };
+        
+        if (area.right > area.left && area.bottom > area.top) {
+          let deltaX = canScrollX && (x < area.left || x >= area.right)
+            ? x - (area.left + area.right) / 2
+            : 0;
+          let deltaY = canScrollY && (y < area.top || y >= area.bottom)
+            ? y - (area.top + area.bottom) / 2
+            : 0;
+            
+          if (
+            (deltaX < 0 && ancestor.scrollLeft <= 0) ||
+            (deltaX > 0 && ancestor.scrollLeft >= ancestor.scrollWidth - ancestor.clientWidth - 1)
+          ) deltaX = 0;
+          if (
+            (deltaY < 0 && ancestor.scrollTop <= 0) ||
+            (deltaY > 0 && ancestor.scrollTop >= ancestor.scrollHeight - ancestor.clientHeight - 1)
+          ) deltaY = 0;
+          
+          if (deltaX || deltaY) {
+            return {
+              x: (area.left + area.right) / 2,
+              y: (area.top + area.bottom) / 2,
+              deltaX,
+              deltaY,
+            };
+          }
+        }
+      }
+    }
+    ancestor = composedParent(ancestor);
+  }
+  
+  if (
+    x >= 0 && y >= 0 &&
+    x < view.innerWidth && y < view.innerHeight
+  ) return null;
+  
+  return {
+    x: Math.max(0, Math.min(view.innerWidth - 1, x)),
+    y: Math.max(0, Math.min(view.innerHeight - 1, y)),
+    deltaX: x - view.innerWidth / 2,
+    deltaY: y - view.innerHeight / 2,
+  };
+}
+
 export function extractElementLocationDetails(el: Element): {
   success: boolean;
   x: number;
@@ -1251,15 +1451,10 @@ export function extractElementLocationDetails(el: Element): {
   frameOffsetX: number;
   frameOffsetY: number;
 } {
+  const win = el.ownerDocument?.defaultView || window;
   const initialRect = el.getBoundingClientRect();
-  const vh =
-    (typeof window !== 'undefined' ? window.innerHeight : 0) ||
-    (typeof document !== 'undefined' ? document.documentElement?.clientHeight : 0) ||
-    0;
-  const vw =
-    (typeof window !== 'undefined' ? window.innerWidth : 0) ||
-    (typeof document !== 'undefined' ? document.documentElement?.clientWidth : 0) ||
-    0;
+  const vh = win.innerHeight || 0;
+  const vw = win.innerWidth || 0;
   const inViewport =
     vh > 0 &&
     vw > 0 &&
@@ -1271,9 +1466,49 @@ export function extractElementLocationDetails(el: Element): {
     initialRect.height > 0;
 
   if (!inViewport) {
-    try {
-      el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' as any });
-    } catch {}
+    // Try local scroll first
+    const point = actionPointForElement(el, win);
+    if (point) {
+      const scrollReq = scrollRequestForPoint(el, point.x, point.y);
+      if (scrollReq && (scrollReq.deltaX || scrollReq.deltaY)) {
+        let ancestor = composedParent(el);
+        let scrolled = false;
+        while (ancestor && !scrolled) {
+          if (
+            ancestor !== el.ownerDocument.body &&
+            ancestor !== el.ownerDocument.documentElement
+          ) {
+            const style = win.getComputedStyle(ancestor);
+            const canScrollX = /^(auto|scroll|overlay)$/.test(style.overflowX) && ancestor.scrollWidth > ancestor.clientWidth + 1;
+            const canScrollY = /^(auto|scroll|overlay)$/.test(style.overflowY) && ancestor.scrollHeight > ancestor.clientHeight + 1;
+            if (canScrollX || canScrollY) {
+              ancestor.scrollBy({ left: scrollReq.deltaX, top: scrollReq.deltaY, behavior: 'instant' as any });
+              scrolled = true;
+            }
+          }
+          ancestor = composedParent(ancestor);
+        }
+        if (!scrolled) {
+          try {
+            if (typeof (el as any).scrollIntoView === 'function') {
+              el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' as any });
+            }
+          } catch {}
+        }
+      } else {
+        try {
+          if (typeof (el as any).scrollIntoView === 'function') {
+            el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' as any });
+          }
+        } catch {}
+      }
+    } else {
+      try {
+        if (typeof (el as any).scrollIntoView === 'function') {
+          el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' as any });
+        }
+      } catch {}
+    }
   }
 
   const rect = el.getBoundingClientRect();
@@ -1309,8 +1544,20 @@ export function extractElementLocationDetails(el: Element): {
   }
 
   const safePoint = safeClickPointWeakMap.get(el);
-  const clickX = safePoint ? (rect.left + safePoint.offsetX) : (rect.left + rect.width / 2);
-  const clickY = safePoint ? (rect.top + safePoint.offsetY) : (rect.top + rect.height / 2);
+  let clickX, clickY;
+  if (safePoint) {
+    clickX = rect.left + safePoint.offsetX;
+    clickY = rect.top + safePoint.offsetY;
+  } else {
+    const bestPoint = actionPointForElement(el, win);
+    if (bestPoint) {
+      clickX = bestPoint.x;
+      clickY = bestPoint.y;
+    } else {
+      clickX = rect.left + rect.width / 2;
+      clickY = rect.top + rect.height / 2;
+    }
+  }
 
   return {
     success: true,
@@ -2652,4 +2899,34 @@ export function inPageGetLinks(options?: {
     out.push({ url: href, text, internal, nofollow });
   });
   return out;
+}
+export function inPageCheckInterception(index: number, x: number, y: number): { intercepted: boolean; description?: string } {
+  const el = findIndexedElement(index);
+  if (!el || !(el instanceof Element)) return { intercepted: false };
+  
+  const intercepting = interceptingElementAtPoint(el, x, y);
+  if (intercepting && intercepting !== el && !el.contains(intercepting) && !intercepting.contains(el)) {
+    return { intercepted: true, description: describeHitTarget(intercepting) };
+  }
+  return { intercepted: false };
+}
+
+export function inPageDispatchSyntheticClick(index: number, x: number, y: number): boolean {
+  const el = findIndexedElement(index);
+  if (!el || !(el instanceof Element)) return false;
+  
+  const init: MouseEventInit = {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    button: 0,
+  };
+  
+  el.dispatchEvent(new MouseEvent('mousemove', { ...init, buttons: 0 }));
+  el.dispatchEvent(new MouseEvent('mousedown', { ...init, buttons: 1 }));
+  el.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0 }));
+  el.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
+  
+  return true;
 }

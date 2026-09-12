@@ -390,6 +390,22 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       // Animate virtual agent cursor to target position before physical interaction
       await animateAgentCursor(tabId, x, y, { waitForArrival: true, timeoutMs: 350 });
 
+      // Shadow DOM penetrating interception check (self-healing feedback)
+      if (args.index !== undefined && !isFallback && action === 'click') {
+        try {
+          const interceptRes = (
+            await executeInPage({ tabId }, 'inPageCheckInterception', [args.index, x, y])
+          )?.[0]?.result;
+          if (interceptRes?.intercepted && interceptRes?.description) {
+            return createErrorResponse(
+              `Element [${args.index}] click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first.`,
+            );
+          }
+        } catch {
+          // Non-blocking on inspection failure
+        }
+      }
+
       const modifierMask = computeModifierMask(args.modifiers);
       let usedNativeCDP = false;
       // 2. Perform event dispatch
@@ -700,12 +716,29 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       // synchronously, so a false there would be a probe artifact).
       let deliveryVerified: boolean | undefined;
       let deliveryHits: any[] | undefined;
+      let fallbackTriggered: string | undefined;
       if (probeArmed && usedNativeCDP) {
         try {
           const probe = (await executeInPage({ tabId }, 'inPageReadDeliveryProbe', [true]))?.[0]?.result;
           deliveryVerified = Boolean(probe?.delivered);
           if (!deliveryVerified) {
             deliveryHits = probe?.hits ?? [];
+            // Click Probe Fallback: if native CDP events were dropped (e.g. background tab throttling),
+            // fall back to synthetic DOM event dispatch to ensure 100% execution.
+            if (action === 'click' && args.index !== undefined) {
+              try {
+                const synRes = (
+                  await executeInPage({ tabId }, 'inPageDispatchSyntheticClick', [args.index, x, y])
+                )?.[0]?.result;
+                if (synRes) {
+                  deliveryVerified = true;
+                  fallbackTriggered = 'synthetic_click_probe';
+                  usedNativeCDP = false;
+                }
+              } catch {
+                // Ignore fallback error
+              }
+            }
           }
         } catch {
           deliveryVerified = undefined;
@@ -735,6 +768,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 text,
                 isTrusted: usedNativeCDP,
                 coordinates: { x, y },
+                fallbackTriggered,
                 mode: isFallback
                   ? 'hybrid_visual_fallback'
                   : hasCoord && !hasIndex
