@@ -706,11 +706,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         try {
           await armProbe();
           await cdpSessionManager.withSession(tabId, 'interact-index', async () => {
-            if (action === 'hover' || args.humanize === true) {
-              await dispatchMouseMovement(tabId, x, y, modifierMask, args.humanize === true);
-            } else {
-              lastMousePosMap.set(tabId, { x, y });
-            }
+            // Always dispatch mouse movement to target coordinates before pressing (ensures authentic pointer path)
+            await dispatchMouseMovement(tabId, x, y, modifierMask, args.humanize === true);
 
             if (action === 'click') {
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
