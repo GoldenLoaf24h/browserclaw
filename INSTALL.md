@@ -49,3 +49,28 @@ Ask the user:
 > _"Would you like me to enable Chromium Silent Debugger Mode? This adds `--silent-debugger-extension-api` to your Chrome shortcut to permanently hide Chrome's top 'BrowserClaw is debugging this browser' warning bar."_
 
 If the user agrees, locate their Chrome shortcut and append `--silent-debugger-extension-api`.
+
+---
+
+## Step 5: Install Agent Skill (Hermes / Codex / Claude Code)
+
+### Hermes Agent
+
+Install directly from terminal:
+
+```bash
+hermes skills install "https://raw.githubusercontent.com/GoldenLoaf24h/browserclaw/main/skill/SKILL.md" --name browserclaw
+```
+
+Or inside a Hermes interactive session:
+
+```text
+/skills install https://raw.githubusercontent.com/GoldenLoaf24h/browserclaw/main/skill/SKILL.md --name browserclaw
+```
+
+### Codex / Claude Code / Custom Workspace
+
+Copy `skill/` (or download `browserclaw-skill-latest.zip` from Releases) into your agent's skills directory:
+
+- Codex: `~/.codex/skills/browserclaw/SKILL.md`
+- Claude Code: `.claude/skills/browserclaw/SKILL.md`
