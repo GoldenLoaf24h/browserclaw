@@ -593,6 +593,14 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           try {
             const startX = hasPath ? Math.round(args.path![0].x) : x;
             const startY = hasPath ? Math.round(args.path![0].y) : y;
+
+            await dispatchMouseMovement(tabId, startX, startY, modifierMask, false);
+            const prePressPauseMs = Math.max(
+              80,
+              Math.min(300, (args as any).prePressDelayMs ?? 110),
+            );
+            await new Promise((r) => setTimeout(r, prePressPauseMs));
+
             await raceCdp(tabId, 'Input.dispatchMouseEvent', {
               type: 'mousePressed',
               x: startX,
@@ -627,8 +635,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
               // below completes the HTML5 drag without any further input acks.
               let dragIntercepted = false;
               for (let i = 1; i <= dragSteps && !dragIntercepted; i++) {
-                const curX = Math.round(x + (endPoint.x - x) * (i / dragSteps));
-                const curY = Math.round(y + (endPoint.y - y) * (i / dragSteps));
+                const curX = Math.round(startX + (endPoint.x - startX) * (i / dragSteps));
+                const curY = Math.round(startY + (endPoint.y - startY) * (i / dragSteps));
                 await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                   type: 'mouseMoved',
                   x: curX,
