@@ -18,7 +18,7 @@
     "lint:fix": "eslint 'src/**/*.{js,ts}' --fix",
     "format": "prettier --write 'src/**/*.{js,ts,json}'",
     "register:dev": "node dist/scripts/register-dev.js",
-    "postinstall": "node -e "try { const p = require('path').resolve(__dirname, 'dist/scripts/postinstall.js'); if (require('fs').existsSync(p)) require(p); } catch (e) {}""
+    "postinstall": "node src/scripts/postinstall-guard.js"
   },
   "files": [
     "dist",
