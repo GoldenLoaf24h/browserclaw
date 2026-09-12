@@ -2,14 +2,13 @@
 
 > 本文档由 `scripts/gen-tools-doc.mjs` 从 `packages/shared/src/tools.ts` 的 schema 生成，与代码保持一致。重新生成：`node scripts/gen-tools-doc.mjs`。
 
-| Profile | 工具数 | Schema 开销 | 场景 |
-| --- | --- | --- | --- |
-| full（默认） | 52 | ~19.5k tokens | 完整底层 CDP 穿透与扩展控制 |
-| core | 24 | ~11.5k tokens | 核心高频利器（DOM 索引直点/表单/视觉/搜索） |
-| crawl | 15 | ~5.8k tokens | 极速批量网页抓取与数据提取 |
+| Profile      | 工具数 | Schema 开销   | 场景                                        |
+| ------------ | ------ | ------------- | ------------------------------------------- |
+| full（默认） | 52     | ~19.5k tokens | 完整底层 CDP 穿透与扩展控制                 |
+| core         | 14     | ~11.5k tokens | 核心高频利器（DOM 索引直点/表单/视觉/搜索） |
+| crawl        | 15     | ~5.8k tokens  | 极速批量网页抓取与数据提取                  |
 
 被 profile 隐藏的工具可用 `chrome_tool_docs` 按类别查询参数（该工具在任何 profile 均可用）。
-
 
 ## 导航与标签页 / Navigation & Tabs
 
@@ -69,9 +68,6 @@ Detach CDP debugger from the tab and release session affinity, dismissing the Ch
 
 Get all currently open browser windows and tabs
 
-
-
-
 ## 页面感知 / Perception
 
 ### `chrome_read_dom`
@@ -87,7 +83,7 @@ Extract and prune interactive DOM tree with compact 1-based index assignment, vi
 - `limit` — Maximum number of indexed elements to return for current page cursor slice (default: unlimited)
 - `maxTextLength` — Maximum text length before truncation for element text content (default: 120)
 - `includeDetails` — Also return the bulky indexedElements/indexMap detail blocks (geometry, occlusion flags, safe click points). Off by default because the tree already c
-- `format:compact|html` — Output format for treeString. "compact" (default) produces a concise, accessibility-tree-inspired representation without closing tags, slashing token 
+- `format:compact|html` — Output format for treeString. "compact" (default) produces a concise, accessibility-tree-inspired representation without closing tags, slashing token
 - `deltaOnly` — When true, returns only changed/added/removed diffs compared to the previous snapshot, saving 90%+ tokens on repeated reads.
 
 ### `chrome_get_markdown`
@@ -151,6 +147,12 @@ Get all options from a native <select> dropdown, ARIA combobox, or custom menu l
 - `windowId` — Target window ID (optional)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
 
+### `chrome_tool_docs`
+
+Return compact parameter documentation for a category of BrowserClaw tools (navigate | perceive | act | observe | manage | crawl | diagnose | network). Use when a workflow needs a tool that is not in the current profile view.
+
+- `category:navigate|perceive|act|observe|manage|crawl|diagnose|network`（必填） — Tool category to document
+- `activateForSession` — When true, dynamically exposes all tools in this category for the current MCP session without server restart. Default: false
 
 ## 交互操作 / Interaction
 
@@ -160,13 +162,14 @@ Click, hover, or interact with an element using its compact 1-based numeric inde
 
 - `index` — Compact 1-based numeric index of the target element
 - `coordinate` — Visual fallback coordinates in viewport/CSS pixels: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized
-- `coordinateSpace:viewport|screenshot` — Coordinate reference space. "viewport" (default) assumes standard CSS viewport pixels. "screenshot" scales coordinates based on the latest screenshot 
+- `coordinateSpace:viewport|screenshot` — Coordinate reference space. "viewport" (default) assumes standard CSS viewport pixels. "screenshot" scales coordinates based on the latest screenshot
 - `points` — Click sequence: dispatch a full CDP click at each viewport point with intervalMs pacing (rapid burst for moving canvas targets)
 - `intervalMs` — Delay between points in the click sequence, 5-500ms (default 35)
 - `action:click|hover|double_click|right_click|drag` — Interaction action to perform (default: click). "drag" requires `end` and moves from the indexed element to that target.
+- `path` — Continuous drag path: an ordered array of { x, y } coordinates to smoothly drag the mouse through while pressed. Ideal for circular gestures, sliders,
 - `end` — Drag destination: { index } for an indexed element, or { coordinate: { x, y } } for a raw point. Required when action is "drag".
 - `steps` — Number of intermediate mouse-move steps for drag (default 48; lower is faster, higher is smoother)
-- `holdMs` — How long to hold the mouse button before dragging, in ms (default 80, max 1000)
+- `holdMs` — How long to hold the mouse button before dragging, in ms (default 80, range 0-3000)
 - `dnd` — Use HTML5 drag-and-drop events (dragstart/dragover/drop) instead of raw mouse moves. Needed for React/HTML5 DnD lists.
 - `modifiers` — Keyboard modifiers to hold during interaction
 - `tabId` — Target tab ID (optional)
@@ -267,7 +270,7 @@ Upload files to web forms with file input elements using Chrome DevTools Protoco
 - `windowId` — Target window ID to pick active tab when tabId is omitted
 - `selector` — CSS selector for the file input element (optional if index is provided)
 - `index` — Compact 1-based numeric index of the file input element from chrome_read_dom
-- `clickTargetIndex` — Compact 1-based numeric index of a button/element from chrome_read_dom to click that triggers a dynamic file chooser dialog (e.g. Ant Design, Element 
+- `clickTargetIndex` — Compact 1-based numeric index of a button/element from chrome_read_dom to click that triggers a dynamic file chooser dialog (e.g. Ant Design, Element
 - `filePath` — Local file path to upload
 - `fileUrl` — URL to download file from before uploading
 - `base64Data` — Base64 encoded file data to upload
@@ -330,7 +333,7 @@ Use a mouse and keyboard to interact with a web browser, and take screenshots.
 - `dwellMs` — For click actions: milliseconds to hold the button down before release (0-2000). Use 50-150 for targets that reject instant clicks
 - `action:left_click|right_click|double_click|triple_click|left_click_drag|scroll|scroll_to|type|key|fill|fill_form|hover|wait|resize_page|zoom|screenshot`（必填） — Action to perform. There is no plain "click" — use left_click.
 - `ref` — Element ref/index from chrome_read_dom. For click/scroll/scroll_to/key/type and drag end when provided; takes precedence over coordinates.
-- `coordinates` — Coordinates for actions: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized, 0~1000 per-mille, or abso
+- `coordinates` — Coordinates for actions: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~~1.0 normalized, 0~~1000 per-mille, or abso
 - `coordinateSpace:viewport|screenshot` — Space of coordinates: viewport (default, absolute CSS pixels) or screenshot (mapped through the most recent screenshot context for this tab).
 - `startCoordinates` — Starting coordinates for drag action: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box.
 - `startRef` — Drag start ref/index from chrome_read_dom (alternative to startCoordinates).
@@ -373,7 +376,6 @@ Request user assistance for high-friction barriers (SMS 2FA, puzzle captcha, pay
 Rolls back the most recent mutating action on this tab (e.g. reverts form field input to previous value, or triggers browser history back navigation for mistaken links).
 
 - `tabId` — Target tab ID
-
 
 ## 观察与滚动 / Observation & Scrolling
 
@@ -459,7 +461,6 @@ Capture console output from a browser tab. Supports snapshot mode (default; one-
 - `onlyErrors` — Only return error-level console messages (and exceptions when includeExceptions=true). Default: false.
 - `limit` — Deprecated alias for maxMessages. Prefer maxMessages.
 
-
 ## 数据管理 / Data Management
 
 ### `chrome_history`
@@ -486,7 +487,7 @@ Add a new bookmark to Chrome
 
 - `url` — URL to bookmark. If not provided, uses the current active tab URL.
 - `title` — Title for the bookmark. If not provided, uses the page title from the URL.
-- `parentId` — Parent folder path or ID to add the bookmark to. Can be a path string (e.g., "Work/Projects") or a folder ID. If not provided, adds to the "Bookmarks 
+- `parentId` — Parent folder path or ID to add the bookmark to. Can be a path string (e.g., "Work/Projects") or a folder ID. If not provided, adds to the "Bookmarks
 - `createFolder` — Whether to create the parent folder if it does not exist (default: false)
 
 ### `chrome_bookmark_delete`
@@ -536,7 +537,6 @@ Close all tabs in a tab group and delete the group.
 
 - `groupId`（必填） — The ID of the tab group to close
 
-
 ## 代码诊断与调试 / Diagnostics & Debugging
 
 ### `chrome_javascript`
@@ -562,7 +562,7 @@ Read localStorage, sessionStorage, and cookies for the current tab. Cookies incl
 
 ### `chrome_intercept_api`
 
-Intercepts backend JSON API responses matching a URL pattern (e.g. "*/api/v1/data*") via CDP Network domain, bypassing messy HTML DOM scraping to obtain 100% structured ground-truth data.
+Intercepts backend JSON API responses matching a URL pattern (e.g. "_/api/v1/data_") via CDP Network domain, bypassing messy HTML DOM scraping to obtain 100% structured ground-truth data.
 
 - `urlPattern`（必填） — Glob pattern to match API endpoint URL
 - `triggerAction:inspect_recent|wait_next` — Wait for next response or inspect most recent match (default: inspect_recent)
@@ -591,7 +591,6 @@ Provides a lightweight summary of the last recorded trace. For deep insights (CW
 - `insightName` — Optional insight name for future deep analysis (e.g., "DocumentLatency"). Currently informational only.
 - `timeoutMs` — Timeout for deep analysis via native host (milliseconds). Default 60000. Increase for large traces.
 
-
 ## 网络拦截与捕获 / Network Interception & Capture
 
 ### `chrome_network_request`
@@ -618,13 +617,4 @@ Unified network capture tool. Use action="start" to begin capturing, action="sto
 - `inactivityTimeout` — Stop after inactivity in milliseconds (default: 60000). Set 0 to disable.
 - `includeStatic` — Include static resources like images/scripts/styles (default: false)
 
-
 ## 其他工具 / Remaining tools
-
-### `chrome_tool_docs`
-
-Return compact parameter documentation for a category of BrowserClaw tools (navigate | perceive | act | observe | manage | crawl | diagnose | network). Use when a workflow needs a tool that is not in the current profile view.
-
-- `category:navigate|perceive|act|observe|manage|crawl|diagnose|network`（必填） — Tool category to document
-- `activateForSession` — When true, dynamically exposes all tools in this category for the current MCP session without server restart. Default: false
-

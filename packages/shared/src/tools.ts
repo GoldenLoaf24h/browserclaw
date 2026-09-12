@@ -1541,7 +1541,7 @@ export const TOOL_SCHEMAS: Tool[] = [
         holdMs: {
           type: 'number',
           description:
-            'How long to hold the mouse button before dragging, in ms (default 80, max 1000)',
+            'How long to hold the mouse button before dragging, in ms (default 80, range 0-3000)',
         },
         dnd: {
           type: 'boolean',

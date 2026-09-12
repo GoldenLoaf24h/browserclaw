@@ -16,6 +16,7 @@ export interface FillIndexParams {
   text?: string;
   value?: string;
   clear?: boolean;
+  pressEnter?: boolean;
   tabId?: number;
   windowId?: number;
   waitForSettle?: boolean;
@@ -172,6 +173,25 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
             if (textToFill) {
               await raceCdp(targetTabId, 'Input.insertText', {
                 text: String(textToFill),
+              });
+            }
+
+            if (args.pressEnter === true) {
+              await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
+                type: 'keyDown',
+                key: 'Enter',
+                code: 'Enter',
+                text: '\r',
+                unmodifiedText: '\r',
+                windowsVirtualKeyCode: 13,
+                nativeVirtualKeyCode: 13,
+              });
+              await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
+                type: 'keyUp',
+                key: 'Enter',
+                code: 'Enter',
+                windowsVirtualKeyCode: 13,
+                nativeVirtualKeyCode: 13,
               });
             }
           });
