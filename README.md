@@ -41,30 +41,35 @@ BrowserClaw is a high-performance Model Context Protocol (MCP) platform that giv
 - 🔍 **Targeted Grep (`chrome_grep`)**: Sub-100 token instant element and text search across large documents.
 - 🖱️ **Human-Grade Aesthetics**: 1:1 spring-kinematics virtual cursor overlay and dedicated tab groups lifecycle management.
 - 🛡️ **Zero-Jitter Session Retention**: 10-minute session-aware CDP retention eliminates infobar dropping and viewport accordion shifts.
-- 🧠 **Personal Context & Second Brain**: AI doesn't just click — it understands your workflow through your browsing history and organizes messy bookmarks into a structured personal knowledge base.
+- 🌐 **Manage Everything in Your Real Browser**: Unlike conventional automation tools confined to throwaway headless bubbles, BrowserClaw gives your agent full, authenticated control to manage everything in your everyday local browser — active tabs, windows, cookies, browsing history, and bookmarks.
 
 ---
 
 ## 🚀 Quick Start
 
 ### 1. Let your AI agent set up the backend
+
 Ask your AI assistant (Claude Code, Cursor, Windsurf, Codex):
-> *"Please set up BrowserClaw MCP server for me: https://github.com/GoldenLoaf24h/browserclaw"*
+
+> _"Please set up BrowserClaw MCP server for me: https://github.com/GoldenLoaf24h/browserclaw"_
 
 Or run manually:
+
 ```bash
 git clone https://github.com/GoldenLoaf24h/browserclaw.git
 cd browserclaw && pnpm install && pnpm build
 cd app/native-server && node dist/scripts/register-dev.js
 ```
-*(Token saved at `~/.chrome-mcp/bridge-token`; server listens on `http://127.0.0.1:12306/mcp`)*
+
+_(Token saved at `~/.chrome-mcp/bridge-token`; server listens on `http://127.0.0.1:12306/mcp`)_
 
 ### 2. Load the Extension in Chrome
+
 1. Download **[browserclaw-extension-latest.zip](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** (or use `app/chrome-extension/.output/chrome-mv3`).
 2. Open `chrome://extensions`, enable **Developer mode** (top-right).
 3. Click **Load unpacked** and select the folder.
 
-> 🤫 **Pro Tip (Silent Debugging)**: Add `--silent-debugger-extension-api` to your Chrome launch shortcut to completely hide Chrome's top *"BrowserClaw is debugging this browser"* bar.
+> 🤫 **Pro Tip (Silent Debugging)**: Add `--silent-debugger-extension-api` to your Chrome launch shortcut to completely hide Chrome's top _"BrowserClaw is debugging this browser"_ bar.
 
 ---
 
@@ -72,21 +77,22 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 Every tool in the browser automation ecosystem has distinct architectural tradeoffs and sweet spots. Here is an objective comparison across the dimensions developers and users care about most:
 
-| Capability / Architecture | **BrowserClaw (This Project)** | **browser-use (Python/CDP)** | **Playwright MCP (Microsoft)** | **Stagehand (Browserbase)** |
-| :--- | :--- | :--- | :--- | :--- |
-| **Everyday Chrome Auth & Logins** | ✅ **100% Native Extension**<br>Directly reuses active Google, GitHub, and SSO sessions | ⚠️ **Manual Profile Setup**<br>Separate process; profile copying often triggers bot challenges | ❌ **Ephemeral Sandbox**<br>Fresh blank profile on every run; no access to daily logins | ❌ **Cloud Sandbox**<br>Remote cloud container; requires manual cookie exports |
-| **Autonomous Agent Loop Included** | ⚠️ **MCP Surface Only**<br>Plug into your existing agent (Cursor, Claude, Codex) | ✅ **Batteries-Included**<br>Built-in autonomous LLM reasoning loop out of the box | ❌ **MCP Tools Only**<br>Pure protocol tools; requires an external agent orchestrator | ✅ **Natural Language**<br>Drive actions directly via `page.act("click login")` |
-| **Cross-Engine Support (Firefox/WebKit)**| ❌ **Chromium-Only**<br>Deeply optimized for Chrome, Edge, Brave, and Opera | ⚠️ **Chromium-Centric**<br>Primarily targets Chromium via CDP | ✅ **Full Native Engines**<br>Native multi-browser support for Chromium, Firefox & WebKit | ⚠️ **Chromium-Centric**<br>Cloud containers primarily run Chromium |
-| **Cloud Elastic Concurrency** | ❌ **Local Desktop First**<br>Built for your local workspace, not cloud container clusters | ⚠️ **Self-Hosted Docker**<br>Requires provisioning your own multi-container infrastructure | ⚠️ **Self-Hosted CI**<br>Requires setting up your own GitHub Actions / runner matrix | ✅ **Elastic Cloud Fleet**<br>Instantly scales to thousands of remote browsers on Browserbase |
-| **Token Cost per Action** | ✅ **Ultra-Low (<800 Tokens)**<br>Pruned 1-based DOM tree + autonomous diff (`includeDelta`) | ⚠️ **Moderate (~5,000 Tokens)**<br>Full DOM snapshot evaluation or vision model roundtrip per step | ❌ **High (>10,000 Tokens)**<br>Dumps full raw ARIA accessibility trees on every interaction | ❌ **High (LLM-in-Loop)**<br>Re-infers target locators through models on every semantic step |
-| **Massive Page Targeted Search** | ✅ **`chrome_grep` (<100 Tokens)**<br>Sub-millisecond regex/text scan without dumping the DOM | ❌ **Full DOM Ingestion**<br>Must dump entire page contents into LLM prompt context | ❌ **Raw Tree Traversal**<br>Agent must parse through tens of thousands of lines of text | ⚠️ **Semantic Query**<br>Re-evaluates page context via prompt inference |
-| **Multi-Step Action Pipelines** | ✅ **Closed-Loop `batch_actions`**<br>Chains fills, clicks, waits, `assert` and `extract` in 1 RTT | ⚠️ **Step-by-Step Loop**<br>Each discrete action requires a full agent decision roundtrip (10s+) | ❌ **Single-Action Calls**<br>No built-in batching, assertions, or data extraction | ⚠️ **Single Semantic Steps**<br>`page.act()` executes actions individually with per-step billing |
-| **Visual Polish & Human Coexistence**| ✅ **1:1 Spring Virtual Cursor**<br>Retina cursor flies naturally; dedicated colored Chrome Tab Groups | ❌ **Headless / Raw Jumps**<br>No visual cursor overlay; tabs pile up unorganized | ❌ **No Visual Layer**<br>Designed strictly for test suites; zero visual feedback | ⚠️ **Remote Canvas Stream**<br>Renders browser feed in cloud web dashboard |
-| **2FA & Captcha Takeover** | ✅ **Frosted Banner Takeover**<br>Softly dims page, yields to human, and auto-resumes on continue | ❌ **Timeout / Crash**<br>Blocks on interactive challenges until action watchdog expires | ❌ **Test Failure**<br>Throws timeout exception when blocked by challenges | ⚠️ **Cloud Dashboard**<br>Must open cloud provider web console to solve manually |
-| **Windows OS Reliability** | ✅ **Native Messaging**<br>Zero file locks, zero port conflicts, runs silently in background | ❌ **WinError 32 Collision**<br>Direct profile copying triggers Windows exclusive sharing locks | ⚠️ **Orphan Processes**<br>Abrupt exits may leave background `chrome.exe` zombies | ✅ **Cloud-Isolated**<br>Runs completely off-device, avoiding local OS lock issues |
-| **Personal Second Brain** | ✅ **History & Bookmarks**<br>Agent reads browsing history for context and organizes bookmarks | ❌ **Stateless Task Runner**<br>Operates per-task; retains no personal browser memory | ❌ **Stateless Test Runner**<br>All state and records wiped upon session termination | ❌ **Stateless Session**<br>Isolated to cloud run; no link to developer's daily workflow |
+| Capability / Architecture                 | **BrowserClaw (This Project)**                                                                            | **browser-use (Python/CDP)**                                                                       | **Playwright MCP (Microsoft)**                                                               | **Stagehand (Browserbase)**                                                                      |
+| :---------------------------------------- | :-------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------- |
+| **Everyday Chrome Auth & Logins**         | ✅ **100% Native Extension**<br>Directly reuses active Google, GitHub, and SSO sessions                   | ⚠️ **Manual Profile Setup**<br>Separate process; profile copying often triggers bot challenges     | ❌ **Ephemeral Sandbox**<br>Fresh blank profile on every run; no access to daily logins      | ❌ **Cloud Sandbox**<br>Remote cloud container; requires manual cookie exports                   |
+| **Autonomous Agent Loop Included**        | ⚠️ **MCP Surface Only**<br>Plug into your existing agent (Cursor, Claude, Codex)                          | ✅ **Batteries-Included**<br>Built-in autonomous LLM reasoning loop out of the box                 | ❌ **MCP Tools Only**<br>Pure protocol tools; requires an external agent orchestrator        | ✅ **Natural Language**<br>Drive actions directly via `page.act("click login")`                  |
+| **Cross-Engine Support (Firefox/WebKit)** | ❌ **Chromium-Only**<br>Deeply optimized for Chrome, Edge, Brave, and Opera                               | ⚠️ **Chromium-Centric**<br>Primarily targets Chromium via CDP                                      | ✅ **Full Native Engines**<br>Native multi-browser support for Chromium, Firefox & WebKit    | ⚠️ **Chromium-Centric**<br>Cloud containers primarily run Chromium                               |
+| **Cloud Elastic Concurrency**             | ❌ **Local Desktop First**<br>Built for your local workspace, not cloud container clusters                | ⚠️ **Self-Hosted Docker**<br>Requires provisioning your own multi-container infrastructure         | ⚠️ **Self-Hosted CI**<br>Requires setting up your own GitHub Actions / runner matrix         | ✅ **Elastic Cloud Fleet**<br>Instantly scales to thousands of remote browsers on Browserbase    |
+| **Token Cost per Action**                 | ✅ **Ultra-Low (<800 Tokens)**<br>Pruned 1-based DOM tree + autonomous diff (`includeDelta`)              | ⚠️ **Moderate (~5,000 Tokens)**<br>Full DOM snapshot evaluation or vision model roundtrip per step | ❌ **High (>10,000 Tokens)**<br>Dumps full raw ARIA accessibility trees on every interaction | ❌ **High (LLM-in-Loop)**<br>Re-infers target locators through models on every semantic step     |
+| **Massive Page Targeted Search**          | ✅ **`chrome_grep` (<100 Tokens)**<br>Sub-millisecond regex/text scan without dumping the DOM             | ❌ **Full DOM Ingestion**<br>Must dump entire page contents into LLM prompt context                | ❌ **Raw Tree Traversal**<br>Agent must parse through tens of thousands of lines of text     | ⚠️ **Semantic Query**<br>Re-evaluates page context via prompt inference                          |
+| **Multi-Step Action Pipelines**           | ✅ **Closed-Loop `batch_actions`**<br>Chains fills, clicks, waits, `assert` and `extract` in 1 RTT        | ⚠️ **Step-by-Step Loop**<br>Each discrete action requires a full agent decision roundtrip (10s+)   | ❌ **Single-Action Calls**<br>No built-in batching, assertions, or data extraction           | ⚠️ **Single Semantic Steps**<br>`page.act()` executes actions individually with per-step billing |
+| **Visual Polish & Human Coexistence**     | ✅ **1:1 Spring Virtual Cursor**<br>Retina cursor flies naturally; dedicated colored Chrome Tab Groups    | ❌ **Headless / Raw Jumps**<br>No visual cursor overlay; tabs pile up unorganized                  | ❌ **No Visual Layer**<br>Designed strictly for test suites; zero visual feedback            | ⚠️ **Remote Canvas Stream**<br>Renders browser feed in cloud web dashboard                       |
+| **2FA & Captcha Takeover**                | ✅ **Frosted Banner Takeover**<br>Softly dims page, yields to human, and auto-resumes on continue         | ❌ **Timeout / Crash**<br>Blocks on interactive challenges until action watchdog expires           | ❌ **Test Failure**<br>Throws timeout exception when blocked by challenges                   | ⚠️ **Cloud Dashboard**<br>Must open cloud provider web console to solve manually                 |
+| **Windows OS Reliability**                | ✅ **Native Messaging**<br>Zero file locks, zero port conflicts, runs silently in background              | ❌ **WinError 32 Collision**<br>Direct profile copying triggers Windows exclusive sharing locks    | ⚠️ **Orphan Processes**<br>Abrupt exits may leave background `chrome.exe` zombies            | ✅ **Cloud-Isolated**<br>Runs completely off-device, avoiding local OS lock issues               |
+| **Full Local Browser Management**         | ✅ **Tabs, History & Bookmarks**<br>Agent directly manages everyday tabs, windows, history, and bookmarks | ❌ **Stateless Sandbox**<br>Isolated container; cannot access or manage host browser               | ❌ **Test Sandbox Only**<br>Throwaway profile wiped upon termination                         | ❌ **Remote Cloud Only**<br>Isolated cloud run; zero host browser integration                    |
 
 ### 🧭 Choosing the Right Tool for Your Stack
+
 - **Choose [browser-use](https://github.com/browser-use/browser-use)** if you want a complete, standalone Python agent that runs its own autonomous loop from the terminal.
 - **Choose [Playwright MCP](https://github.com/microsoft/playwright-mcp)** if you need an official Microsoft tool to run cross-browser test suites across Firefox, WebKit, and Chromium in CI/CD.
 - **Choose [Stagehand](https://github.com/browserbase/stagehand)** if you need to scale to thousands of ephemeral cloud browsers without managing local desktop infrastructure.
@@ -227,6 +233,7 @@ See **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** for detailed topology and
 ## 💡 Acknowledgments & Prior Art
 
 BrowserClaw synthesizes architectural wisdom from the open-source community:
+
 - **[hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)**: Foundational MV3 extension + Native Messaging IPC bridge.
 - **[browser-use/browser-use](https://github.com/browser-use/browser-use)**: Token-efficient DOM-first indexing principles.
 - **[browseros-ai/BrowserOS](https://github.com/browseros-ai/BrowserOS)**: Autonomous DOM diffing (`includeDelta`) and element grep (`chrome_grep`).
