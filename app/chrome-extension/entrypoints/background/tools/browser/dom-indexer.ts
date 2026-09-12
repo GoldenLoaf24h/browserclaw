@@ -96,7 +96,7 @@ export function hitElementAtPoint(target: Element, x: number, y: number): Elemen
     if (root.nodeType === 9) break;
     parent = (root as ShadowRoot).host as Element;
   }
-  
+
   let hitElement: Element | null = null;
   for (let index = roots.length - 1; index >= 0; index--) {
     const root = roots[index];
@@ -112,15 +112,15 @@ export function hitElementAtPoint(target: Element, x: number, y: number): Elemen
 export function interceptingElementAtPoint(target: Element, x: number, y: number): Element | null {
   const hitElement = hitElementAtPoint(target, x, y);
   if (!hitElement) return null;
-  
+
   let current: Element | null = hitElement;
   while (current && current !== target) current = composedParent(current);
   if (current === target) return null;
-  
+
   current = target;
   while (current && current !== hitElement) current = composedParent(current);
   if (current === hitElement) return null; // It's the target itself or inside it
-  
+
   return hitElement;
 }
 
@@ -130,14 +130,15 @@ export function describeHitTarget(element: Element): string {
     const role = modal.getAttribute?.('role');
     const ariaModal = modal.getAttribute?.('aria-modal');
     if (role === 'dialog' || ariaModal === 'true') {
-      const name = modal.getAttribute?.('aria-label') || 
-                   modal.getAttribute?.('aria-labelledby') || 
-                   modal.querySelector?.('h1,h2,h3,h4,h5,h6')?.textContent?.trim();
+      const name =
+        modal.getAttribute?.('aria-label') ||
+        modal.getAttribute?.('aria-labelledby') ||
+        modal.querySelector?.('h1,h2,h3,h4,h5,h6')?.textContent?.trim();
       return name ? `dialog "${name}"` : 'dialog';
     }
     modal = composedParent(modal);
   }
-  
+
   const tag = element.tagName.toLowerCase();
   const id = element.id ? ` id="${element.id}"` : '';
   const roleAttr = element.getAttribute?.('role') ? ` role="${element.getAttribute('role')}"` : '';
@@ -151,18 +152,37 @@ export function describeHitTarget(element: Element): string {
 export function isInteractiveSvgNode(el: Element, style?: CSSStyleDeclaration): boolean {
   if (!el || (typeof Element !== 'undefined' && !(el instanceof Element))) return false;
   const tag = (el.tagName || '').toLowerCase();
-  if (/^(defs|clippath|mask|pattern|lineargradient|radialgradient|filter|metadata|style|title|desc)$/i.test(tag)) {
+  if (
+    /^(defs|clippath|mask|pattern|lineargradient|radialgradient|filter|metadata|style|title|desc)$/i.test(
+      tag,
+    )
+  ) {
     return false;
   }
   const role = el.getAttribute?.('role')?.toLowerCase();
   if (role && /^(button|link|checkbox|menuitem|tab|switch)$/.test(role)) return true;
-  if (el.hasAttribute?.('onclick') || el.hasAttribute?.('onmousedown') || typeof (el as any).onclick === 'function') return true;
-  const tabIndex = typeof (el as HTMLElement).tabIndex === 'number' ? (el as HTMLElement).tabIndex : -1;
-  if (tabIndex >= 0 || (el.hasAttribute?.('tabindex') && !el.getAttribute('tabindex')?.startsWith('-'))) return true;
-  if (style && (style.cursor === 'pointer' || /grab|grabbing|move/i.test(style.cursor))) return true;
+  if (
+    el.hasAttribute?.('onclick') ||
+    el.hasAttribute?.('onmousedown') ||
+    typeof (el as any).onclick === 'function'
+  )
+    return true;
+  const tabIndex =
+    typeof (el as HTMLElement).tabIndex === 'number' ? (el as HTMLElement).tabIndex : -1;
+  if (
+    tabIndex >= 0 ||
+    (el.hasAttribute?.('tabindex') && !el.getAttribute('tabindex')?.startsWith('-'))
+  )
+    return true;
+  if (style && (style.cursor === 'pointer' || /grab|grabbing|move/i.test(style.cursor)))
+    return true;
   if (typeof el.getAttributeNames === 'function') {
     for (const name of el.getAttributeNames()) {
-      if (/^data-(action|click|target|toggle|trigger|handler|command|interactive|button|nav|href|url|route|press|event)/i.test(name)) {
+      if (
+        /^data-(action|click|target|toggle|trigger|handler|command|interactive|button|nav|href|url|route|press|event)/i.test(
+          name,
+        )
+      ) {
         return true;
       }
     }
@@ -170,7 +190,10 @@ export function isInteractiveSvgNode(el: Element, style?: CSSStyleDeclaration): 
   const id = (el.id || el.getAttribute?.('id') || '').trim();
   if (id !== '') {
     // Exclude auto-generated machine SVG IDs (e.g. clip0_123, paint0_linear, path123, rect45)
-    const isGenerated = /^(clip|paint|mask|gradient|linear|radial|pattern|filter|path|svg|layer|group|rect|circle|ellipse|shape|icon|image)[-_0-9a-z]*$/i.test(id) || /^[0-9a-f]{8,}$/i.test(id);
+    const isGenerated =
+      /^(clip|paint|mask|gradient|linear|radial|pattern|filter|path|svg|layer|group|rect|circle|ellipse|shape|icon|image)[-_0-9a-z]*$/i.test(
+        id,
+      ) || /^[0-9a-f]{8,}$/i.test(id);
     if (!isGenerated) return true;
   }
   if (el.hasAttribute?.('aria-haspopup') || el.hasAttribute?.('aria-expanded')) return true;
@@ -204,7 +227,12 @@ export function findIndexedElement(index: number): Element | null {
       const isConnected =
         typeof (el as any).isConnected === 'boolean'
           ? (el as any).isConnected
-          : (!doc || typeof doc.contains !== 'function' || doc.contains(el) || (typeof el.getRootNode === 'function' && typeof ShadowRoot !== 'undefined' && el.getRootNode() instanceof ShadowRoot));
+          : !doc ||
+            typeof doc.contains !== 'function' ||
+            doc.contains(el) ||
+            (typeof el.getRootNode === 'function' &&
+              typeof ShadowRoot !== 'undefined' &&
+              el.getRootNode() instanceof ShadowRoot);
       if (isConnected) {
         return el;
       }
@@ -249,12 +277,14 @@ export function extractCleanElementText(el: Element, maxLen = 120): string {
     const selectEl = el as HTMLSelectElement;
     text = (selectEl.selectedOptions?.[0]?.text || selectEl.value || '').trim();
   } else {
-    text = (((el as HTMLElement).innerText || el.textContent) || '').trim();
+    text = ((el as HTMLElement).innerText || el.textContent || '').trim();
   }
 
   if (!text) {
     try {
-      const win = el.ownerDocument?.defaultView || (typeof window !== 'undefined' ? window : (globalThis as any).window);
+      const win =
+        el.ownerDocument?.defaultView ||
+        (typeof window !== 'undefined' ? window : (globalThis as any).window);
       if (win && typeof win.getComputedStyle === 'function') {
         const cleanContent = (c?: string): string => {
           if (!c || c === 'none' || c === 'normal') return '';
@@ -407,9 +437,13 @@ export function inPageScrollByIndex(
   while (node) {
     const cs = getComputedStyle(node);
     const canY =
-      dy !== 0 && /(auto|scroll|overlay)/.test(cs.overflowY) && node.scrollHeight > node.clientHeight + 1;
+      dy !== 0 &&
+      /(auto|scroll|overlay)/.test(cs.overflowY) &&
+      node.scrollHeight > node.clientHeight + 1;
     const canX =
-      dx !== 0 && /(auto|scroll|overlay)/.test(cs.overflowX) && node.scrollWidth > node.clientWidth + 1;
+      dx !== 0 &&
+      /(auto|scroll|overlay)/.test(cs.overflowX) &&
+      node.scrollWidth > node.clientWidth + 1;
     if (canY || canX) {
       node.scrollBy({ left: dx, top: dy, behavior: 'instant' as any });
       return { scrolled: true, scrollTop: node.scrollTop, scrollLeft: node.scrollLeft };
@@ -433,18 +467,19 @@ export function inPageRenderHighlights(indexedElements: IndexedElement[]): void 
   const overlay = document.createElement('div');
   overlay.id = '__mcp_som_overlay_container__';
   overlay.setAttribute('aria-hidden', 'true');
-  overlay.style.cssText = [
-    'position: fixed',
-    'top: 0',
-    'left: 0',
-    'width: 100vw',
-    'height: 100vh',
-    'pointer-events: none',
-    'z-index: 2147483647',
-    'overflow: visible',
-    'margin: 0',
-    'padding: 0',
-  ].join(' !important;') + ' !important;';
+  overlay.style.cssText =
+    [
+      'position: fixed',
+      'top: 0',
+      'left: 0',
+      'width: 100vw',
+      'height: 100vh',
+      'pointer-events: none',
+      'z-index: 2147483647',
+      'overflow: visible',
+      'margin: 0',
+      'padding: 0',
+    ].join(' !important;') + ' !important;';
 
   const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
   const vh = window.innerHeight || document.documentElement.clientHeight || 800;
@@ -467,24 +502,25 @@ export function inPageRenderHighlights(indexedElements: IndexedElement[]): void 
 
     // Outlined bounding box
     const box = document.createElement('div');
-    box.style.cssText = [
-      'position: fixed',
-      `left: ${el.rect.x}px`,
-      `top: ${el.rect.y}px`,
-      `width: ${el.rect.width}px`,
-      `height: ${el.rect.height}px`,
-      'border: 1.5px solid rgba(245, 158, 11, 0.85)',
-      'background: rgba(245, 158, 11, 0.08)',
-      'box-sizing: border-box',
-      'pointer-events: none',
-      'z-index: 2147483646',
-    ].join(' !important;') + ' !important;';
+    box.style.cssText =
+      [
+        'position: fixed',
+        `left: ${el.rect.x}px`,
+        `top: ${el.rect.y}px`,
+        `width: ${el.rect.width}px`,
+        `height: ${el.rect.height}px`,
+        'border: 1.5px solid rgba(245, 158, 11, 0.85)',
+        'background: rgba(245, 158, 11, 0.08)',
+        'box-sizing: border-box',
+        'pointer-events: none',
+        'z-index: 2147483646',
+      ].join(' !important;') + ' !important;';
     overlay.appendChild(box);
 
     // Numbered Badge position calculation with Anti-Collision
     const isSmall = el.rect.width < 60 || el.rect.height < 30;
     let badgeTop = isSmall ? Math.max(0, el.rect.y - 14) : el.rect.y;
-    let badgeLeft = el.rect.x;
+    const badgeLeft = el.rect.x;
 
     // 2. Anti-Collision: check proximity to placed badges (< 25px)
     const isColliding = (bx: number, by: number): boolean => {
@@ -513,25 +549,26 @@ export function inPageRenderHighlights(indexedElements: IndexedElement[]): void 
     // 3. Micro-Pill Badge
     const badge = document.createElement('div');
     badge.textContent = String(el.index);
-    badge.style.cssText = [
-      'position: fixed',
-      `left: ${badgeLeft}px`,
-      `top: ${badgeTop}px`,
-      'background: rgba(250, 204, 21, 0.9)',
-      'color: #000000',
-      'font-size: 9px',
-      'font-weight: 800',
-      'font-family: monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      'line-height: 11px',
-      'padding: 1px 3px',
-      'border-radius: 9999px',
-      'border: 1px solid rgba(0, 0, 0, 0.7)',
-      'box-shadow: 0 1px 3px rgba(0,0,0,0.35)',
-      'pointer-events: none',
-      'z-index: 2147483647',
-      'user-select: none',
-      'white-space: nowrap',
-    ].join(' !important;') + ' !important;';
+    badge.style.cssText =
+      [
+        'position: fixed',
+        `left: ${badgeLeft}px`,
+        `top: ${badgeTop}px`,
+        'background: rgba(250, 204, 21, 0.9)',
+        'color: #000000',
+        'font-size: 9px',
+        'font-weight: 800',
+        'font-family: monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        'line-height: 11px',
+        'padding: 1px 3px',
+        'border-radius: 9999px',
+        'border: 1px solid rgba(0, 0, 0, 0.7)',
+        'box-shadow: 0 1px 3px rgba(0,0,0,0.35)',
+        'pointer-events: none',
+        'z-index: 2147483647',
+        'user-select: none',
+        'white-space: nowrap',
+      ].join(' !important;') + ' !important;';
 
     overlay.appendChild(badge);
   }
@@ -554,7 +591,10 @@ export function inPageDOMPruner(options?: {
   const threshold = options?.viewportThreshold ?? 1000;
   const startingIndex = options?.startingIndex ?? 1;
   const frameId = options?.frameId;
-  const maxTextLength = typeof options?.maxTextLength === 'number' && options.maxTextLength > 0 ? options.maxTextLength : 120;
+  const maxTextLength =
+    typeof options?.maxTextLength === 'number' && options.maxTextLength > 0
+      ? options.maxTextLength
+      : 120;
   const outputFormat = options?.format === 'html' ? 'html' : 'compact';
   const winHeight = window.innerHeight;
   const winWidth = window.innerWidth;
@@ -696,7 +736,8 @@ export function inPageDOMPruner(options?: {
     ) {
       return true;
     }
-    const cls = typeof (el as HTMLElement).className === 'string' ? (el as HTMLElement).className : '';
+    const cls =
+      typeof (el as HTMLElement).className === 'string' ? (el as HTMLElement).className : '';
     if (
       cls.includes('group/') ||
       cls.includes('hover:') ||
@@ -746,12 +787,7 @@ export function inPageDOMPruner(options?: {
     if (rect.width <= 0 || rect.height <= 0) {
       return { isFullyOccluded: false, isOccluded: false, safeClickPoint: defaultCenter };
     }
-    if (
-      rect.left < 0 ||
-      rect.top < 0 ||
-      rect.right > winWidth ||
-      rect.bottom > winHeight
-    ) {
+    if (rect.left < 0 || rect.top < 0 || rect.right > winWidth || rect.bottom > winHeight) {
       return { isFullyOccluded: false, isOccluded: false, safeClickPoint: defaultCenter };
     }
 
@@ -780,14 +816,24 @@ export function inPageDOMPruner(options?: {
         } catch {}
 
         if (!topEl) {
-          const pt = { x: Math.round(px), y: Math.round(py), offsetX: rect.width * rx, offsetY: rect.height * ry };
+          const pt = {
+            x: Math.round(px),
+            y: Math.round(py),
+            offsetX: rect.width * rx,
+            offsetY: rect.height * ry,
+          };
           clearPoints.push(pt);
           if (rx === 0.5 && ry === 0.5) centerClearPoint = pt;
           continue;
         }
 
         if (topEl === el || composedContains(el, topEl) || composedContains(topEl, el)) {
-          const pt = { x: Math.round(px), y: Math.round(py), offsetX: rect.width * rx, offsetY: rect.height * ry };
+          const pt = {
+            x: Math.round(px),
+            y: Math.round(py),
+            offsetX: rect.width * rx,
+            offsetY: rect.height * ry,
+          };
           clearPoints.push(pt);
           if (rx === 0.5 && ry === 0.5) centerClearPoint = pt;
           continue;
@@ -810,7 +856,12 @@ export function inPageDOMPruner(options?: {
           }
         } catch {}
 
-        const pt = { x: Math.round(px), y: Math.round(py), offsetX: rect.width * rx, offsetY: rect.height * ry };
+        const pt = {
+          x: Math.round(px),
+          y: Math.round(py),
+          offsetX: rect.width * rx,
+          offsetY: rect.height * ry,
+        };
         clearPoints.push(pt);
         if (rx === 0.5 && ry === 0.5) centerClearPoint = pt;
       }
@@ -846,7 +897,12 @@ export function inPageDOMPruner(options?: {
         try {
           if (typeof document.elementFromPoint === 'function') {
             const topAtAvg = document.elementFromPoint(avgX, avgY);
-            if (!topAtAvg || topAtAvg === el || composedContains(el, topAtAvg) || composedContains(topAtAvg, el)) {
+            if (
+              !topAtAvg ||
+              topAtAvg === el ||
+              composedContains(el, topAtAvg) ||
+              composedContains(topAtAvg, el)
+            ) {
               centroidClear = true;
             }
           }
@@ -888,7 +944,10 @@ export function inPageDOMPruner(options?: {
     while (n) {
       if (n === ancestor) return true;
       const root: Node | null = typeof n.getRootNode === 'function' ? n.getRootNode() : null;
-      n = (typeof ShadowRoot !== 'undefined' && root instanceof ShadowRoot) ? root.host : (n.parentNode || null);
+      n =
+        typeof ShadowRoot !== 'undefined' && root instanceof ShadowRoot
+          ? root.host
+          : n.parentNode || null;
     }
     return false;
   }
@@ -970,8 +1029,16 @@ export function inPageDOMPruner(options?: {
     const informational = !interactive && isInformationalNode(node);
 
     if (propagatingParentRect && !interactive && !isFile && !informational) {
-      const xOverlap = Math.max(0, Math.min(rect.right, propagatingParentRect.right) - Math.max(rect.left, propagatingParentRect.left));
-      const yOverlap = Math.max(0, Math.min(rect.bottom, propagatingParentRect.bottom) - Math.max(rect.top, propagatingParentRect.top));
+      const xOverlap = Math.max(
+        0,
+        Math.min(rect.right, propagatingParentRect.right) -
+          Math.max(rect.left, propagatingParentRect.left),
+      );
+      const yOverlap = Math.max(
+        0,
+        Math.min(rect.bottom, propagatingParentRect.bottom) -
+          Math.max(rect.top, propagatingParentRect.top),
+      );
       const overlapArea = xOverlap * yOverlap;
       const childArea = rect.width * rect.height;
       if (childArea > 0 && overlapArea / childArea >= 0.99) {
@@ -989,12 +1056,14 @@ export function inPageDOMPruner(options?: {
       }
     }
 
-    const hasInfoText = informational && Boolean(((node as HTMLElement).innerText || node.textContent || '').trim());
+    const hasInfoText =
+      informational && Boolean(((node as HTMLElement).innerText || node.textContent || '').trim());
     if (interactive || isFile || (informational && hasInfoText)) {
       candidates.push({ node, tag, rect, isFile, isInteractive: interactive || isFile });
     }
 
-    const nextPropagatingRect = interactive && (tag === 'button' || tag === 'a') ? rect : propagatingParentRect;
+    const nextPropagatingRect =
+      interactive && (tag === 'button' || tag === 'a') ? rect : propagatingParentRect;
     const nextPointer = currentHasPointer || parentHasPointer;
 
     // Traverse standard children
@@ -1011,7 +1080,13 @@ export function inPageDOMPruner(options?: {
     }
   }
 
-  const candidates: Array<{ node: Element; tag: string; rect: DOMRect; isFile: boolean; isInteractive: boolean }> = [];
+  const candidates: Array<{
+    node: Element;
+    tag: string;
+    rect: DOMRect;
+    isFile: boolean;
+    isInteractive: boolean;
+  }> = [];
 
   if (document.body) {
     traverse(document.body, null, false);
@@ -1140,7 +1215,10 @@ export function inPageDOMPruner(options?: {
       }
       // Framework validators commonly only flip aria-invalid.
       if (cand.node.getAttribute('aria-invalid') === 'true') attributes['invalid'] = 'true';
-      if (cand.node.hasAttribute('required') || cand.node.getAttribute('aria-required') === 'true') {
+      if (
+        cand.node.hasAttribute('required') ||
+        cand.node.getAttribute('aria-required') === 'true'
+      ) {
         attributes['required'] = 'true';
       }
       // Constraint hints so an agent can satisfy the field without guessing.
@@ -1168,7 +1246,11 @@ export function inPageDOMPruner(options?: {
           const name = (attributes.name || cand.node.getAttribute('name') || '').toLowerCase();
           const id = (attributes.id || cand.node.getAttribute('id') || '').toLowerCase();
           const autocomplete = (cand.node.getAttribute('autocomplete') || '').toLowerCase();
-          const ariaLabel = (attributes['aria-label'] || cand.node.getAttribute('aria-label') || '').toLowerCase();
+          const ariaLabel = (
+            attributes['aria-label'] ||
+            cand.node.getAttribute('aria-label') ||
+            ''
+          ).toLowerCase();
           const isSensitive =
             type === 'password' ||
             /(password|passcode|secret|cc-|credit-card|cvv|cvc|card-number|one-time-code|otp|token)/i.test(
@@ -1241,16 +1323,23 @@ export function inPageDOMPruner(options?: {
     viewport_height: Math.round(viewportHeight),
   };
 
-  const compressionRatio = totalOriginalNodes > 0
-    ? Number(((totalOriginalNodes - prunedElementCount) / totalOriginalNodes).toFixed(4))
-    : 0;
+  const compressionRatio =
+    totalOriginalNodes > 0
+      ? Number(((totalOriginalNodes - prunedElementCount) / totalOriginalNodes).toFixed(4))
+      : 0;
 
   // Visual assets (img/canvas/video/CSS background images) with viewport
   // geometry, so the agent can request an individual asset by index.
   const assets: PageAsset[] = [];
   const assetRegistry: Array<{ kind: string; el: Element; src?: string }> = [];
   let assetSeq = 0;
-  const pushAsset = (kind: PageAsset["kind"], el: Element, rect: DOMRect, src?: string, alt?: string) => {
+  const pushAsset = (
+    kind: PageAsset['kind'],
+    el: Element,
+    rect: DOMRect,
+    src?: string,
+    alt?: string,
+  ) => {
     if (rect.width < 8 || rect.height < 8) return;
     if (rect.bottom < 0 || rect.right < 0 || rect.top > winHeight || rect.left > winWidth) return;
     assetSeq += 1;
@@ -1258,25 +1347,36 @@ export function inPageDOMPruner(options?: {
     assets.push({
       index: assetSeq,
       kind,
-      rect: { x: Math.round(rect.left), y: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) },
+      rect: {
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      },
       ...(src ? { src } : {}),
       ...(alt ? { alt } : {}),
     });
   };
   try {
-    document.querySelectorAll("img").forEach((img) => {
-      pushAsset("img", img, img.getBoundingClientRect(), img.currentSrc || img.src || undefined, img.alt || undefined);
+    document.querySelectorAll('img').forEach((img) => {
+      pushAsset(
+        'img',
+        img,
+        img.getBoundingClientRect(),
+        img.currentSrc || img.src || undefined,
+        img.alt || undefined,
+      );
     });
-    document.querySelectorAll("canvas, video").forEach((el) => {
-      pushAsset(el.tagName.toLowerCase() as "canvas" | "video", el, el.getBoundingClientRect());
+    document.querySelectorAll('canvas, video').forEach((el) => {
+      pushAsset(el.tagName.toLowerCase() as 'canvas' | 'video', el, el.getBoundingClientRect());
     });
-    document.querySelectorAll("*").forEach((el) => {
+    document.querySelectorAll('*').forEach((el) => {
       if (assets.length >= 40) return;
       const tag = el.tagName?.toLowerCase();
-      if (tag === "img" || tag === "canvas" || tag === "video") return;
+      if (tag === 'img' || tag === 'canvas' || tag === 'video') return;
       const bg = window.getComputedStyle(el).backgroundImage;
-      const m = bg && bg !== "none" ? /url\(["']?([^"')]+)["']?\)/.exec(bg) : null;
-      if (m) pushAsset("bg-image", el, el.getBoundingClientRect(), m[1]);
+      const m = bg && bg !== 'none' ? /url\(["']?([^"')]+)["']?\)/.exec(bg) : null;
+      if (m) pushAsset('bg-image', el, el.getBoundingClientRect(), m[1]);
     });
   } catch {
     // Asset collection must never break read_dom
@@ -1289,7 +1389,9 @@ export function inPageDOMPruner(options?: {
         .join(' ');
       const valPart = el.value ? ` value="${el.value}"` : '';
       const textPart = el.text ? ` "${el.text}"` : '';
-      const occludedPart = el.isOccluded ? ` [occluded: partially by ${el.occludedBy || 'overlay'}]` : '';
+      const occludedPart = el.isOccluded
+        ? ` [occluded: partially by ${el.occludedBy || 'overlay'}]`
+        : '';
       return `[${el.index}] <${el.tagName}${attrStr ? ' ' + attrStr : ''}${valPart}>${textPart}</${el.tagName}>${occludedPart}`;
     }
     return renderCompactElementLine(el);
@@ -1297,7 +1399,9 @@ export function inPageDOMPruner(options?: {
 
   let treeString = treeLines.join('\n');
   if (pages_down > 0 || pages_up > 0) {
-    treeString = `[Scroll Guidance: ${pages_up} pages above, ${pages_down} pages below. Use chrome_interact_index / scroll to reveal more content.]\n` + treeString;
+    treeString =
+      `[Scroll Guidance: ${pages_up} pages above, ${pages_down} pages below. Use chrome_interact_index / scroll to reveal more content.]\n` +
+      treeString;
   }
 
   // Handle visual Set-of-Mark badges if highlight is enabled
@@ -1305,7 +1409,7 @@ export function inPageDOMPruner(options?: {
     inPageRenderHighlights(indexedElements);
   }
 
-  (globalThis as any)[Symbol.for("__browser_use_page_assets__")] = assetRegistry;
+  (globalThis as any)[Symbol.for('__browser_use_page_assets__')] = assetRegistry;
 
   return {
     treeString,
@@ -1324,16 +1428,19 @@ export function inPageDOMPruner(options?: {
   };
 }
 
-export function actionPointForElement(target: Element, view: Window): { x: number; y: number } | null {
+export function actionPointForElement(
+  target: Element,
+  view: Window,
+): { x: number; y: number } | null {
   const rects = Array.from(target.getClientRects?.() || []).filter(
-    (rect) => rect.width > 0 && rect.height > 0
+    (rect) => rect.width > 0 && rect.height > 0,
   );
   if (rects.length === 0) {
     const rect = target.getBoundingClientRect?.();
     if (!rect || rect.width <= 0 || rect.height <= 0) return null;
     rects.push(rect);
   }
-  
+
   let best = null;
   for (const rect of rects) {
     const left = Math.max(0, rect.left);
@@ -1341,13 +1448,13 @@ export function actionPointForElement(target: Element, view: Window): { x: numbe
     const right = Math.min(view.innerWidth, rect.right);
     const bottom = Math.min(view.innerHeight, rect.bottom);
     const visibleArea = Math.max(0, right - left) * Math.max(0, bottom - top);
-    
+
     const centerX = (rect.left + rect.right) / 2;
     const centerY = (rect.top + rect.bottom) / 2;
     const distanceX = centerX - Math.max(0, Math.min(view.innerWidth, centerX));
     const distanceY = centerY - Math.max(0, Math.min(view.innerHeight, centerY));
     const viewportDistance = distanceX * distanceX + distanceY * distanceY;
-    
+
     if (
       !best ||
       visibleArea > best.visibleArea ||
@@ -1356,14 +1463,14 @@ export function actionPointForElement(target: Element, view: Window): { x: numbe
       best = { rect, left, top, right, bottom, visibleArea, viewportDistance };
     }
   }
-  
+
   if (best && best.visibleArea > 0) {
     return {
       x: (best.left + best.right) / 2,
       y: (best.top + best.bottom) / 2,
     };
   }
-  
+
   if (best) {
     return {
       x: (best.rect.left + best.rect.right) / 2,
@@ -1373,10 +1480,14 @@ export function actionPointForElement(target: Element, view: Window): { x: numbe
   return null;
 }
 
-export function scrollRequestForPoint(target: Element, x: number, y: number): { x: number; y: number; deltaX: number; deltaY: number } | null {
+export function scrollRequestForPoint(
+  target: Element,
+  x: number,
+  y: number,
+): { x: number; y: number; deltaX: number; deltaY: number } | null {
   const view = target.ownerDocument?.defaultView;
   if (!view) return null;
-  
+
   let ancestor = composedParent(target);
   while (ancestor) {
     if (
@@ -1390,7 +1501,7 @@ export function scrollRequestForPoint(target: Element, x: number, y: number): { 
       const canScrollY =
         /^(auto|scroll|overlay)$/.test(style.overflowY) &&
         ancestor.scrollHeight > ancestor.clientHeight + 1;
-        
+
       if (canScrollX || canScrollY) {
         const rect = ancestor.getBoundingClientRect();
         const area = {
@@ -1399,24 +1510,24 @@ export function scrollRequestForPoint(target: Element, x: number, y: number): { 
           right: Math.min(view.innerWidth, rect.right),
           bottom: Math.min(view.innerHeight, rect.bottom),
         };
-        
+
         if (area.right > area.left && area.bottom > area.top) {
-          let deltaX = canScrollX && (x < area.left || x >= area.right)
-            ? x - (area.left + area.right) / 2
-            : 0;
-          let deltaY = canScrollY && (y < area.top || y >= area.bottom)
-            ? y - (area.top + area.bottom) / 2
-            : 0;
-            
+          let deltaX =
+            canScrollX && (x < area.left || x >= area.right) ? x - (area.left + area.right) / 2 : 0;
+          let deltaY =
+            canScrollY && (y < area.top || y >= area.bottom) ? y - (area.top + area.bottom) / 2 : 0;
+
           if (
             (deltaX < 0 && ancestor.scrollLeft <= 0) ||
             (deltaX > 0 && ancestor.scrollLeft >= ancestor.scrollWidth - ancestor.clientWidth - 1)
-          ) deltaX = 0;
+          )
+            deltaX = 0;
           if (
             (deltaY < 0 && ancestor.scrollTop <= 0) ||
             (deltaY > 0 && ancestor.scrollTop >= ancestor.scrollHeight - ancestor.clientHeight - 1)
-          ) deltaY = 0;
-          
+          )
+            deltaY = 0;
+
           if (deltaX || deltaY) {
             return {
               x: (area.left + area.right) / 2,
@@ -1430,12 +1541,9 @@ export function scrollRequestForPoint(target: Element, x: number, y: number): { 
     }
     ancestor = composedParent(ancestor);
   }
-  
-  if (
-    x >= 0 && y >= 0 &&
-    x < view.innerWidth && y < view.innerHeight
-  ) return null;
-  
+
+  if (x >= 0 && y >= 0 && x < view.innerWidth && y < view.innerHeight) return null;
+
   return {
     x: Math.max(0, Math.min(view.innerWidth - 1, x)),
     y: Math.max(0, Math.min(view.innerHeight - 1, y)),
@@ -1479,15 +1587,20 @@ export function extractElementLocationDetails(el: Element): {
         let ancestor = composedParent(el);
         let scrolled = false;
         while (ancestor && !scrolled) {
-          if (
-            ancestor !== el.ownerDocument.body &&
-            ancestor !== el.ownerDocument.documentElement
-          ) {
+          if (ancestor !== el.ownerDocument.body && ancestor !== el.ownerDocument.documentElement) {
             const style = win.getComputedStyle(ancestor);
-            const canScrollX = /^(auto|scroll|overlay)$/.test(style.overflowX) && ancestor.scrollWidth > ancestor.clientWidth + 1;
-            const canScrollY = /^(auto|scroll|overlay)$/.test(style.overflowY) && ancestor.scrollHeight > ancestor.clientHeight + 1;
+            const canScrollX =
+              /^(auto|scroll|overlay)$/.test(style.overflowX) &&
+              ancestor.scrollWidth > ancestor.clientWidth + 1;
+            const canScrollY =
+              /^(auto|scroll|overlay)$/.test(style.overflowY) &&
+              ancestor.scrollHeight > ancestor.clientHeight + 1;
             if (canScrollX || canScrollY) {
-              ancestor.scrollBy({ left: scrollReq.deltaX, top: scrollReq.deltaY, behavior: 'instant' as any });
+              ancestor.scrollBy({
+                left: scrollReq.deltaX,
+                top: scrollReq.deltaY,
+                behavior: 'instant' as any,
+              });
               scrolled = true;
             }
           }
@@ -1615,7 +1728,10 @@ export function inPageGetElementCoordinates(refOrIndex: number | string): {
   }
 
   if (index <= 0) {
-    return { success: false, error: `Index must be a positive 1-based integer. Received: ${index}` };
+    return {
+      success: false,
+      error: `Index must be a positive 1-based integer. Received: ${index}`,
+    };
   }
 
   const el = findIndexedElement(index);
@@ -1671,9 +1787,11 @@ export function inPageArmDeliveryProbe(events: string[]): { armed: true } {
   return { armed: true };
 }
 
-export function inPageReadDeliveryProbe(
-  disarm?: boolean,
-): { delivered: boolean; hits: any[]; missing?: boolean } {
+export function inPageReadDeliveryProbe(disarm?: boolean): {
+  delivered: boolean;
+  hits: any[];
+  missing?: boolean;
+} {
   const probe = (globalThis as any).__MCP_DELIVERY_PROBE__;
   if (!probe) return { delivered: false, hits: [], missing: true };
   const hits = probe.hits.slice();
@@ -1872,12 +1990,18 @@ export function inPageGetIndexCropRect(
   error?: string;
 } {
   if (index <= 0) {
-    return { success: false, error: `Index must be a positive 1-based integer. Received: ${index}` };
+    return {
+      success: false,
+      error: `Index must be a positive 1-based integer. Received: ${index}`,
+    };
   }
 
   const el = findIndexedElement(index);
   if (!el || !(el instanceof Element)) {
-    return { success: false, error: `Element with index [${index}] not found in active DOM index map. ${DIAGNOSTIC_REFRESH_GUIDANCE}` };
+    return {
+      success: false,
+      error: `Element with index [${index}] not found in active DOM index map. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
+    };
   }
 
   try {
@@ -1895,7 +2019,10 @@ export function inPageGetIndexCropRect(
         const fEl = curWin.frameElement;
         const fRect = fEl.getBoundingClientRect();
         const parentWin = curWin.parent || fEl.ownerDocument?.defaultView || window;
-        const fStyle = typeof parentWin.getComputedStyle === 'function' ? parentWin.getComputedStyle(fEl) : undefined;
+        const fStyle =
+          typeof parentWin.getComputedStyle === 'function'
+            ? parentWin.getComputedStyle(fEl)
+            : undefined;
         const borderLeft = parseFloat(fStyle?.borderLeftWidth || '0') || 0;
         const borderTop = parseFloat(fStyle?.borderTopWidth || '0') || 0;
         const zoom = parseFloat((fStyle as any)?.zoom || '1') || 1;
@@ -1922,12 +2049,16 @@ export function inPageGetIndexCropRect(
 
   const left = Math.max(0, Math.round(rawRect.left + frameOffsetX - effectivePadding));
   const top = Math.max(0, Math.round(rawRect.top + frameOffsetY - effectivePadding));
-  const maxW = typeof window !== 'undefined' && typeof window.innerWidth === 'number' && window.innerWidth > 0
-    ? Math.max(1, window.innerWidth - left)
-    : undefined;
-  const maxH = typeof window !== 'undefined' && typeof window.innerHeight === 'number' && window.innerHeight > 0
-    ? Math.max(1, window.innerHeight - top)
-    : undefined;
+  const maxW =
+    typeof window !== 'undefined' && typeof window.innerWidth === 'number' && window.innerWidth > 0
+      ? Math.max(1, window.innerWidth - left)
+      : undefined;
+  const maxH =
+    typeof window !== 'undefined' &&
+    typeof window.innerHeight === 'number' &&
+    window.innerHeight > 0
+      ? Math.max(1, window.innerHeight - top)
+      : undefined;
   const rawWidth = Math.round(rawRect.width + effectivePadding * 2);
   const rawHeight = Math.round(rawRect.height + effectivePadding * 2);
   const width = Math.max(1, maxW !== undefined ? Math.min(rawWidth, maxW) : rawWidth);
@@ -2001,12 +2132,20 @@ export function inPageFocusIndex(index: number): {
   error?: string;
 } {
   if (index <= 0) {
-    return { success: false, index, error: `Index must be a positive 1-based integer. Received: ${index}` };
+    return {
+      success: false,
+      index,
+      error: `Index must be a positive 1-based integer. Received: ${index}`,
+    };
   }
 
   const el = findIndexedElement(index);
   if (!el || !(el instanceof Element)) {
-    return { success: false, index, error: `Element with index [${index}] not found in active DOM index map. ${DIAGNOSTIC_REFRESH_GUIDANCE}` };
+    return {
+      success: false,
+      index,
+      error: `Element with index [${index}] not found in active DOM index map. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
+    };
   }
 
   try {
@@ -2045,19 +2184,27 @@ export function inPageInteractIndex(
   action: 'click' | 'hover' | 'double_click' | 'right_click' = 'click',
 ): { success: boolean; index: number; tagName?: string; text?: string; error?: string } {
   if (index <= 0) {
-    return { success: false, index, error: `Index must be a positive 1-based integer. Received: ${index}` };
+    return {
+      success: false,
+      index,
+      error: `Index must be a positive 1-based integer. Received: ${index}`,
+    };
   }
 
   const el = findIndexedElement(index);
   if (!el || !(el instanceof Element)) {
-    return { success: false, index, error: `Element with index [${index}] not found in active DOM index map. ${DIAGNOSTIC_REFRESH_GUIDANCE}` };
+    return {
+      success: false,
+      index,
+      error: `Element with index [${index}] not found in active DOM index map. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
+    };
   }
 
   try {
     el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' as any });
   } catch {}
 
-  const text = (((el as HTMLElement).innerText || el.textContent) || '').trim().slice(0, 100);
+  const text = ((el as HTMLElement).innerText || el.textContent || '').trim().slice(0, 100);
 
   if (action === 'click') {
     el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
@@ -2075,13 +2222,15 @@ export function inPageInteractIndex(
     const rawRect = el.getBoundingClientRect();
     const cx = Math.round(rawRect.left + rawRect.width / 2);
     const cy = Math.round(rawRect.top + rawRect.height / 2);
-    el.dispatchEvent(new MouseEvent('contextmenu', {
-      bubbles: true,
-      cancelable: true,
-      button: 2,
-      clientX: cx,
-      clientY: cy,
-    }));
+    el.dispatchEvent(
+      new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: cx,
+        clientY: cy,
+      }),
+    );
   } else if (action === 'hover') {
     el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
     el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }));
@@ -2105,12 +2254,20 @@ export function inPageFillIndex(
   clear = true,
 ): { success: boolean; index: number; tagName?: string; filledText?: string; error?: string } {
   if (index <= 0) {
-    return { success: false, index, error: `Index must be a positive 1-based integer. Received: ${index}` };
+    return {
+      success: false,
+      index,
+      error: `Index must be a positive 1-based integer. Received: ${index}`,
+    };
   }
 
   const el = findIndexedElement(index);
   if (!el || !(el instanceof Element)) {
-    return { success: false, index, error: `Element with index [${index}] not found in active DOM index map. ${DIAGNOSTIC_REFRESH_GUIDANCE}` };
+    return {
+      success: false,
+      index,
+      error: `Element with index [${index}] not found in active DOM index map. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
+    };
   }
 
   try {
@@ -2191,9 +2348,12 @@ export function inPageExtractMarkdown(includeLinks = true, fit = false): string 
   let fitRoot: ParentNode = document;
   if (fit) {
     try {
-      const main = document.querySelector("article, main, [role=main], #content, .content");
-      fitRoot = (main instanceof HTMLElement && main.innerText.trim().length > 200) ? main : document.body;
-      const noise = fitRoot.querySelectorAll("nav, header, footer, aside, form, [role=navigation], [role=banner], [role=contentinfo], [aria-hidden=true]");
+      const main = document.querySelector('article, main, [role=main], #content, .content');
+      fitRoot =
+        main instanceof HTMLElement && main.innerText.trim().length > 200 ? main : document.body;
+      const noise = fitRoot.querySelectorAll(
+        'nav, header, footer, aside, form, [role=navigation], [role=banner], [role=contentinfo], [aria-hidden=true]',
+      );
       const detached: Element[] = [];
       noise.forEach((el) => detached.push(el));
       // Mark instead of mutate: serializer checks a set
@@ -2320,7 +2480,10 @@ export function inPageExtractMarkdown(includeLinks = true, fit = false): string 
           (c) => c.tagName.toLowerCase() === 'td' || c.tagName.toLowerCase() === 'th',
         );
         if (cells.length === 0) return '';
-        const rowStr = '| ' + cells.map((c) => (c.textContent || '').trim().replace(/\|/g, '\\|')).join(' | ') + ' |';
+        const rowStr =
+          '| ' +
+          cells.map((c) => (c.textContent || '').trim().replace(/\|/g, '\\|')).join(' | ') +
+          ' |';
         const isHeaderRow =
           cells.every((c) => c.tagName.toLowerCase() === 'th') ||
           el.parentElement?.tagName.toLowerCase() === 'thead';
@@ -2401,7 +2564,10 @@ export interface DropdownOptionsResult {
  * Lives here (not get-dropdown-options.ts) so the bundled inpage-engine script
  * can register it for file-based injection.
  */
-export async function inPageExtractDropdownOptions(targetIndex?: number, targetSelector?: string): Promise<DropdownOptionsResult> {
+export async function inPageExtractDropdownOptions(
+  targetIndex?: number,
+  targetSelector?: string,
+): Promise<DropdownOptionsResult> {
   let element: Element | null = null;
   if (typeof targetIndex === 'number' && targetIndex > 0) {
     element = findIndexedElement(targetIndex);
@@ -2422,7 +2588,8 @@ export async function inPageExtractDropdownOptions(targetIndex?: number, targetS
   const tagName = element.tagName.toLowerCase();
 
   // 1. Native <select> element (or container wrapping a <select>)
-  const selectEl = tagName === 'select' ? (element as HTMLSelectElement) : element.querySelector('select');
+  const selectEl =
+    tagName === 'select' ? (element as HTMLSelectElement) : element.querySelector('select');
   if (selectEl) {
     const options: DropdownOptionItem[] = Array.from(selectEl.options).map((opt, idx) => ({
       text: opt.text.trim(),
@@ -2451,7 +2618,9 @@ export async function inPageExtractDropdownOptions(targetIndex?: number, targetS
       try {
         (element as HTMLElement).focus?.();
         try {
-          element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+          element.dispatchEvent(
+            new PointerEvent('pointerdown', { bubbles: true, cancelable: true }),
+          );
         } catch {}
         element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
         element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
@@ -2604,7 +2773,8 @@ export function inPageFindSmartScrollTarget(options?: {
       let curr: Element | null = targetEl;
       while (curr && curr !== document.body && curr !== document.documentElement) {
         const isScrollable =
-          (curr.scrollHeight > curr.clientHeight + 10 || curr.scrollWidth > curr.clientWidth + 10) &&
+          (curr.scrollHeight > curr.clientHeight + 10 ||
+            curr.scrollWidth > curr.clientWidth + 10) &&
           /(auto|scroll|overlay)/i.test(
             (window.getComputedStyle?.(curr)?.overflowY || '') +
               ' ' +
@@ -2622,7 +2792,11 @@ export function inPageFindSmartScrollTarget(options?: {
     }
 
     // If no explicit target, find the highest scoring scrollable container within viewport
-    if (!targetEl && typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+    if (
+      !targetEl &&
+      typeof document !== 'undefined' &&
+      typeof document.querySelectorAll === 'function'
+    ) {
       let bestScore = -1;
       let bestEl: Element | null = null;
       const allElements = document.querySelectorAll('*');
@@ -2641,9 +2815,15 @@ export function inPageFindSmartScrollTarget(options?: {
         if (!style) continue;
         const overflow = (style.overflowY || '') + ' ' + (style.overflowX || '');
         if (!/(auto|scroll|overlay)/i.test(overflow)) continue;
-        if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity || '1') <= 0) continue;
+        if (
+          style.display === 'none' ||
+          style.visibility === 'hidden' ||
+          parseFloat(style.opacity || '1') <= 0
+        )
+          continue;
 
-        const rect = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
+        const rect =
+          typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
         if (!rect) continue;
 
         const vLeft = Math.max(0, rect.left);
@@ -2655,9 +2835,10 @@ export function inPageFindSmartScrollTarget(options?: {
         if (visibleWidth < 50 || visibleHeight < 50) continue;
 
         const area = visibleWidth * visibleHeight;
-        const interactiveCount = typeof el.querySelectorAll === 'function'
-          ? el.querySelectorAll('button, a, input, select, textarea, [role="button"]').length
-          : 0;
+        const interactiveCount =
+          typeof el.querySelectorAll === 'function'
+            ? el.querySelectorAll('button, a, input, select, textarea, [role="button"]').length
+            : 0;
         const score = area * (1 + 0.5 * Math.min(10, interactiveCount));
 
         if (score > bestScore) {
@@ -2718,13 +2899,23 @@ export function inPageFindSmartScrollTarget(options?: {
 
   // Fallback to Window / Document
   const win = typeof window !== 'undefined' ? window : (globalThis as any).window;
-  const doc = (typeof document !== 'undefined' ? document.documentElement || document.body : null) as HTMLElement | null;
+  const doc = (
+    typeof document !== 'undefined' ? document.documentElement || document.body : null
+  ) as HTMLElement | null;
   const scrollY = win?.scrollY || win?.pageYOffset || doc?.scrollTop || 0;
   const scrollX = win?.scrollX || win?.pageXOffset || doc?.scrollLeft || 0;
   const clientWidth = win?.innerWidth || doc?.clientWidth || 800;
   const clientHeight = win?.innerHeight || doc?.clientHeight || 600;
-  const scrollHeight = Math.max(doc?.scrollHeight || 0, (typeof document !== 'undefined' ? document.body?.scrollHeight : 0) || 0, clientHeight);
-  const scrollWidth = Math.max(doc?.scrollWidth || 0, (typeof document !== 'undefined' ? document.body?.scrollWidth : 0) || 0, clientWidth);
+  const scrollHeight = Math.max(
+    doc?.scrollHeight || 0,
+    (typeof document !== 'undefined' ? document.body?.scrollHeight : 0) || 0,
+    clientHeight,
+  );
+  const scrollWidth = Math.max(
+    doc?.scrollWidth || 0,
+    (typeof document !== 'undefined' ? document.body?.scrollWidth : 0) || 0,
+    clientWidth,
+  );
 
   return {
     found: true,
@@ -2765,12 +2956,18 @@ export function inPagePerformSmartScroll(
     if (typeof window !== 'undefined' && typeof window.scrollBy === 'function') {
       window.scrollBy({ left: deltaX, top: deltaY, behavior });
     }
-    const doc = (typeof document !== 'undefined' ? document.documentElement || document.body : null) as HTMLElement | null;
+    const doc = (
+      typeof document !== 'undefined' ? document.documentElement || document.body : null
+    ) as HTMLElement | null;
     const win = typeof window !== 'undefined' ? window : (globalThis as any).window;
     const scrollY = win?.scrollY || win?.pageYOffset || doc?.scrollTop || 0;
     const scrollX = win?.scrollX || win?.pageXOffset || doc?.scrollLeft || 0;
     const clientHeight = win?.innerHeight || doc?.clientHeight || 600;
-    const scrollHeight = Math.max(doc?.scrollHeight || 0, (typeof document !== 'undefined' ? document.body?.scrollHeight : 0) || 0, clientHeight);
+    const scrollHeight = Math.max(
+      doc?.scrollHeight || 0,
+      (typeof document !== 'undefined' ? document.body?.scrollHeight : 0) || 0,
+      clientHeight,
+    );
     return {
       success: true,
       newScrollTop: Math.round(scrollY),
@@ -2790,7 +2987,9 @@ export function inPagePerformSmartScroll(
     if (typeof window !== 'undefined' && typeof window.scrollBy === 'function') {
       window.scrollBy({ left: deltaX, top: deltaY, behavior });
     }
-    const doc = (typeof document !== 'undefined' ? document.documentElement || document.body : null) as HTMLElement | null;
+    const doc = (
+      typeof document !== 'undefined' ? document.documentElement || document.body : null
+    ) as HTMLElement | null;
     const win = typeof window !== 'undefined' ? window : (globalThis as any).window;
     return {
       success: true,
@@ -2831,31 +3030,37 @@ export async function inPageGetAssetImage(assetIndex: number): Promise<{
   kind?: string;
   src?: string;
 }> {
-  const MAP_KEY = Symbol.for("__browser_use_page_assets__") as any;
+  const MAP_KEY = Symbol.for('__browser_use_page_assets__') as any;
   const assets = (globalThis as any)[MAP_KEY];
   const entry = assets && assets[assetIndex - 1];
-  if (!entry) return { success: false, reason: `asset ${assetIndex} not found (run chrome_read_dom first)` };
+  if (!entry)
+    return { success: false, reason: `asset ${assetIndex} not found (run chrome_read_dom first)` };
   const rect = entry.el.getBoundingClientRect().toJSON();
   const out: any = {
     success: false,
-    reason: "unsupported",
+    reason: 'unsupported',
     dataUrl: undefined,
-    rect: { x: Math.round(rect.left), y: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) },
+    rect: {
+      x: Math.round(rect.left),
+      y: Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    },
     kind: entry.kind,
     src: entry.src,
   };
   try {
-    if (entry.kind === "canvas") {
-      out.dataUrl = (entry.el as HTMLCanvasElement).toDataURL("image/png");
+    if (entry.kind === 'canvas') {
+      out.dataUrl = (entry.el as HTMLCanvasElement).toDataURL('image/png');
       out.success = true;
       return out;
     }
     const src = entry.src;
     if (!src) {
-      out.reason = "no src (video/streams must be cropped)";
+      out.reason = 'no src (video/streams must be cropped)';
       return out;
     }
-    const res = await fetch(src, { credentials: "include" });
+    const res = await fetch(src, { credentials: 'include' });
     if (!res.ok) {
       out.reason = `fetch ${res.status}`;
       return out;
@@ -2864,7 +3069,7 @@ export async function inPageGetAssetImage(assetIndex: number): Promise<{
     out.dataUrl = await new Promise<string>((resolve, reject) => {
       const fr = new FileReader();
       fr.onload = () => resolve(String(fr.result));
-      fr.onerror = () => reject(new Error("FileReader failed"));
+      fr.onerror = () => reject(new Error('FileReader failed'));
       fr.readAsDataURL(blob);
     });
     out.success = true;
@@ -2886,9 +3091,9 @@ export function inPageGetLinks(options?: {
   includeEmptyHref?: boolean;
 }): Array<{ url: string; text: string; internal: boolean; nofollow: boolean }> {
   const root: ParentNode = options?.selector
-    ? document.querySelector(options.selector) ?? document
+    ? (document.querySelector(options.selector) ?? document)
     : document;
-  const anchors = root.querySelectorAll("a[href]");
+  const anchors = root.querySelectorAll('a[href]');
   const out: Array<{ url: string; text: string; internal: boolean; nofollow: boolean }> = [];
   const seen = new Set<string>();
   anchors.forEach((a) => {
@@ -2896,30 +3101,46 @@ export function inPageGetLinks(options?: {
     if (!href || !/^https?:/i.test(href)) return;
     if (seen.has(href)) return;
     seen.add(href);
-    const rel = (a.getAttribute("rel") || "").toLowerCase();
-    const nofollow = rel.includes("nofollow");
+    const rel = (a.getAttribute('rel') || '').toLowerCase();
+    const nofollow = rel.includes('nofollow');
     const internal = new URL(href, location.href).origin === location.origin;
     if (options?.sameOriginOnly && !internal) return;
-    const text = (a.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120);
+    const text = (a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120);
     out.push({ url: href, text, internal, nofollow });
   });
   return out;
 }
-export function inPageCheckInterception(index: number, x: number, y: number): { intercepted: boolean; description?: string } {
+export function inPageCheckInterception(
+  index: number,
+  x: number,
+  y: number,
+): { intercepted: boolean; description?: string } {
   const el = findIndexedElement(index);
   if (!el || !(el instanceof Element)) return { intercepted: false };
-  
+
   const intercepting = interceptingElementAtPoint(el, x, y);
-  if (intercepting && intercepting !== el && !el.contains(intercepting) && !intercepting.contains(el)) {
+  if (
+    intercepting &&
+    intercepting !== el &&
+    !el.contains(intercepting) &&
+    !intercepting.contains(el)
+  ) {
     return { intercepted: true, description: describeHitTarget(intercepting) };
   }
   return { intercepted: false };
 }
 
-export function inPageDispatchSyntheticClick(index: number, x: number, y: number): boolean {
-  const el = findIndexedElement(index);
+export function inPageDispatchSyntheticClick(
+  index: number | null | undefined,
+  x: number,
+  y: number,
+): boolean {
+  let el = typeof index === 'number' && index > 0 ? findIndexedElement(index) : null;
+  if (!el && typeof document !== 'undefined' && typeof document.elementFromPoint === 'function') {
+    el = document.elementFromPoint(x, y);
+  }
   if (!el || !(el instanceof Element)) return false;
-  
+
   const init: MouseEventInit = {
     bubbles: true,
     cancelable: true,
@@ -2927,12 +3148,12 @@ export function inPageDispatchSyntheticClick(index: number, x: number, y: number
     clientY: y,
     button: 0,
   };
-  
+
   el.dispatchEvent(new MouseEvent('mousemove', { ...init, buttons: 0 }));
   el.dispatchEvent(new MouseEvent('mousedown', { ...init, buttons: 1 }));
   el.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0 }));
   el.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
-  
+
   return true;
 }
 
@@ -2980,7 +3201,12 @@ export function renderCompactElementLine(el: IndexedElement, frameId?: string | 
 
   if (el.attributes?.required === 'true' || el.attributes?.required === '') parts.push('required');
   if (el.attributes?.disabled === 'true' || el.attributes?.disabled === '') parts.push('disabled');
-  if (el.attributes?.['aria-checked'] === 'true' || el.attributes?.checked === 'true' || el.attributes?.checked === '') parts.push('checked');
+  if (
+    el.attributes?.['aria-checked'] === 'true' ||
+    el.attributes?.checked === 'true' ||
+    el.attributes?.checked === ''
+  )
+    parts.push('checked');
   if (el.attributes?.['aria-selected'] === 'true') parts.push('selected');
   if (el.attributes?.['aria-expanded']) parts.push(`expanded=${el.attributes['aria-expanded']}`);
 

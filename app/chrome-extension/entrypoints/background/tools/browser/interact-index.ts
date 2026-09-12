@@ -898,10 +898,14 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             deliveryHits = probe?.hits ?? [];
             // Click Probe Fallback: if native CDP events were dropped (e.g. background tab throttling),
             // fall back to synthetic DOM event dispatch to ensure 100% execution.
-            if (action === 'click' && args.index !== undefined) {
+            if (action === 'click') {
               try {
                 const synRes = (
-                  await executeInPage({ tabId }, 'inPageDispatchSyntheticClick', [args.index, x, y])
+                  await executeInPage({ tabId }, 'inPageDispatchSyntheticClick', [
+                    args.index ?? null,
+                    x,
+                    y,
+                  ])
                 )?.[0]?.result;
                 if (synRes) {
                   deliveryVerified = true;
