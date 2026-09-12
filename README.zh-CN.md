@@ -45,15 +45,27 @@ BrowserClaw 是一套面向 AI Agent 的工业级模型上下文协议（MCP）�
 
 ---
 
-## 🚀 极速上手 (让 AI 帮你完成配置)
+## 🚀 极速上手
 
-### 步骤 1：把仓库交给你的 AI Agent
+### 方案一：交给 AI Agent 自动安装 (推荐)
 
-直接对你的 AI 助手（Claude Code、Cursor、Windsurf、Codex）发送：
+直接复制以下一句话发送给你的 AI 编程助手（Claude Code、Cursor、Windsurf、Codex）：
 
-> _“请帮我配置并启动 BrowserClaw MCP 服务：https://github.com/GoldenLoaf24h/browserclaw”_
+> _“帮我配置 BrowserClaw：https://github.com/GoldenLoaf24h/browserclaw ，阅读仓库中的 `INSTALL.md` 并按步骤自动安装。”_
 
-或手动在本地终端执行：
+AI 将自动完成本地服务的编译与注册。随后你只需下载 **[最新纯净扩展包](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)**，打开 `chrome://extensions` 开启“开发者模式”，将解压文件夹拖入即可。
+
+### 方案二：通过 ChatGPT / Codex 插件市场添加
+
+在 ChatGPT 或 Codex 的插件中心，点击右上角的 **`+`**（添加市场），填入本仓库地址：
+
+```text
+https://github.com/GoldenLoaf24h/browserclaw
+```
+
+添加成功后，点击安装 **BrowserClaw** 插件即可一键启用。
+
+### 方案三：本地手动安装
 
 ```bash
 git clone https://github.com/GoldenLoaf24h/browserclaw.git
@@ -61,24 +73,7 @@ cd browserclaw && pnpm install && pnpm build
 cd app/native-server && node dist/scripts/register-dev.js
 ```
 
-_(高熵 Token 自动生成于 `~/.chrome-mcp/bridge-token`，服务监听 `http://127.0.0.1:12306/mcp`)_
-
-### 步骤 2：在 Chrome 中加载扩展
-
-1. 下载 **[最新纯净扩展包](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)**（或直接使用本工程 `app/chrome-extension/.output/chrome-mv3`）。
-2. 在 Chrome / Edge 地址栏打开 `chrome://extensions`，开启右上角**“开发者模式”**。
-3. 点击左上角**“加载已解压的扩展程序”**，选择该文件夹。
-
-> 🤫 **进阶技巧（彻底隐藏调试横条）**：在桌面 Chrome 快捷方式启动参数中加入 `--silent-debugger-extension-api`，浏览器将完全隐藏顶部长黄条，页面零位移静默运行。
-
-### 步骤 3：作为 Codex / ChatGPT 插件市场安装 (可选)
-
-你可以直接将本仓库添加为 Codex / ChatGPT 的插件市场并一键安装插件：
-
-```bash
-codex plugin marketplace add https://github.com/GoldenLoaf24h/browserclaw
-codex plugin install browserclaw
-```
+随后在 `chrome://extensions` 中点击“加载已解压的扩展程序”，选择 `app/chrome-extension/.output/chrome-mv3` 目录即可。
 
 ---
 

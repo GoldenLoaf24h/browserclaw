@@ -47,13 +47,25 @@ BrowserClaw is a high-performance Model Context Protocol (MCP) platform that giv
 
 ## 🚀 Quick Start
 
-### 1. Let your AI agent set up the backend
+### Option 1: Let AI Agent Install (Recommended)
 
-Ask your AI assistant (Claude Code, Cursor, Windsurf, Codex):
+Copy and paste this message directly to your AI assistant (Claude Code, Cursor, Windsurf, Codex):
 
-> _"Please set up BrowserClaw MCP server for me: https://github.com/GoldenLoaf24h/browserclaw"_
+> _"Set up BrowserClaw for me: https://github.com/GoldenLoaf24h/browserclaw. Read `INSTALL.md` and follow the steps."_
 
-Or run manually:
+Your agent will configure the backend automatically. Afterwards, download **[browserclaw-extension-latest.zip](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)**, open `chrome://extensions` (with Developer mode enabled), and drag the unpacked folder in.
+
+### Option 2: Add via ChatGPT / Codex Plugin Marketplace
+
+In ChatGPT or Codex, open the Plugin Store / Marketplace, click **`+`** in the top-right corner to add a new marketplace, and enter:
+
+```text
+https://github.com/GoldenLoaf24h/browserclaw
+```
+
+Then click install on **BrowserClaw**.
+
+### Option 3: Manual Installation
 
 ```bash
 git clone https://github.com/GoldenLoaf24h/browserclaw.git
@@ -61,24 +73,7 @@ cd browserclaw && pnpm install && pnpm build
 cd app/native-server && node dist/scripts/register-dev.js
 ```
 
-_(Token saved at `~/.chrome-mcp/bridge-token`; server listens on `http://127.0.0.1:12306/mcp`)_
-
-### 2. Load the Extension in Chrome
-
-1. Download **[browserclaw-extension-latest.zip](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** (or use `app/chrome-extension/.output/chrome-mv3`).
-2. Open `chrome://extensions`, enable **Developer mode** (top-right).
-3. Click **Load unpacked** and select the folder.
-
-> 🤫 **Pro Tip (Silent Debugging)**: Add `--silent-debugger-extension-api` to your Chrome launch shortcut to completely hide Chrome's top _"BrowserClaw is debugging this browser"_ bar.
-
-### 3. Install via Codex / ChatGPT Plugin Marketplace
-
-Add this repository directly as a plugin marketplace:
-
-```bash
-codex plugin marketplace add https://github.com/GoldenLoaf24h/browserclaw
-codex plugin install browserclaw
-```
+Then load `app/chrome-extension/.output/chrome-mv3` into `chrome://extensions`.
 
 ---
 
