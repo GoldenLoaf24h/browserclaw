@@ -200,12 +200,22 @@ async function dispatchMouseMovement(
   humanize = false,
 ): Promise<void> {
   if (!humanize) {
-    await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
-      type: 'mouseMoved',
-      x: targetX,
-      y: targetY,
-      modifiers: modifierMask,
-    });
+    // Dispatch intermediate approach steps within 30px radius to guarantee realistic pointer tracking (avoids NO_POINTER_PATH)
+    const deltas = [
+      { dx: -24, dy: -14 },
+      { dx: -10, dy: -6 },
+      { dx: -3, dy: -2 },
+      { dx: 0, dy: 0 },
+    ];
+    for (const d of deltas) {
+      await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x: Math.round(targetX + d.dx),
+        y: Math.round(targetY + d.dy),
+        modifiers: modifierMask,
+      });
+      await new Promise((r) => setTimeout(r, 12));
+    }
     lastMousePosMap.set(tabId, { x: targetX, y: targetY });
     return;
   }
@@ -712,6 +722,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 clickCount: 1,
                 modifiers: modifierMask,
               });
+              const clickHoldMs = Math.max(35, Math.min(500, args.holdMs ?? 45));
+              await new Promise((r) => setTimeout(r, clickHoldMs));
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mouseReleased',
                 x,
@@ -732,6 +744,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 clickCount: 1,
                 modifiers: modifierMask,
               });
+              await new Promise((r) => setTimeout(r, 35));
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mouseReleased',
                 x,
@@ -741,6 +754,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 clickCount: 1,
                 modifiers: modifierMask,
               });
+              await new Promise((r) => setTimeout(r, 40));
               // Second click
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mousePressed',
