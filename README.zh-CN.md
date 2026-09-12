@@ -71,6 +71,15 @@ _(高熵 Token 自动生成于 `~/.chrome-mcp/bridge-token`，服务监听 `http
 
 > 🤫 **进阶技巧（彻底隐藏调试横条）**：在桌面 Chrome 快捷方式启动参数中加入 `--silent-debugger-extension-api`，浏览器将完全隐藏顶部长黄条，页面零位移静默运行。
 
+### 步骤 3：作为 Codex / ChatGPT 插件市场安装 (可选)
+
+你可以直接将本仓库添加为 Codex / ChatGPT 的插件市场并一键安装插件：
+
+```bash
+codex plugin marketplace add https://github.com/GoldenLoaf24h/browserclaw
+codex plugin install browserclaw
+```
+
 ---
 
 ## ⚖️ 开源方案全景横向对比

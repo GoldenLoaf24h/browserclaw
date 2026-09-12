@@ -71,6 +71,15 @@ _(Token saved at `~/.chrome-mcp/bridge-token`; server listens on `http://127.0.0
 
 > 🤫 **Pro Tip (Silent Debugging)**: Add `--silent-debugger-extension-api` to your Chrome launch shortcut to completely hide Chrome's top _"BrowserClaw is debugging this browser"_ bar.
 
+### 3. Install via Codex / ChatGPT Plugin Marketplace
+
+Add this repository directly as a plugin marketplace:
+
+```bash
+codex plugin marketplace add https://github.com/GoldenLoaf24h/browserclaw
+codex plugin install browserclaw
+```
+
 ---
 
 ## ⚖️ How BrowserClaw Compares

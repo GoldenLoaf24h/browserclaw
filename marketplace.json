@@ -1,0 +1,20 @@
+{
+  "name": "browserclaw",
+  "interface": {
+    "displayName": "BrowserClaw Marketplace"
+  },
+  "plugins": [
+    {
+      "name": "browserclaw",
+      "source": {
+        "source": "local",
+        "path": "./plugins/browserclaw"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
