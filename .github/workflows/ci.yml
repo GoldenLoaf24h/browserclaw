@@ -28,11 +28,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build project
+        run: pnpm build
+
       - name: Type check
         run: pnpm typecheck
 
       - name: Run unit tests
         run: pnpm --filter chrome-mcp-server test -- --run
-
-      - name: Build project
-        run: pnpm build
