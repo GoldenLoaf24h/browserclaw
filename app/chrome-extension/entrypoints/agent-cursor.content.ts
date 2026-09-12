@@ -353,6 +353,39 @@ function initAgentCursor() {
   let lastFrameTime = performance.now();
   let pendingMoveSequence: number | null = null;
   let userTakeoverDetected = false;
+  type CursorMode = 'off' | 'auto' | 'always';
+  let cursorMode: CursorMode = 'always';
+
+  const hideCursorImmediate = () => {
+    cursorState.visibilitySpring.value = 0;
+    cursorState.visibilitySpring.target = 0;
+    cursorState.thinkStartedAt = null;
+    cursorContainer.style.opacity = '0';
+    cursorContainer.style.visibility = 'hidden';
+  };
+
+  // Load and listen to user-configured cursor mode (off, auto, always)
+  try {
+    chrome.storage.local.get('agentCursorMode', (data) => {
+      if (data?.agentCursorMode) {
+        cursorMode = data.agentCursorMode;
+        if (cursorMode === 'off') {
+          hideCursorImmediate();
+        }
+      }
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.agentCursorMode) {
+        cursorMode = changes.agentCursorMode.newValue || 'always';
+        if (cursorMode === 'off') {
+          hideCursorImmediate();
+        } else if (cursorMode === 'always') {
+          cursorState.visibilitySpring.target = 1;
+          startAnimationLoop();
+        }
+      }
+    });
+  } catch {}
 
   const triggerArrivalCallback = (seq: number | null) => {
     if (seq !== null) {
@@ -551,6 +584,7 @@ function initAgentCursor() {
     moveSequence: number | null,
     immediate = false,
   ) => {
+    if (cursorMode === 'off') return;
     userTakeoverDetected = false;
     pendingMoveSequence = moveSequence;
     cursorState.visibilitySpring.target = 1;
@@ -602,6 +636,7 @@ function initAgentCursor() {
   };
 
   const hideCursor = () => {
+    if (cursorMode === 'always') return; // in always mode, remain visible at last interaction point
     cursorState.visibilitySpring.target = 0;
     cursorState.thinkStartedAt = null;
     startAnimationLoop();
@@ -609,6 +644,7 @@ function initAgentCursor() {
 
   // Detect user takeover: when user interacts with mouse or keyboard, smoothly fade out
   const onUserInteraction = (e: Event) => {
+    if (cursorMode === 'always') return; // in always mode, do not fade out on user movement
     if (e.isTrusted && !userTakeoverDetected) {
       userTakeoverDetected = true;
       hideCursor();
@@ -777,7 +813,9 @@ function initAgentCursor() {
     }
 
     if (message.type === 'AGENT_CURSOR_HIDE') {
-      hideCursor();
+      if (cursorMode !== 'always') {
+        hideCursor();
+      }
       sendResponse({ ok: true });
       return true;
     }

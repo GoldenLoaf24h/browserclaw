@@ -1,8 +1,24 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 
 const agentEnabled = ref(true);
 const serverConnected = ref(false);
+const cursorMode = ref<'off' | 'auto' | 'always'>('always');
+
+const cursorModeLabel = computed(() => {
+  if (cursorMode.value === 'off') return '关闭';
+  if (cursorMode.value === 'auto') return '自动';
+  return '常驻';
+});
+
+const setCursorMode = async (mode: 'off' | 'auto' | 'always') => {
+  cursorMode.value = mode;
+  try {
+    await chrome.storage.local.set({ agentCursorMode: mode });
+  } catch (e) {
+    console.error('Failed to save cursor mode:', e);
+  }
+};
 
 const checkServerStatus = async () => {
   try {
@@ -46,6 +62,19 @@ onMounted(async () => {
   } catch {
     agentEnabled.value = true;
   }
+
+  try {
+    const local = await chrome.storage.local.get('agentCursorMode');
+    if (local.agentCursorMode) {
+      cursorMode.value = local.agentCursorMode;
+    } else {
+      cursorMode.value = 'always';
+      await chrome.storage.local.set({ agentCursorMode: 'always' });
+    }
+  } catch {
+    cursorMode.value = 'always';
+  }
+
   await checkServerStatus();
 });
 </script>
@@ -74,20 +103,55 @@ onMounted(async () => {
         <span class="dot" :class="{ online: serverConnected }"></span>
       </div>
     </div>
+
+    <!-- Row 3: Agent Cursor Mode 3-Step Slider -->
+    <div class="cursor-row">
+      <div class="cursor-header">
+        <span class="label">Agent Cursor</span>
+        <span class="badge">{{ cursorModeLabel }}</span>
+      </div>
+      <div class="segmented-control">
+        <div class="segment-indicator" :class="cursorMode"></div>
+        <button
+          type="button"
+          class="segment-btn"
+          :class="{ active: cursorMode === 'off' }"
+          @click="setCursorMode('off')"
+        >
+          关闭
+        </button>
+        <button
+          type="button"
+          class="segment-btn"
+          :class="{ active: cursorMode === 'auto' }"
+          @click="setCursorMode('auto')"
+        >
+          自动
+        </button>
+        <button
+          type="button"
+          class="segment-btn"
+          :class="{ active: cursorMode === 'always' }"
+          @click="setCursorMode('always')"
+        >
+          常驻
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .popup-box {
-  width: 200px;
-  height: 80px;
-  padding: 12px 16px;
+  width: 220px;
+  padding: 14px 16px;
   box-sizing: border-box;
   background: #ffffff;
   display: flex;
   flex-direction: column;
-  justifyContent: space-between;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  gap: 12px;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   user-select: none;
 }
 
@@ -158,5 +222,83 @@ onMounted(async () => {
 .status-text {
   font-size: 12px;
   color: #4b5563;
+}
+
+.cursor-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.cursor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #3b82f6;
+  background: #eff6ff;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.segmented-control {
+  position: relative;
+  display: flex;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.segment-indicator {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / 3);
+  background: #ffffff;
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.segment-indicator.off {
+  transform: translateX(0%);
+}
+
+.segment-indicator.auto {
+  transform: translateX(100%);
+}
+
+.segment-indicator.always {
+  transform: translateX(200%);
+}
+
+.segment-btn {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  height: 24px;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  transition: color 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.segment-btn.active {
+  color: #111827;
+  font-weight: 600;
 }
 </style>
