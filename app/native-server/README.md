@@ -53,13 +53,16 @@ node app/native-server/dist/cli.js --stdio
 
 Configure the starting tool profile with the `CHROME_MCP_TOOL_PROFILE` environment variable:
 
-- **`full`** (default): All 52 tools exposed (~19.5k tokens).
-- **`core`**: 24 core semantic navigation and DOM interaction tools (~11.5k tokens).
+- **`core`** (default): 14 ultra-lean semantic navigation and DOM interaction tools (~5.8k tokens, cutting prompt tokens by >65% and eliminating decision paralysis).
+- **`full`**: All 52 tools exposed (~19.5k tokens).
 - **`crawl`**: 15 lightweight web scraping and content extraction tools (~5.8k tokens).
 
-### Dynamic Profile Activation Without Restart
+### Auto-Unlock on Call & Dynamic Activation
 
-When running in `core` or `crawl` profiles, clients can dynamically unlock hidden tool categories on demand without restarting the server:
+When running in `core` profile, you do not need to restart the server when an extended tool is needed:
+
+1. **Auto-Unlock on Call**: Calling any unexposed tool (e.g., `chrome_history`, `chrome_javascript`) automatically unlocks its entire category, emits a standard `notifications/tools/list_changed` event, and executes immediately without blocking.
+2. **Manual Tool Docs & Activation**:
 
 ```json
 chrome_tool_docs({ "category": "diagnose", "activateForSession": true })

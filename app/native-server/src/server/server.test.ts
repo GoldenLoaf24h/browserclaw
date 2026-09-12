@@ -181,7 +181,7 @@ describe('Fastify MCP Native Server Integration Tests', () => {
     expect(transport.sessionId).toBeDefined();
 
     const tools = await client.listTools();
-    expect(tools.tools.length).toBeGreaterThan(0);
+    expect(tools.tools.length).toBe(14); // Core profile exposes exactly 14 primary tools
 
     // Call tool when extension is disconnected -> returns isError: true immediately without blocking
     const t0 = Date.now();
@@ -192,6 +192,17 @@ describe('Fastify MCP Native Server Integration Tests', () => {
     const duration = Date.now() - t0;
     expect(duration).toBeLessThan(1000);
     expect(toolRes.isError).toBe(true);
+
+    // Auto-Unlock on Call: calling unexposed tool (chrome_history in "manage" category)
+    // triggers category activation and expands tools/list
+    await client.callTool({
+      name: 'chrome_history',
+      arguments: { query: 'google' },
+    });
+    const afterAutoUnlock = await client.listTools();
+    expect(afterAutoUnlock.tools.length).toBeGreaterThan(14);
+    expect(afterAutoUnlock.tools.some((t: any) => t.name === 'chrome_history')).toBe(true);
+    expect(afterAutoUnlock.tools.some((t: any) => t.name === 'chrome_bookmark_search')).toBe(true);
 
     await client.close();
   });

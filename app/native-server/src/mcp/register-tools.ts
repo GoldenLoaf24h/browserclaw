@@ -15,6 +15,7 @@ import {
   resolveToolProfile,
   TOOL_SCHEMAS,
   TOOL_CATEGORIES,
+  TOOL_NAME_TO_CATEGORY,
 } from 'chrome-mcp-shared';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
@@ -32,7 +33,8 @@ export const clearSessionExtraTools = (sessionId: string): void => {
 export const setupTools = (server: Server, serverSessionId?: string) => {
   // List tools handler
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const extra = serverSessionId ? sessionExtraTools.get(serverSessionId) : undefined;
+    const effectiveSessionId = serverSessionId || 'default';
+    const extra = sessionExtraTools.get(effectiveSessionId);
     if (!extra || extra.size === 0) return { tools: EXPOSED_TOOLS };
     const combined = TOOL_SCHEMAS.filter(
       (t) => EXPOSED_TOOLS.some((e) => e.name === t.name) || extra.has(t.name),
@@ -46,7 +48,7 @@ export const setupTools = (server: Server, serverSessionId?: string) => {
       (request.params.arguments as any)?.sessionId ||
       (request.params.arguments as any)?.sessionContext ||
       serverSessionId;
-    return handleToolCall(request.params.name, request.params.arguments || {}, sessionId);
+    return handleToolCall(request.params.name, request.params.arguments || {}, sessionId, server);
   });
 
   // List resources handler - REQUIRED BY MCP PROTOCOL
@@ -60,25 +62,44 @@ const handleToolCall = async (
   name: string,
   args: any,
   sessionId?: string,
+  server?: Server,
 ): Promise<CallToolResult> => {
   try {
-    // A tool that exists but is hidden by the profile should say so, not
-    // masquerade as "not found" (the extension would report exactly that).
-    const extra = sessionId ? sessionExtraTools.get(sessionId) : undefined;
-    const isAllowed = EXPOSED_TOOLS.some((t) => t.name === name) || (extra && extra.has(name));
+    const effectiveSessionId = sessionId || 'default';
+    const extra = sessionExtraTools.get(effectiveSessionId);
+    let isAllowed = EXPOSED_TOOLS.some((t) => t.name === name) || (extra && extra.has(name));
+    let autoActivatedCategory: string | undefined;
+
     if (!isAllowed) {
       const known = TOOL_SCHEMAS.some((t) => t.name === name);
-      return {
-        content: [
-          {
-            type: 'text',
-            text: known
-              ? profileBlockedMessage(name, TOOL_PROFILE)
-              : `Tool "${name}" is not a BrowserClaw tool. Call tools/list to see the ${EXPOSED_TOOLS.length} available tools.`,
-          },
-        ],
-        isError: true,
-      };
+      if (known) {
+        const cat = TOOL_NAME_TO_CATEGORY[name];
+        if (cat) {
+          const catList = TOOL_CATEGORIES[cat] ? TOOL_CATEGORIES[cat].split(' ') : [];
+          const set = sessionExtraTools.get(effectiveSessionId) || new Set<string>();
+          for (const tName of catList) set.add(tName);
+          sessionExtraTools.set(effectiveSessionId, set);
+          autoActivatedCategory = cat;
+          isAllowed = true;
+          if (server && typeof (server as any).sendToolListChanged === 'function') {
+            (server as any).sendToolListChanged().catch(() => {});
+          }
+        }
+      }
+
+      if (!isAllowed) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: known
+                ? profileBlockedMessage(name, TOOL_PROFILE)
+                : `Tool "${name}" is not a BrowserClaw tool. Call tools/list to see the ${EXPOSED_TOOLS.length} available tools.`,
+            },
+          ],
+          isError: true,
+        };
+      }
     }
     if (!nativeMessagingHostInstance.isConnected) {
       return {
@@ -98,10 +119,13 @@ const handleToolCall = async (
       const catList = TOOL_CATEGORIES[args.category]
         ? TOOL_CATEGORIES[args.category].split(' ')
         : [];
-      if (sessionId && catList.length > 0) {
-        const set = sessionExtraTools.get(sessionId) || new Set<string>();
+      if (catList.length > 0) {
+        const set = sessionExtraTools.get(effectiveSessionId) || new Set<string>();
         for (const tName of catList) set.add(tName);
-        sessionExtraTools.set(sessionId, set);
+        sessionExtraTools.set(effectiveSessionId, set);
+      }
+      if (server && typeof (server as any).sendToolListChanged === 'function') {
+        (server as any).sendToolListChanged().catch(() => {});
       }
     }
     const response = await nativeMessagingHostInstance.sendRequestToExtensionAndWait(
@@ -114,7 +138,14 @@ const handleToolCall = async (
       120000, // 延长到 120 秒，避免性能分析等长任务超时
     );
     if (response.status === 'success') {
-      return response.data;
+      const result = response.data;
+      if (autoActivatedCategory && result && Array.isArray(result.content)) {
+        result.content.unshift({
+          type: 'text',
+          text: `[System Note: Tool category "${autoActivatedCategory}" has been dynamically unlocked for this session.]`,
+        });
+      }
+      return result;
     } else {
       return {
         content: [

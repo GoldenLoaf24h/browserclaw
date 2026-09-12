@@ -15,6 +15,7 @@ import {
   resolveToolProfile,
   TOOL_SCHEMAS,
   TOOL_CATEGORIES,
+  TOOL_NAME_TO_CATEGORY,
 } from 'chrome-mcp-shared';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -125,20 +126,37 @@ export const setupTools = (server: Server) => {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const name = request.params.name;
     const args = request.params.arguments || {};
-    const isAllowed = EXPOSED_TOOLS.some((t) => t.name === name) || dynamicExtraTools.has(name);
+    let isAllowed = EXPOSED_TOOLS.some((t) => t.name === name) || dynamicExtraTools.has(name);
+    let autoActivatedCategory: string | undefined;
+
     if (!isAllowed) {
       const known = TOOL_SCHEMAS.some((t) => t.name === name);
-      return {
-        content: [
-          {
-            type: 'text',
-            text: known
-              ? profileBlockedMessage(name, TOOL_PROFILE)
-              : `Tool "${name}" is not a BrowserClaw tool. Call tools/list to see the ${EXPOSED_TOOLS.length} available tools.`,
-          },
-        ],
-        isError: true,
-      };
+      if (known) {
+        const cat = TOOL_NAME_TO_CATEGORY[name];
+        if (cat) {
+          const catList = TOOL_CATEGORIES[cat] ? TOOL_CATEGORIES[cat].split(' ') : [];
+          for (const tName of catList) dynamicExtraTools.add(tName);
+          autoActivatedCategory = cat;
+          isAllowed = true;
+          if (server && typeof (server as any).sendToolListChanged === 'function') {
+            (server as any).sendToolListChanged().catch(() => {});
+          }
+        }
+      }
+
+      if (!isAllowed) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: known
+                ? profileBlockedMessage(name, TOOL_PROFILE)
+                : `Tool "${name}" is not a BrowserClaw tool. Call tools/list to see the ${EXPOSED_TOOLS.length} available tools.`,
+            },
+          ],
+          isError: true,
+        };
+      }
     }
 
     // Dynamic activation hook for chrome_tool_docs
@@ -150,9 +168,19 @@ export const setupTools = (server: Server) => {
       const cat = (args as any).category;
       const catList = TOOL_CATEGORIES[cat] ? TOOL_CATEGORIES[cat].split(' ') : [];
       for (const tName of catList) dynamicExtraTools.add(tName);
+      if (server && typeof (server as any).sendToolListChanged === 'function') {
+        (server as any).sendToolListChanged().catch(() => {});
+      }
     }
 
-    return handleToolCall(name, args);
+    const res = await handleToolCall(name, args);
+    if (autoActivatedCategory && res && Array.isArray(res.content)) {
+      res.content.unshift({
+        type: 'text',
+        text: `[System Note: Tool category "${autoActivatedCategory}" has been dynamically unlocked for this session.]`,
+      });
+    }
+    return res;
   });
 
   // List resources handler - REQUIRED BY MCP PROTOCOL

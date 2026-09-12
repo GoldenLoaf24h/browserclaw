@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TOOL_NAMES, TOOL_SCHEMAS, CORE_TOOL_NAMES } from 'chrome-mcp-shared';
+import { TOOL_NAMES, TOOL_SCHEMAS, TOOL_NAME_TO_CATEGORY } from 'chrome-mcp-shared';
 import { storageTool } from '../entrypoints/background/tools/browser/storage';
 
 /**
@@ -54,10 +54,10 @@ describe('chrome_storage', () => {
     vi.restoreAllMocks();
   });
 
-  it('is registered in the schema and in the core profile', () => {
+  it('is registered in the schema and maps to diagnose category', () => {
     expect(TOOL_NAMES.BROWSER.STORAGE).toBe('chrome_storage');
     expect(TOOL_SCHEMAS.some((t: any) => t.name === 'chrome_storage')).toBe(true);
-    expect(CORE_TOOL_NAMES.has('chrome_storage')).toBe(true);
+    expect(TOOL_NAME_TO_CATEGORY['chrome_storage']).toBe('diagnose');
   });
 
   it('returns HttpOnly cookies that document.cookie cannot see', async () => {

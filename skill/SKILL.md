@@ -132,6 +132,7 @@ For complex multi-step logic (conditional branches, loops, or form filling + dat
 ```
 
 Injected `mcp` API:
+
 - `await mcp.click(indexOrSelector)`: Dispatch clean mouse sequence to numeric index or CSS selector.
 - `await mcp.fill(indexOrSelector, text, clearFirst?)`: Focus, clear, fill, and dispatch input/change events.
 - `await mcp.extract(indexOrSelector, 'text' | 'value' | attrName)`: Extract element data.
@@ -348,7 +349,9 @@ Reads localStorage, sessionStorage, and cookies for the current tab in one call:
 ### F. Link Graph Extraction (`chrome_get_links`) & On-Demand Tool Docs (`chrome_tool_docs`)
 
 - `chrome_get_links { sameOriginOnly?: true, selector?: "main" }` returns every unique absolute URL with anchor text, internal/external flag, and `rel=nofollow` — the input for any multi-page crawl. Pair with `chrome_navigate` + `chrome_get_markdown { fit: true }` per page.
-- `chrome_tool_docs { category: "navigate" | "perceive" | "act" | "observe" | "manage" | "crawl" | "diagnose" | "network", activateForSession?: true }` prints compact parameter docs for one category (~1-3KB). Pass `activateForSession: true` to dynamically expose all tools in that category for the current MCP session without restarting the server (supported across both Fastify HTTP/SSE and Stdio transports).
+- **Streamlined Core Profile (14 tools default)**: BrowserClaw defaults to 14 high-frequency tools (`chrome_read_dom`, `chrome_get_markdown`, `chrome_inspect_media`, `chrome_grep`, `chrome_interact_index`, `chrome_fill_index`, `chrome_batch_actions`, `chrome_screenshot`, `chrome_smart_scroll`, `chrome_navigate`, `chrome_switch_tab`, `chrome_close_tabs`, `get_windows_and_tabs`, `chrome_tool_docs`), reducing token overhead by >65%.
+- **Auto-Unlock on Call**: Calling any non-core tool (e.g. `chrome_javascript`, `chrome_history`, `chrome_network_request`) automatically unlocks its entire category and executes without error, while notifying the client via `notifications/tools/list_changed`.
+- `chrome_tool_docs { category: "navigate" | "perceive" | "act" | "observe" | "manage" | "crawl" | "diagnose" | "network", activateForSession?: true }` prints compact parameter docs for one category (~1-3KB).
 - Visual assets: `chrome_read_dom` lists `[asset N]` entries (img/canvas/video/background-image with bounding boxes); `chrome_screenshot { assetIndex: N }` returns the real image resource (falls back to a viewport crop only when bytes are unobtainable).
 
 ---

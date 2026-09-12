@@ -23,34 +23,23 @@ export type ToolProfile = 'core' | 'crawl' | 'full';
  * tab), history/bookmarks, performance tracing, and the chrome_network_* pair.
  */
 export const CORE_TOOL_NAMES: Set<string> = new Set([
-  // Perceive
-  'chrome_read_dom',
-  'chrome_get_markdown',
-  'chrome_inspect_media',
-  'chrome_grep',
-  // Act (best-in-class primary tools only; redundant selector/batch duplicates pruned)
-  'chrome_interact_index',
-  'chrome_fill_index',
-  'chrome_batch_actions',
-  'chrome_computer',
-  'chrome_keyboard',
-  'chrome_upload_file',
-  'chrome_handle_dialog',
-  'chrome_get_dropdown_options',
-  // Navigate
+  // Navigate (4)
   'chrome_navigate',
   'chrome_switch_tab',
   'chrome_close_tabs',
   'get_windows_and_tabs',
-  // Observe (smart_scroll only; legacy scroll pruned)
+  // Perceive (4)
+  'chrome_read_dom',
+  'chrome_get_markdown',
+  'chrome_inspect_media',
+  'chrome_grep',
+  // Act (3)
+  'chrome_interact_index',
+  'chrome_fill_index',
+  'chrome_batch_actions',
+  // Observe (2)
   'chrome_screenshot',
   'chrome_smart_scroll',
-  'chrome_scroll_to_text',
-  // Diagnose
-  'chrome_console',
-  'chrome_javascript',
-  'chrome_handle_download',
-  'chrome_storage',
 ]);
 
 // Tool discovery is part of every profile: chrome_tool_docs is how an agent
@@ -61,15 +50,14 @@ CORE_TOOL_NAMES.add('chrome_tool_docs');
  * Resolve the active profile. Accepts the env value verbatim so callers can
  * pass process.env.CHROME_MCP_TOOL_PROFILE directly.
  *
- * Default is "full": existing deployments, docs, and manual verification
- * scripts reference tools outside the core set (tab-group and bookmark tools
- * in docs), so
- * silently hiding them would break those flows. Opt in to the trimmed list
- * with CHROME_MCP_TOOL_PROFILE=core.
+ * Default is now "core" to drastically reduce token overhead and avoid decision paralysis.
+ * Set CHROME_MCP_TOOL_PROFILE=full to expose all 52 tools, or crawl for crawl workflows.
  */
 export function resolveToolProfile(raw?: string | null): ToolProfile {
-  const v = String(raw ?? '').trim().toLowerCase();
-  return v === 'core' ? 'core' : v === 'crawl' ? 'crawl' : 'full';
+  const v = String(raw ?? '')
+    .trim()
+    .toLowerCase();
+  return v === 'full' ? 'full' : v === 'crawl' ? 'crawl' : 'core';
 }
 
 /**
@@ -116,6 +104,7 @@ export const TOOL_CATEGORIES: Record<string, string> = {
     'chrome_get_web_content',
     'chrome_get_links',
     'chrome_get_dropdown_options',
+    'chrome_tool_docs',
   ].join(' '),
   act: [
     'chrome_interact_index',
@@ -161,12 +150,23 @@ export const TOOL_CATEGORIES: Record<string, string> = {
     'performance_stop_trace',
     'performance_analyze_insight',
   ].join(' '),
-  network: [
-    'chrome_network_request',
-    'chrome_network_capture',
-  ].join(' '),
+  network: ['chrome_network_request', 'chrome_network_capture'].join(' '),
   crawl: Array.from(CRAWL_TOOL_NAMES).join(' '),
 };
+
+/**
+ * Reverse mapping from tool name to its primary functional category.
+ * Used by Native Server to auto-unlock a tool category upon first call.
+ */
+export const TOOL_NAME_TO_CATEGORY: Record<string, string> = {};
+for (const [category, toolList] of Object.entries(TOOL_CATEGORIES)) {
+  if (category === 'crawl') continue;
+  for (const name of toolList.split(' ').filter(Boolean)) {
+    if (!TOOL_NAME_TO_CATEGORY[name]) {
+      TOOL_NAME_TO_CATEGORY[name] = category;
+    }
+  }
+}
 
 /** Filter the schema list for a profile. Unknown names are simply not exposed. */
 export function filterToolSchemas(schemas: Tool[], profile: ToolProfile): Tool[] {
@@ -181,5 +181,7 @@ export function filterToolSchemas(schemas: Tool[], profile: ToolProfile): Tool[]
  * exposed — and it would hide the fix from the caller.
  */
 export function profileBlockedMessage(name: string, profile: ToolProfile): string {
-  return `Tool "${name}" is not exposed under the "${profile}" tool profile. Call chrome_tool_docs (category lists) to inspect its parameters, or remove CHROME_MCP_TOOL_PROFILE (set "full") on the MCP server and restart the client to enable it.`;
+  const cat = TOOL_NAME_TO_CATEGORY[name];
+  const catHint = cat ? ` (in category "${cat}")` : '';
+  return `Tool "${name}"${catHint} is not exposed under the "${profile}" tool profile. Call chrome_tool_docs(category: "${cat || 'act'}") to inspect its parameters, or call it directly to auto-activate the category for this session.`;
 }
