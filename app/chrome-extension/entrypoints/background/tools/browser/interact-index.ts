@@ -230,9 +230,11 @@ async function dispatchMouseMovement(
   if (!humanize) {
     // Dispatch intermediate approach steps within 30px radius to guarantee realistic pointer tracking (avoids NO_POINTER_PATH)
     const deltas = [
+      { dx: -65, dy: -38 },
+      { dx: -42, dy: -24 },
       { dx: -24, dy: -14 },
-      { dx: -10, dy: -6 },
-      { dx: -3, dy: -2 },
+      { dx: -12, dy: -7 },
+      { dx: -4, dy: -2 },
       { dx: 0, dy: 0 },
     ];
     for (const d of deltas) {
@@ -611,6 +613,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                   type: 'mouseMoved',
                   x: Math.round(pt.x),
                   y: Math.round(pt.y),
+                  button: 'left',
+                  buttons: 1,
                   modifiers: modifierMask,
                 });
                 await new Promise((r) => setTimeout(r, 16));
@@ -680,7 +684,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             // stop reaching narrow targets (resize handles, sliders) once
             // the cursor outruns them. HTML5 drags skip this: they consume
             // dragIntercepted data instead of pointermove.
-            if (!dragData) {
+            if (!dragData && !hasPath) {
               try {
                 const pmResult = (
                   await executeInPage({ tabId }, 'inPagePointerDragMove', [
@@ -728,6 +732,11 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             await dispatchMouseMovement(tabId, x, y, modifierMask, args.humanize === true);
 
             if (action === 'click') {
+              const prePressPauseMs = Math.max(
+                80,
+                Math.min(300, (args as any).prePressDelayMs ?? 110),
+              );
+              await new Promise((r) => setTimeout(r, prePressPauseMs));
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mousePressed',
                 x,
@@ -737,7 +746,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 clickCount: 1,
                 modifiers: modifierMask,
               });
-              const clickHoldMs = Math.max(35, Math.min(500, args.holdMs ?? 45));
+              const clickHoldMs = Math.max(35, Math.min(3000, args.holdMs ?? 45));
               await new Promise((r) => setTimeout(r, clickHoldMs));
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mouseReleased',

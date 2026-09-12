@@ -154,7 +154,8 @@ async function normalizeImageToCssDimensions(
 async function hasBlackBars(dataUrl: string): Promise<boolean> {
   try {
     const img = await createImageBitmapFromUrl(dataUrl);
-    const w = img.width, h = img.height;
+    const w = img.width,
+      h = img.height;
     if (w < 64 || h < 64) return false;
     const canvas = new OffscreenCanvas(w, h);
     const ctx = canvas.getContext('2d');
@@ -229,7 +230,11 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
       const enableSoM = args.som === true || args.highlight === true || args.setOfMark === true;
       if (enableSoM) {
         try {
-          const somResults = await executeInPage({ tabId: tab.id!, allFrames: true }, 'inPageDOMPruner', [{ highlight: true }]);
+          const somResults = await executeInPage(
+            { tabId: tab.id!, allFrames: true },
+            'inPageDOMPruner',
+            [{ highlight: true }],
+          );
           didInjectSoM = true;
 
           // Reindex subframe badges so they match global monotonic indices from chrome_read_dom
@@ -244,9 +249,16 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
                 const frameOffset = currentIndex - 1;
                 currentIndex += subCount;
                 try {
-                  await executeInPage({ tabId: tab.id!, frameIds: [r.frameId] }, 'inPageReindexFrame', [frameOffset, true]);
+                  await executeInPage(
+                    { tabId: tab.id!, frameIds: [r.frameId] },
+                    'inPageReindexFrame',
+                    [frameOffset, true],
+                  );
                 } catch (reindexErr) {
-                  console.warn(`Failed to reindex subframe ${r.frameId} for screenshot:`, reindexErr);
+                  console.warn(
+                    `Failed to reindex subframe ${r.frameId} for screenshot:`,
+                    reindexErr,
+                  );
                 }
               }
             }
@@ -257,10 +269,10 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
       }
 
       const background = args.background === true;
-      const targetMimeType = format === 'webp' ? 'image/webp' : format === 'jpeg' ? 'image/jpeg' : 'image/png';
-      const qualityFraction = typeof args.quality === 'number'
-        ? Math.max(0, Math.min(1, args.quality / 100))
-        : 0.8;
+      const targetMimeType =
+        format === 'webp' ? 'image/webp' : format === 'jpeg' ? 'image/jpeg' : 'image/png';
+      const qualityFraction =
+        typeof args.quality === 'number' ? Math.max(0, Math.min(1, args.quality / 100)) : 0.8;
 
       // === Path 0: named asset (from chrome_read_dom assets[]) ===
       // Primary: fetch real bytes in page (canvas toDataURL / img+bg fetch).
@@ -275,7 +287,8 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
         const asset = assetResults?.find((r) => r.result)?.result;
         if (!asset?.rect) {
           return createErrorResponse(
-            asset?.reason || `Asset ${args.assetIndex} not found. Run chrome_read_dom to list assets.`,
+            asset?.reason ||
+              `Asset ${args.assetIndex} not found. Run chrome_read_dom to list assets.`,
           );
         }
         if (asset.dataUrl && asset.dataUrl.startsWith('data:')) {
@@ -286,7 +299,7 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
           assetHandled = true;
           results.assetKind = asset.kind;
           results.assetSrc = asset.src;
-          results.assetSource = "bytes";
+          results.assetSource = 'bytes';
         } else {
           // Fallback: viewport crop of the asset rect (DPR-scaled)
           const dpr = pageDetails?.devicePixelRatio || 1;
@@ -298,25 +311,35 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
             h: Math.round((asset.rect.height + pad * 2) * dpr),
           };
           const visibleDataUrl = await this.captureTabPng(tab);
-          if (!visibleDataUrl) throw new Error('captureTabPng returned empty image (asset fallback)');
+          if (!visibleDataUrl)
+            throw new Error('captureTabPng returned empty image (asset fallback)');
           const cropped = new OffscreenCanvas(crop.w, crop.h);
           const cctx = cropped.getContext('2d');
           if (!cctx) throw new Error('OffscreenCanvas 2d context failed (asset fallback)');
           const raw = await createImageBitmapFromUrl(visibleDataUrl);
           cctx.drawImage(raw, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
-          finalImageDataUrl = await canvasToDataURL(cropped, targetMimeType as any, qualityFraction);
+          finalImageDataUrl = await canvasToDataURL(
+            cropped,
+            targetMimeType as any,
+            qualityFraction,
+          );
           finalImageWidthCss = crop.w;
           finalImageHeightCss = crop.h;
           assetHandled = true;
           results.assetKind = asset.kind;
           results.assetSrc = asset.src;
-          results.assetSource = "viewport-crop";
+          results.assetSource = 'viewport-crop';
           results.assetFallbackReason = asset.reason;
         }
       }
 
       // CDP path: simple viewport capture (no fullPage, no selector, no targetIndex, no som)
-      const canUseCdpCapture = !assetHandled && !fullPage && !selector && typeof args.targetIndex !== 'number' && !enableSoM;
+      const canUseCdpCapture =
+        !assetHandled &&
+        !fullPage &&
+        !selector &&
+        typeof args.targetIndex !== 'number' &&
+        !enableSoM;
 
       // === Path 1: CDP viewport capture (no content script needed) ===
       if (canUseCdpCapture) {
@@ -330,13 +353,11 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
             try {
               if (tab.active) {
                 const rafPromise = cdpSessionManager.sendCommand(tabId, 'Runtime.evaluate', {
-                  expression: "new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r())))",
+                  expression:
+                    'new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r())))',
                   awaitPromise: true,
                 });
-                await Promise.race([
-                  rafPromise,
-                  new Promise((r) => setTimeout(r, 300)),
-                ]);
+                await Promise.race([rafPromise, new Promise((r) => setTimeout(r, 300))]);
               } else {
                 await new Promise((r) => setTimeout(r, 50));
               }
@@ -348,7 +369,9 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
               'Page.getLayoutMetrics',
               {},
             );
-            const viewport = metrics?.layoutViewport ||
+            const viewport = metrics?.cssVisualViewport ||
+              metrics?.cssLayoutViewport ||
+              metrics?.layoutViewport ||
               metrics?.visualViewport || {
                 clientWidth: 800,
                 clientHeight: 600,
@@ -359,7 +382,9 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
             const cdpQuality =
               (cdpFormat === 'jpeg' || cdpFormat === 'webp') && typeof args.quality === 'number'
                 ? Math.max(0, Math.min(100, Math.round(args.quality)))
-                : (cdpFormat === 'jpeg' || cdpFormat === 'webp' ? 80 : undefined);
+                : cdpFormat === 'jpeg' || cdpFormat === 'webp'
+                  ? 80
+                  : undefined;
 
             const clientWidth = Math.round(viewport.clientWidth || 800);
             const clientHeight = Math.round(viewport.clientHeight || 600);
@@ -398,23 +423,28 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
               await new Promise((r) => setTimeout(r, 250));
               try {
                 await cdpSessionManager.sendCommand(tabId, 'Runtime.evaluate', {
-                  expression: "new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r())))",
+                  expression:
+                    'new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r())))',
                   awaitPromise: true,
                 });
               } catch {}
-              const retry: any = await cdpSessionManager.sendCommand(tabId, 'Page.captureScreenshot', {
-                format: cdpFormat,
-                quality: cdpQuality,
-                captureBeyondViewport: false,
-                fromSurface: true,
-                clip: {
-                  x: viewport.pageX || 0,
-                  y: viewport.pageY || 0,
-                  width: clientWidth,
-                  height: clientHeight,
-                  scale: 1,
+              const retry: any = await cdpSessionManager.sendCommand(
+                tabId,
+                'Page.captureScreenshot',
+                {
+                  format: cdpFormat,
+                  quality: cdpQuality,
+                  captureBeyondViewport: false,
+                  fromSurface: true,
+                  clip: {
+                    x: viewport.pageX || 0,
+                    y: viewport.pageY || 0,
+                    width: clientWidth,
+                    height: clientHeight,
+                    scale: 1,
+                  },
                 },
-              });
+              );
               const retryData = typeof retry?.data === 'string' ? retry.data : '';
               if (retryData) {
                 finalImageDataUrl = await normalizeImageToCssDimensions(
@@ -438,7 +468,7 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
         await this.injectContentScript(tab.id!, ['inject-scripts/screenshot-helper.js']);
         await new Promise((resolve) => setTimeout(resolve, SCREENSHOT_CONSTANTS.SCRIPT_INIT_DELAY));
 
-       // Prepare page (hide scrollbars, handle fixed elements)
+        // Prepare page (hide scrollbars, handle fixed elements)
         // Helper messages can die with a stale listener after extension
         // reloads or renderer swaps. One re-inject + retry recovers them;
         // a second failure surfaces as the original error.
@@ -548,8 +578,12 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
             // ignore
           }
           // For element captures, keep viewport bounds localized to element dimensions with origin offset
-          const viewportWidth = elementCropOrigin ? finalImageWidthCss : (pageDetails?.viewportWidth ?? finalImageWidthCss);
-          const viewportHeight = elementCropOrigin ? finalImageHeightCss : (pageDetails?.viewportHeight ?? finalImageHeightCss);
+          const viewportWidth = elementCropOrigin
+            ? finalImageWidthCss
+            : (pageDetails?.viewportWidth ?? finalImageWidthCss);
+          const viewportHeight = elementCropOrigin
+            ? finalImageHeightCss
+            : (pageDetails?.viewportHeight ?? finalImageHeightCss);
           screenshotContextManager.setContext(tab.id!, {
             screenshotWidth: finalImageWidthCss,
             screenshotHeight: finalImageHeightCss,
@@ -564,7 +598,6 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
       } catch (e) {
         console.warn('Failed to set screenshot context:', e);
       }
-
 
       const shouldSaveDisk = savePng === true || (args as any).saveToDisk === true;
       if (shouldSaveDisk) {
@@ -644,14 +677,19 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
 
     this.logInfo('Screenshot completed!');
 
-    let finalBase64 = results.base64 || (finalImageDataUrl ? finalImageDataUrl.replace(/^data:[^;]+;base64,/, '') : undefined);
+    let finalBase64 =
+      results.base64 ||
+      (finalImageDataUrl ? finalImageDataUrl.replace(/^data:[^;]+;base64,/, '') : undefined);
     let finalMime: 'image/webp' | 'image/png' | 'image/jpeg' =
       format === 'webp' ? 'image/webp' : format === 'png' ? 'image/png' : 'image/jpeg';
     let isThumbnailFinal = false;
 
     if (finalBase64 && finalBase64.length > 450 * 1024 && finalImageDataUrl) {
       try {
-        const scaleRatio = Math.min(0.75, Math.max(0.2, Math.sqrt((350 * 1024) / finalBase64.length)));
+        const scaleRatio = Math.min(
+          0.75,
+          Math.max(0.2, Math.sqrt((350 * 1024) / finalBase64.length)),
+        );
         const thumb = await compressImage(finalImageDataUrl, {
           scale: scaleRatio,
           quality: 0.75,
@@ -763,13 +801,15 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
           fromSurface: true,
         });
       });
-      if (!shot?.data) throw new Error('CDP captureScreenshot returned empty data for background tab');
+      if (!shot?.data)
+        throw new Error('CDP captureScreenshot returned empty data for background tab');
       return `data:image/png;base64,${shot.data}`;
     }
 
-    const dataUrl = typeof tab.windowId === 'number'
-      ? await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
-      : await chrome.tabs.captureVisibleTab({ format: 'png' });
+    const dataUrl =
+      typeof tab.windowId === 'number'
+        ? await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
+        : await chrome.tabs.captureVisibleTab({ format: 'png' });
     if (!dataUrl) throw new Error('captureVisibleTab returned empty image');
     return dataUrl;
   }
@@ -779,24 +819,28 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
     options: ScreenshotToolParams,
     pageDpr: number,
     windowId?: number,
-  ): Promise<{ dataUrl: string; widthCss: number; heightCss: number; originX: number; originY: number }> {
+  ): Promise<{
+    dataUrl: string;
+    widthCss: number;
+    heightCss: number;
+    originX: number;
+    originY: number;
+  }> {
     let cropRectPx: { x: number; y: number; width: number; height: number };
     let dpr = pageDpr || 1;
 
     if (typeof options.targetIndex === 'number') {
-      const results = await executeInPage(
-        { tabId, allFrames: true },
-        'inPageGetIndexCropRect',
-        [
-          options.targetIndex,
-          options.padding ?? 0,
-          options.expandSearchArea ?? options.autoExpand ?? true,
-        ],
-      );
+      const results = await executeInPage({ tabId, allFrames: true }, 'inPageGetIndexCropRect', [
+        options.targetIndex,
+        options.padding ?? 0,
+        options.expandSearchArea ?? options.autoExpand ?? true,
+      ]);
       const match = results?.find((r) => r.result?.success);
       const outcome = match?.result;
       if (!outcome?.success || !outcome.rect) {
-        throw new Error(outcome?.error || `Element with index [${options.targetIndex}] not found for screenshot`);
+        throw new Error(
+          outcome?.error || `Element with index [${options.targetIndex}] not found for screenshot`,
+        );
       }
       dpr = outcome.devicePixelRatio || pageDpr || 1;
       cropRectPx = {
@@ -822,7 +866,8 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
     }
 
     // Re-align Set-of-Mark visual badges overlay after implicit scrollIntoView (for targetIndex and selector)
-    const enableSoM = options.som === true || options.highlight === true || options.setOfMark === true;
+    const enableSoM =
+      options.som === true || options.highlight === true || options.setOfMark === true;
     if (enableSoM) {
       try {
         await executeInPage({ tabId, allFrames: true }, 'inPageRealignHighlights', []);
@@ -835,9 +880,9 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
     const targetTab = await chrome.tabs.get(tabId).catch(() => null);
     const visibleCaptureDataUrl = targetTab
       ? await this.captureTabPng(targetTab)
-      : (typeof windowId === 'number'
-          ? await chrome.tabs.captureVisibleTab(windowId, { format: 'png' })
-          : await chrome.tabs.captureVisibleTab({ format: 'png' }));
+      : typeof windowId === 'number'
+        ? await chrome.tabs.captureVisibleTab(windowId, { format: 'png' })
+        : await chrome.tabs.captureVisibleTab({ format: 'png' });
     if (!visibleCaptureDataUrl) {
       throw new Error('Failed to capture visible tab for element cropping');
     }
@@ -864,10 +909,10 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
     );
 
     const format = options.format ?? 'webp';
-    const mimeType = format === 'webp' ? 'image/webp' : format === 'jpeg' ? 'image/jpeg' : 'image/png';
-    const qualityFraction = typeof options.quality === 'number'
-      ? Math.max(0, Math.min(1, options.quality / 100))
-      : 0.8;
+    const mimeType =
+      format === 'webp' ? 'image/webp' : format === 'jpeg' ? 'image/jpeg' : 'image/png';
+    const qualityFraction =
+      typeof options.quality === 'number' ? Math.max(0, Math.min(1, options.quality / 100)) : 0.8;
 
     const dataUrl = await canvasToDataURL(croppedCanvas, mimeType, qualityFraction);
     return {
@@ -939,9 +984,9 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
       const targetTab = await chrome.tabs.get(tabId).catch(() => null);
       const dataUrl = targetTab
         ? await this.captureTabPng(targetTab)
-        : (typeof windowId === 'number'
-            ? await chrome.tabs.captureVisibleTab(windowId, { format: 'png' })
-            : await chrome.tabs.captureVisibleTab({ format: 'png' }));
+        : typeof windowId === 'number'
+          ? await chrome.tabs.captureVisibleTab(windowId, { format: 'png' })
+          : await chrome.tabs.captureVisibleTab({ format: 'png' });
       if (!dataUrl) throw new Error('captureVisibleTab returned empty during full page capture');
 
       const yOffsetPx = currentScrollYCss * dpr;
@@ -1004,10 +1049,10 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
     }
 
     const format = options.format || 'webp';
-    const targetMime = format === 'webp' ? 'image/webp' : format === 'jpeg' ? 'image/jpeg' : 'image/png';
-    const qualityFraction = typeof options.quality === 'number'
-      ? Math.max(0, Math.min(1, options.quality / 100))
-      : 0.8;
+    const targetMime =
+      format === 'webp' ? 'image/webp' : format === 'jpeg' ? 'image/jpeg' : 'image/png';
+    const qualityFraction =
+      typeof options.quality === 'number' ? Math.max(0, Math.min(1, options.quality / 100)) : 0.8;
     return canvasToDataURL(outputCanvas, targetMime, qualityFraction);
   }
 }

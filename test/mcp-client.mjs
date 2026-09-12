@@ -73,7 +73,7 @@ export async function mcpCall(tool, args = {}) {
     const detail = r.content?.map((c) => c.text).join('\n') || JSON.stringify(r);
     throw new Error('Tool ' + tool + ' failed: ' + detail);
   }
-  const textOut = r.content?.find((c) => c.type === 'text')?.text;
+  const textOut = r.content?.filter((c) => c.type === 'text' && !c.text?.startsWith('[System Note:')).at(-1)?.text ?? r.content?.find((c) => c.type === 'text')?.text;
   try { return JSON.parse(textOut); } catch { return textOut ?? r; }
 }
 
