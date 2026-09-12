@@ -304,6 +304,8 @@ function initAgentCursor() {
   cursorContainer.style.top = '0';
   cursorContainer.style.transformOrigin = `${HALF_SIZE}px ${HALF_SIZE}px`;
   cursorContainer.style.willChange = 'transform, opacity, filter';
+  cursorContainer.style.opacity = '0';
+  cursorContainer.style.visibility = 'hidden';
 
   const offsetWrapper = document.createElement('div');
   offsetWrapper.style.transform = `translate3d(${ASSET_OFFSET_X}px, ${ASSET_OFFSET_Y}px, 0)`;
@@ -379,6 +381,12 @@ function initAgentCursor() {
     transforms.push(`rotate(${normAngle(rotation + scootRot)}deg)`, `scale(${stretch * scaleVis}, ${scaleVis})`);
 
     cursorContainer.style.transform = transforms.join(' ');
+    if (vis <= 0.001) {
+      cursorContainer.style.opacity = '0';
+      cursorContainer.style.visibility = 'hidden';
+      return;
+    }
+    cursorContainer.style.visibility = 'visible';
     cursorContainer.style.opacity = `${vis}`;
     cursorContainer.style.filter = `blur(${Math.round(blurPx * 10) / 10}px)`;
   };
@@ -716,4 +724,7 @@ function initAgentCursor() {
 
     return false;
   });
+
+  // Explicitly initialize cursor into hidden state on initial page load
+  renderCursor();
 }

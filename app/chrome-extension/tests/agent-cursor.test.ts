@@ -81,4 +81,17 @@ describe('Agent Cursor (Virtual Mouse) Tests', () => {
     expect(sentMessage).toBeTruthy();
     expect(sentMessage.type).toBe('AGENT_CURSOR_HIDE');
   });
+
+  it('verifies content script initializes cursor with strict hidden state', () => {
+    const contentScriptPath = path.resolve(__dirname, '../entrypoints/agent-cursor.content.ts');
+    const source = fs.readFileSync(contentScriptPath, 'utf-8');
+    
+    // Verify cursorContainer is styled hidden and opacity 0 on mount
+    expect(source).toContain("cursorContainer.style.opacity = '0'");
+    expect(source).toContain("cursorContainer.style.visibility = 'hidden'");
+    // Verify renderCursor hides cursor when vis <= 0.001
+    expect(source).toContain('if (vis <= 0.001)');
+    // Verify initial call to renderCursor()
+    expect(source).toContain('renderCursor();');
+  });
 });
