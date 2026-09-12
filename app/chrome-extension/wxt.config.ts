@@ -35,7 +35,7 @@ export default defineConfig({
     // Use environment variable for the key, fallback to undefined if not set
     key: CHROME_EXTENSION_KEY,
     name: 'browserclaw',
-    description: 'browserclaw - AI Agent 现代化纯净浏览器控制引擎',
+    description: 'Control your own browser with Agent.',
     permissions: [
       'nativeMessaging',
       'tabs',
