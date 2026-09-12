@@ -6,9 +6,9 @@ const serverConnected = ref(false);
 const cursorMode = ref<'off' | 'auto' | 'always'>('always');
 
 const cursorModeLabel = computed(() => {
-  if (cursorMode.value === 'off') return '关闭';
-  if (cursorMode.value === 'auto') return '自动';
-  return '常驻';
+  if (cursorMode.value === 'off') return 'Off';
+  if (cursorMode.value === 'auto') return 'Auto';
+  return 'Always';
 });
 
 const setCursorMode = async (mode: 'off' | 'auto' | 'always') => {
@@ -118,7 +118,7 @@ onMounted(async () => {
           :class="{ active: cursorMode === 'off' }"
           @click="setCursorMode('off')"
         >
-          关闭
+          Off
         </button>
         <button
           type="button"
@@ -126,7 +126,7 @@ onMounted(async () => {
           :class="{ active: cursorMode === 'auto' }"
           @click="setCursorMode('auto')"
         >
-          自动
+          Auto
         </button>
         <button
           type="button"
@@ -134,7 +134,7 @@ onMounted(async () => {
           :class="{ active: cursorMode === 'always' }"
           @click="setCursorMode('always')"
         >
-          常驻
+          Always
         </button>
       </div>
     </div>
