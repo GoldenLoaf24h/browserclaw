@@ -32,6 +32,11 @@ BrowserClaw is a high-performance Model Context Protocol (MCP) platform that giv
 
 - 🍪 **100% Session & Auth Reuse**: Keeps your active Google, GitHub, and enterprise SSO sessions. No re-logging in.
 - 🎯 **Dual-Engine Precision**: 1-based pruned DOM tree (token savings >85%) with 1:1 CSS viewport coordinate visual fallback.
+- 🌲 **AX Compact Semantic Tree (`format: "compact"`)**: Accessibility-tree-inspired representation without verbose closing tags, slashing token usage by 60%~75%.
+- 🔗 **Code-Driven Chained Execution (`mcp.*`)**: Run multi-step interactions (`mcp.click`, `mcp.fill`, `mcp.waitFor`, `mcp.extract`) in a single `chrome_javascript` call, reducing 4~6 roundtrips to 1.
+- 🛡️ **Shadow DOM Penetration & Self-Healing Interception**: Deep composed-tree hit testing across closed shadow roots with actionable dialog names returned on obstruction.
+- 🎯 **Optimal Action Point & Click Probe Fallback**: Viewport-weighted visible coordinates with automatic synthetic DOM fallback if Chromium throttles background CDP events.
+- 📡 **4-Tier Layered Scraping Protocol**: Seamless escalation from zero-token direct API fetch (`chrome_network_request`) to silent response sniffing, compact DOM, and visual fallback.
 - ⚡ **Autonomous DOM Diffing (`includeDelta`)**: Single-step click/fill responses include local DOM mutations, eliminating 50% of roundtrips.
 - 🔍 **Targeted Grep (`chrome_grep`)**: Sub-100 token instant element and text search across large documents.
 - 🖱️ **Human-Grade Aesthetics**: 1:1 spring-kinematics virtual cursor overlay and dedicated tab groups lifecycle management.

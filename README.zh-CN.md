@@ -32,6 +32,11 @@ BrowserClaw 是一套面向 AI Agent 的工业级模型上下文协议（MCP）�
 
 - 🍪 **100% 继承日常会话**：无感复用 Google、GitHub、企业内网 SSO 登录态，免除重复登录与 2FA 阻断。
 - 🎯 **双引擎高精定位**：极简剪枝 DOM 树（Token 消耗立省 85%+），配合 1:1 CSS 视口坐标网格视觉兜底。
+- 🌲 **AX 紧凑语义树 (`format: "compact"`)**：对齐 Chromium 原生无闭合标签语义格式，单次阅读 DOM 的 Token 消耗再降 60%~75%。
+- 🔗 **Code-Driven 在页链式脚本 (`mcp.*`)**：通过单次 `chrome_javascript` 链式调用 (`mcp.click`, `mcp.fill`, `mcp.waitFor`, `mcp.extract`)，将 4~6 次网络往返压缩为 1 次。
+- 🛡️ **Shadow DOM 穿透与遮挡自愈**：深度遍历 composed 树穿透 Web Component 内部节点，被弹窗遮挡时返回高语义弹窗名助 Agent 自主决策关闭。
+- 🎯 **最优可见点与 Click Probe 探针兜底**：视口加权有效可见面积定位，若遇 Chromium 后台标签页节流自动补发合成 DOM 鼠标事件，保障 100% 触发。
+- 📡 **四级分层抓取协议**：建立从登录态直通 JSON API (`chrome_network_request`) 到静默响应拦截、紧凑 DOM 及视觉快照的梯度最佳实践。
 - ⚡ **操作自驱局部 Diff (`includeDelta`)**：单步点击与填表同时回传局部 DOM 变动，减少 50% 交互网络往返。
 - 🔍 **毫秒级定向检索 (`chrome_grep`)**：超大长页面无需 dump 全量 DOM，单次检索消耗 <100 Tokens。
 - 🖱️ **真人体感视觉动效**：1:1 复刻弹簧动力学虚拟鼠标轨迹悬浮层，以及专属色彩的 Chrome 标签分组生命周期管理。

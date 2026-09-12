@@ -87,6 +87,8 @@ Extract and prune interactive DOM tree with compact 1-based index assignment, vi
 - `limit` — Maximum number of indexed elements to return for current page cursor slice (default: unlimited)
 - `maxTextLength` — Maximum text length before truncation for element text content (default: 120)
 - `includeDetails` — Also return the bulky indexedElements/indexMap detail blocks (geometry, occlusion flags, safe click points). Off by default because the tree already c
+- `format:compact|html` — Output format for treeString. "compact" (default) produces a concise, accessibility-tree-inspired representation without closing tags, slashing token 
+- `deltaOnly` — When true, returns only changed/added/removed diffs compared to the previous snapshot, saving 90%+ tokens on repeated reads.
 
 ### `chrome_get_markdown`
 
