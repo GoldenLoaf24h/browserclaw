@@ -14,7 +14,7 @@ export async function captureDeltaIfRequested(
     }
 
     const results = await executeInPage<PrunedDOMTreeResult>(
-      { tabId },
+      { tabId, allFrames: true },
       'inPageDOMPruner',
       [
         {
@@ -24,18 +24,36 @@ export async function captureDeltaIfRequested(
       ],
     );
 
-    const mainResult = results?.[0]?.result;
-    const elements = mainResult?.indexedElements;
-    if (elements && Array.isArray(elements)) {
-      const diff = snapshotCacheManager.diffWithPrevious(tabId, elements);
-      const tab = await chrome.tabs.get(tabId).catch(() => null);
-      snapshotCacheManager.setSnapshot(tabId, {
-        url: tab?.url || '',
-        elementCount: elements.length,
-        elements,
-      });
-      return diff;
+    if (!results || results.length === 0) return undefined;
+
+    const mainFrame = results.find((r) => r.frameId === 0) || results[0];
+    const mainResult = mainFrame?.result;
+    if (!mainResult) return undefined;
+
+    const allElements: any[] = [...(mainResult.indexedElements || [])];
+    let currentIndex = allElements.length + 1;
+
+    for (const r of results) {
+      if (r === mainFrame || !r.result) continue;
+      const subData = r.result;
+      if (subData.indexedElements && subData.indexedElements.length > 0) {
+        for (const el of subData.indexedElements) {
+          allElements.push({
+            ...el,
+            index: currentIndex++,
+          });
+        }
+      }
     }
+
+    const diff = snapshotCacheManager.diffWithPrevious(tabId, allElements);
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    snapshotCacheManager.setSnapshot(tabId, {
+      url: tab?.url || '',
+      elementCount: allElements.length,
+      elements: allElements,
+    });
+    return diff;
   } catch (err) {
     return {
       isDelta: true,

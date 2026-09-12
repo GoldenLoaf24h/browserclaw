@@ -194,7 +194,11 @@ function tangentToDegrees(tangent: Point): number {
   return normAngle(Math.atan2(tangent.y / len, tangent.x / len) * (180 / Math.PI) + 90);
 }
 
-function buildArcCandidates(start: Point, end: Point, bounds: { width: number; height: number }): BezierPath {
+function buildArcCandidates(
+  start: Point,
+  end: Point,
+  bounds: { width: number; height: number },
+): BezierPath {
   const d = dist(start, end);
   const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
   const normal = d > 0 ? { x: -(end.y - start.y) / d, y: (end.x - start.x) / d } : { x: 0, y: -1 };
@@ -203,7 +207,10 @@ function buildArcCandidates(start: Point, end: Point, bounds: { width: number; h
 
   return {
     start,
-    startControl: { x: start.x + (arcPt.x - start.x) * 0.5, y: start.y + (arcPt.y - start.y) * 0.5 },
+    startControl: {
+      x: start.x + (arcPt.x - start.x) * 0.5,
+      y: start.y + (arcPt.y - start.y) * 0.5,
+    },
     end,
     endControl: { x: end.x + (arcPt.x - end.x) * 0.5, y: end.y + (arcPt.y - end.y) * 0.5 },
     arc: arcPt,
@@ -211,7 +218,10 @@ function buildArcCandidates(start: Point, end: Point, bounds: { width: number; h
     arcOut: null,
     segments: [
       {
-        control1: { x: start.x + (arcPt.x - start.x) * 0.45, y: start.y + (arcPt.y - start.y) * 0.45 },
+        control1: {
+          x: start.x + (arcPt.x - start.x) * 0.45,
+          y: start.y + (arcPt.y - start.y) * 0.45,
+        },
         control2: { x: arcPt.x - (end.x - start.x) * 0.15, y: arcPt.y - (end.y - start.y) * 0.15 },
         end: arcPt,
       },
@@ -238,7 +248,14 @@ interface AgentCursorState {
   scootRotationSpring: SpringState;
   scootStretchSpring: SpringState;
   motion:
-    | { mode: 'scoot'; start: Point; end: Point; axisRotation: number; rotationTarget: number; progressSpring: SpringState }
+    | {
+        mode: 'scoot';
+        start: Point;
+        end: Point;
+        axisRotation: number;
+        rotationTarget: number;
+        progressSpring: SpringState;
+      }
     | { mode: 'bezier'; path: BezierPath; progressSpring: SpringState }
     | null;
 }
@@ -265,7 +282,7 @@ function initAgentCursor() {
   if (window.top !== window.self) return; // Top-level window only
 
   const OVERLAY_ROOT_ID = 'codex-agent-overlay-root';
-  let existing = document.getElementById(OVERLAY_ROOT_ID);
+  const existing = document.getElementById(OVERLAY_ROOT_ID);
   if (existing) return;
 
   const host = document.createElement('div');
@@ -327,7 +344,7 @@ function initAgentCursor() {
   overlay.appendChild(cursorContainer);
   shadow.appendChild(overlay);
 
-  let cursorState = initCursorState({
+  const cursorState = initCursorState({
     x: Math.round(window.innerWidth * 0.5),
     y: Math.round(window.innerHeight * 0.5),
   });
@@ -339,10 +356,12 @@ function initAgentCursor() {
 
   const triggerArrivalCallback = (seq: number | null) => {
     if (seq !== null) {
-      chrome.runtime.sendMessage({
-        type: 'AGENT_CURSOR_ARRIVED',
-        moveSequence: seq,
-      }).catch(() => {});
+      chrome.runtime
+        .sendMessage({
+          type: 'AGENT_CURSOR_ARRIVED',
+          moveSequence: seq,
+        })
+        .catch(() => {});
     }
   };
 
@@ -375,10 +394,17 @@ function initAgentCursor() {
     ];
 
     if (Math.abs(axisRot) > 0.001 || Math.abs(scootStretch - 1) > 0.001) {
-      transforms.push(`rotate(${axisRot}deg)`, `scale(1, ${scootStretch})`, `rotate(${-axisRot}deg)`);
+      transforms.push(
+        `rotate(${axisRot}deg)`,
+        `scale(1, ${scootStretch})`,
+        `rotate(${-axisRot}deg)`,
+      );
     }
 
-    transforms.push(`rotate(${normAngle(rotation + scootRot)}deg)`, `scale(${stretch * scaleVis}, ${scaleVis})`);
+    transforms.push(
+      `rotate(${normAngle(rotation + scootRot)}deg)`,
+      `scale(${stretch * scaleVis}, ${scaleVis})`,
+    );
 
     cursorContainer.style.transform = transforms.join(' ');
     if (vis <= 0.001) {
@@ -423,7 +449,10 @@ function initAgentCursor() {
       stepSpring(cursorState.rotationSpring, dt);
       stepSpring(cursorState.scootAxisSpring, dt);
 
-      cursorState.point = { x: cursorState.positionXSpring.value, y: cursorState.positionYSpring.value };
+      cursorState.point = {
+        x: cursorState.positionXSpring.value,
+        y: cursorState.positionYSpring.value,
+      };
       cursorState.rotation = cursorState.rotationSpring.value;
       cursorState.scootAxisRotation = cursorState.scootAxisSpring.value;
 
@@ -455,7 +484,10 @@ function initAgentCursor() {
       stepSpring(cursorState.rotationSpring, dt);
       stepSpring(cursorState.scootAxisSpring, dt);
 
-      cursorState.point = { x: cursorState.positionXSpring.value, y: cursorState.positionYSpring.value };
+      cursorState.point = {
+        x: cursorState.positionXSpring.value,
+        y: cursorState.positionYSpring.value,
+      };
       cursorState.rotation = cursorState.rotationSpring.value;
       cursorState.scootAxisRotation = cursorState.scootAxisSpring.value;
 
@@ -476,7 +508,10 @@ function initAgentCursor() {
       stepSpring(cursorState.positionXSpring, dt);
       stepSpring(cursorState.positionYSpring, dt);
       stepSpring(cursorState.rotationSpring, dt);
-      cursorState.point = { x: cursorState.positionXSpring.value, y: cursorState.positionYSpring.value };
+      cursorState.point = {
+        x: cursorState.positionXSpring.value,
+        y: cursorState.positionYSpring.value,
+      };
       cursorState.rotation = cursorState.rotationSpring.value;
     }
 
@@ -510,7 +545,12 @@ function initAgentCursor() {
     }
   };
 
-  const moveTo = (targetX: number, targetY: number, moveSequence: number | null, immediate = false) => {
+  const moveTo = (
+    targetX: number,
+    targetY: number,
+    moveSequence: number | null,
+    immediate = false,
+  ) => {
     userTakeoverDetected = false;
     pendingMoveSequence = moveSequence;
     cursorState.visibilitySpring.target = 1;
@@ -579,126 +619,157 @@ function initAgentCursor() {
   window.addEventListener('mousedown', onUserInteraction, { passive: true });
   window.addEventListener('keydown', onUserInteraction, { passive: true });
 
+  let activeInterventionCleanup: (() => void) | null = null;
+
   // Message listener for Background commands
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!message || typeof message !== 'object') return false;
 
-          if (message.type === 'HUMAN_INTERVENTION_REQUEST') {
-        const { reason } = message;
-        // Move virtual cursor smoothly to standby corner
-        moveTo(window.innerWidth - 60, 40, null, false);
-
-        let banner = shadow.getElementById('codex-human-intervention-banner');
-        if (banner) banner.remove();
-
-        banner = document.createElement('div');
-        banner.id = 'codex-human-intervention-banner';
-        banner.style.cssText = [
-          'position: fixed',
-          'top: 24px',
-          'left: 50%',
-          'transform: translateX(-50%)',
-          'z-index: 2147483647',
-          'background: rgba(15, 23, 42, 0.92)',
-          'backdrop-filter: blur(16px)',
-          '-webkit-backdrop-filter: blur(16px)',
-          'border: 1px solid rgba(51, 156, 255, 0.5)',
-          'border-radius: 9999px',
-          'box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(51, 156, 255, 0.35)',
-          'color: #ffffff',
-          'padding: 10px 22px',
-          'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-          'font-size: 14px',
-          'line-height: 20px',
-          'display: flex',
-          'align-items: center',
-          'gap: 16px',
-          'pointer-events: auto',
-          'user-select: none',
-          'animation: codexSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
-        ].join('; ');
-
-        const style = document.createElement('style');
-        style.textContent = `
-          @keyframes codexSlideIn {
-            from { opacity: 0; transform: translate(-50%, -20px) scale(0.96); }
-            to { opacity: 1; transform: translate(-50%, 0) scale(1); }
-          }
-          @keyframes codexPulse {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 156, 255, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(51, 156, 255, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 156, 255, 0); }
-          }
-        `;
-        banner.appendChild(style);
-
-        const pulseDot = document.createElement('div');
-        pulseDot.style.cssText = 'width: 10px; height: 10px; border-radius: 50%; background: #339cff; animation: codexPulse 1.8s infinite; flex-shrink: 0;';
-        banner.appendChild(pulseDot);
-
-        const textContainer = document.createElement('div');
-        textContainer.style.cssText = 'font-weight: 500; max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
-        const labelSpan = document.createElement('span');
-        labelSpan.style.cssText = 'color: #93c5fd; font-weight: 600;';
-        labelSpan.textContent = 'Agent 需人工协助：';
-        textContainer.appendChild(labelSpan);
-        textContainer.appendChild(document.createTextNode(reason));
-        banner.appendChild(textContainer);
-
-        const continueBtn = document.createElement('button');
-        continueBtn.id = 'codex-btn-continue';
-        continueBtn.style.cssText = [
-          'background: #339cff',
-          'color: #ffffff',
-          'border: none',
-          'padding: 6px 14px',
-          'border-radius: 9999px',
-          'font-size: 12px',
-          'font-weight: 600',
-          'cursor: pointer',
-          'transition: all 0.2s',
-          'outline: none',
-        ].join('; ');
-        continueBtn.textContent = '完成并继续 (Enter)';
-        banner.appendChild(continueBtn);
-
-        shadow.appendChild(banner);
-
-        const cleanup = () => {
-          window.removeEventListener('keydown', onKey);
-          if (banner && banner.parentNode) {
-            banner.style.transition = 'opacity 0.25s, transform 0.25s';
-            banner.style.opacity = '0';
-            banner.style.transform = 'translate(-50%, -15px) scale(0.95)';
-            setTimeout(() => banner?.remove(), 260);
-          }
-        };
-
-        const onDone = () => {
-          cleanup();
-          sendResponse({ ok: true, action: 'completed_by_user' });
-        };
-
-        const onKey = (e: KeyboardEvent) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            onDone();
-          }
-        };
-
-        banner.querySelector('#codex-btn-continue')?.addEventListener('click', onDone);
-        window.addEventListener('keydown', onKey);
-        return true;
+    if (message.type === 'HUMAN_INTERVENTION_REQUEST') {
+      if (activeInterventionCleanup) {
+        try {
+          activeInterventionCleanup();
+        } catch {}
+        activeInterventionCleanup = null;
       }
+      const { reason } = message;
+      // Move virtual cursor smoothly to standby corner
+      moveTo(window.innerWidth - 60, 40, null, false);
 
-      if (message.type === 'HUMAN_INTERVENTION_CANCEL') {
+      let banner = shadow.getElementById('codex-human-intervention-banner');
+      if (banner) banner.remove();
+
+      banner = document.createElement('div');
+      banner.id = 'codex-human-intervention-banner';
+      banner.style.cssText = [
+        'position: fixed',
+        'top: 24px',
+        'left: 50%',
+        'transform: translateX(-50%)',
+        'z-index: 2147483647',
+        'background: rgba(15, 23, 42, 0.92)',
+        'backdrop-filter: blur(16px)',
+        '-webkit-backdrop-filter: blur(16px)',
+        'border: 1px solid rgba(51, 156, 255, 0.5)',
+        'border-radius: 9999px',
+        'box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(51, 156, 255, 0.35)',
+        'color: #ffffff',
+        'padding: 10px 22px',
+        'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        'font-size: 14px',
+        'line-height: 20px',
+        'display: flex',
+        'align-items: center',
+        'gap: 16px',
+        'pointer-events: auto',
+        'user-select: none',
+        'animation: codexSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
+      ].join('; ');
+
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes codexSlideIn {
+          from { opacity: 0; transform: translate(-50%, -20px) scale(0.96); }
+          to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+        }
+        @keyframes codexPulse {
+          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 156, 255, 0.7); }
+          70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(51, 156, 255, 0); }
+          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 156, 255, 0); }
+        }
+      `;
+      banner.appendChild(style);
+
+      const pulseDot = document.createElement('div');
+      pulseDot.style.cssText =
+        'width: 10px; height: 10px; border-radius: 50%; background: #339cff; animation: codexPulse 1.8s infinite; flex-shrink: 0;';
+      banner.appendChild(pulseDot);
+
+      const textContainer = document.createElement('div');
+      textContainer.style.cssText =
+        'font-weight: 500; max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+      const labelSpan = document.createElement('span');
+      labelSpan.style.cssText = 'color: #93c5fd; font-weight: 600;';
+      labelSpan.textContent = 'Agent 需人工协助：';
+      textContainer.appendChild(labelSpan);
+      textContainer.appendChild(document.createTextNode(reason));
+      banner.appendChild(textContainer);
+
+      const continueBtn = document.createElement('button');
+      continueBtn.id = 'codex-btn-continue';
+      continueBtn.style.cssText = [
+        'background: #339cff',
+        'color: #ffffff',
+        'border: none',
+        'padding: 6px 14px',
+        'border-radius: 9999px',
+        'font-size: 12px',
+        'font-weight: 600',
+        'cursor: pointer',
+        'transition: all 0.2s',
+        'outline: none',
+      ].join('; ');
+      continueBtn.textContent = '完成并继续 (Enter)';
+      banner.appendChild(continueBtn);
+
+      shadow.appendChild(banner);
+
+      const cleanup = () => {
+        window.removeEventListener('keydown', onKey);
+        if (activeInterventionCleanup === cleanup) {
+          activeInterventionCleanup = null;
+        }
+        if (banner && banner.parentNode) {
+          banner.style.transition = 'opacity 0.25s, transform 0.25s';
+          banner.style.opacity = '0';
+          banner.style.transform = 'translate(-50%, -15px) scale(0.95)';
+          setTimeout(() => banner?.remove(), 260);
+        }
+      };
+      activeInterventionCleanup = cleanup;
+
+      const onDone = () => {
+        cleanup();
+        sendResponse({ ok: true, action: 'completed_by_user' });
+      };
+
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === 'Enter') {
+          const target = (e.composedPath?.()[0] || e.target) as HTMLElement | null;
+          const tagName = target?.tagName?.toLowerCase();
+          const isInput =
+            tagName === 'input' ||
+            tagName === 'textarea' ||
+            tagName === 'select' ||
+            Boolean(target?.isContentEditable);
+          if (isInput) {
+            return;
+          }
+          e.preventDefault();
+          onDone();
+        }
+      };
+
+      banner.querySelector('#codex-btn-continue')?.addEventListener('click', onDone);
+      window.addEventListener('keydown', onKey);
+      return true;
+    }
+
+    if (message.type === 'HUMAN_INTERVENTION_CANCEL') {
+      if (activeInterventionCleanup) {
+        try {
+          activeInterventionCleanup();
+        } catch {}
+        activeInterventionCleanup = null;
+      } else {
         const banner = shadow.getElementById('codex-human-intervention-banner');
         if (banner) banner.remove();
-        sendResponse({ ok: true });
-        return true;
       }
+      sendResponse({ ok: true });
+      return true;
+    }
 
-      if (message.type === 'AGENT_CURSOR_MOVE') {
+    if (message.type === 'AGENT_CURSOR_MOVE') {
       const { x, y, moveSequence, immediate } = message;
       moveTo(x, y, typeof moveSequence === 'number' ? moveSequence : null, immediate === true);
       sendResponse({ ok: true });

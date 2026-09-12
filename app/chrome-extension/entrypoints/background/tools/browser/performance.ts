@@ -2,6 +2,7 @@ import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
+import { sendFileOperationToNative, cancelFileOperation } from '../../native-host';
 
 type OwnerTag = 'performance';
 
@@ -89,8 +90,37 @@ async function saveTraceToDownloads(
   try {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `${filenamePrefix}_${timestamp}.json`;
-    const dataUrl = `data:application/json;base64,${btoa(unescape(encodeURIComponent(json)))}`;
-    const downloadId = await chrome.downloads.download({ url: dataUrl, filename, saveAs: false });
+    let url: string;
+    let cleanupUrl: (() => void) | undefined;
+
+    if (
+      typeof URL !== 'undefined' &&
+      typeof URL.createObjectURL === 'function' &&
+      typeof Blob !== 'undefined'
+    ) {
+      const blob = new Blob([json], { type: 'application/json' });
+      url = URL.createObjectURL(blob);
+      cleanupUrl = () => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {}
+      };
+    } else {
+      // Robust chunked fallback avoiding unescape/encodeURIComponent memory explosion
+      const bytes = new TextEncoder().encode(json);
+      let binary = '';
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+      }
+      url = `data:application/json;base64,${btoa(binary)}`;
+    }
+
+    const downloadId = await chrome.downloads.download({ url, filename, saveAs: false });
+    if (cleanupUrl) {
+      setTimeout(cleanupUrl, 10000);
+    }
     // Attempt to resolve full path
     try {
       await new Promise((r) => setTimeout(r, 120));
@@ -205,45 +235,45 @@ async function saveTraceToNativeTemp(
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `${filenamePrefix}_${timestamp}.json`;
     const safeJson = prepareSafeTraceForNative(events);
-    const base64 = btoa(unescape(encodeURIComponent(safeJson)));
+
+    // Optimized string to base64 encoding without unescape/encodeURIComponent memory explosion
+    const bytes = new TextEncoder().encode(safeJson);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+    }
+    const base64 = btoa(binary);
 
     const requestId = `trace-temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const timeoutMs = 30000;
     const resp = await new Promise<any>((resolve, reject) => {
       const timer = setTimeout(() => {
-        chrome.runtime.onMessage.removeListener(listener);
+        cancelFileOperation(requestId);
         reject(new Error('Native temp save timed out'));
       }, timeoutMs);
-      const listener = (message: any) => {
-        if (
-          message &&
-          message.type === 'file_operation_response' &&
-          message.responseToRequestId === requestId
-        ) {
-          clearTimeout(timer);
-          chrome.runtime.onMessage.removeListener(listener);
-          resolve(message.payload);
-        }
-      };
-      chrome.runtime.onMessage.addListener(listener);
-      chrome.runtime
-        .sendMessage({
-          type: 'forward_to_native',
-          message: {
-            type: 'file_operation',
-            requestId,
-            payload: {
-              action: 'prepareFile',
-              base64Data: base64,
-              fileName: filename,
-            },
+
+      const ok = sendFileOperationToNative(
+        {
+          type: 'file_operation',
+          requestId,
+          payload: {
+            action: 'prepareFile',
+            base64Data: base64,
+            fileName: filename,
           },
-        })
-        .catch((err) => {
+        },
+        (message: any) => {
           clearTimeout(timer);
-          chrome.runtime.onMessage.removeListener(listener);
-          reject(err);
-        });
+          resolve(message.payload);
+        },
+      );
+
+      if (!ok) {
+        clearTimeout(timer);
+        reject(new Error('Native host not connected'));
+      }
     });
 
     if (resp && resp.success && resp.filePath) {
@@ -262,38 +292,29 @@ async function cleanupNativeTempFile(filePath: string): Promise<void> {
     const timeoutMs = 10000;
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
-        chrome.runtime.onMessage.removeListener(listener);
+        cancelFileOperation(requestId);
         resolve(); // best-effort
       }, timeoutMs);
-      const listener = (message: any) => {
-        if (
-          message &&
-          message.type === 'file_operation_response' &&
-          message.responseToRequestId === requestId
-        ) {
-          clearTimeout(timer);
-          chrome.runtime.onMessage.removeListener(listener);
-          resolve();
-        }
-      };
-      chrome.runtime.onMessage.addListener(listener);
-      chrome.runtime
-        .sendMessage({
-          type: 'forward_to_native',
-          message: {
-            type: 'file_operation',
-            requestId,
-            payload: {
-              action: 'cleanupFile',
-              filePath,
-            },
+
+      const ok = sendFileOperationToNative(
+        {
+          type: 'file_operation',
+          requestId,
+          payload: {
+            action: 'cleanupFile',
+            filePath,
           },
-        })
-        .catch(() => {
+        },
+        () => {
           clearTimeout(timer);
-          chrome.runtime.onMessage.removeListener(listener);
           resolve();
-        });
+        },
+      );
+
+      if (!ok) {
+        clearTimeout(timer);
+        resolve();
+      }
     });
   } catch {
     // ignore
@@ -541,35 +562,26 @@ class PerformanceAnalyzeInsightTool extends BaseBrowserToolExecutor {
           const timeoutMs = Math.max(10000, Math.min((args as any)?.timeoutMs ?? 60000, 300000));
           const resp = await new Promise<any>((resolve, reject) => {
             const timer = setTimeout(() => {
-              chrome.runtime.onMessage.removeListener(listener);
+              cancelFileOperation(requestId);
               reject(new Error('Native trace analysis timed out'));
             }, timeoutMs);
-            const listener = (message: any) => {
-              if (
-                message &&
-                message.type === 'file_operation_response' &&
-                message.responseToRequestId === requestId
-              ) {
+
+            const ok = sendFileOperationToNative(
+              {
+                type: 'file_operation',
+                requestId,
+                payload: { action: 'analyzeTrace', traceFilePath: fullPath, insightName },
+              },
+              (message: any) => {
                 clearTimeout(timer);
-                chrome.runtime.onMessage.removeListener(listener);
-                resolve(message.payload);
-              }
-            };
-            chrome.runtime.onMessage.addListener(listener);
-            chrome.runtime
-              .sendMessage({
-                type: 'forward_to_native',
-                message: {
-                  type: 'file_operation',
-                  requestId,
-                  payload: { action: 'analyzeTrace', traceFilePath: fullPath, insightName },
-                },
-              })
-              .catch((err) => {
-                clearTimeout(timer);
-                chrome.runtime.onMessage.removeListener(listener);
-                reject(err);
-              });
+                resolve(message?.payload);
+              },
+            );
+
+            if (!ok) {
+              clearTimeout(timer);
+              reject(new Error('Native host not connected'));
+            }
           });
           if (resp && resp.success) {
             // Best-effort cleanup for temp files (Downloads paths are ignored by native cleaner)

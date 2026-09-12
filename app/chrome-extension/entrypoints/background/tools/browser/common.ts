@@ -46,6 +46,82 @@ export function hasIpOrCustomPort(urlStr: string): boolean {
 class NavigateTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.NAVIGATE;
 
+  private async navigateAndWait(
+    tabId: number,
+    action: () => Promise<any>,
+    timeoutMs = 15000,
+  ): Promise<void> {
+    if (typeof chrome === 'undefined' || !chrome.tabs?.onUpdated?.addListener) {
+      await action();
+      return;
+    }
+
+    let cleanup: (() => void) | undefined;
+    const navPromise = new Promise<void>((resolve) => {
+      const listener = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+        if (updatedTabId === tabId && changeInfo.status === 'complete') {
+          if (cleanup) cleanup();
+          resolve();
+        }
+      };
+      chrome.tabs.onUpdated.addListener(listener);
+      const timer = setTimeout(() => {
+        if (cleanup) cleanup();
+        resolve();
+      }, timeoutMs);
+      cleanup = () => {
+        clearTimeout(timer);
+        try {
+          chrome.tabs.onUpdated.removeListener(listener);
+        } catch {}
+      };
+    });
+
+    try {
+      await action();
+      await navPromise;
+    } finally {
+      if (cleanup) cleanup();
+    }
+
+    await waitForPageSettle(tabId, { timeoutMs: 1500, quietPeriodMs: 100 }).catch(() => {});
+  }
+
+  private async waitForTabNavigationComplete(tabId: number, timeoutMs = 15000): Promise<void> {
+    if (typeof chrome === 'undefined' || !chrome.tabs?.onUpdated?.addListener) {
+      return;
+    }
+    try {
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      if (tab?.status !== 'complete') {
+        let cleanup: (() => void) | undefined;
+        await new Promise<void>((resolve) => {
+          const listener = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+            if (updatedTabId === tabId && changeInfo.status === 'complete') {
+              if (cleanup) cleanup();
+              resolve();
+            }
+          };
+          chrome.tabs.onUpdated.addListener(listener);
+          const timer = setTimeout(() => {
+            if (cleanup) cleanup();
+            resolve();
+          }, timeoutMs);
+          cleanup = () => {
+            clearTimeout(timer);
+            try {
+              chrome.tabs.onUpdated.removeListener(listener);
+            } catch {}
+          };
+        });
+      }
+
+      await waitForPageSettle(tabId, { timeoutMs: 1500, quietPeriodMs: 100 }).catch(() => {});
+    } catch {
+      // Non-blocking fallback
+    }
+  }
+
   async execute(args: NavigateToolParams): Promise<ToolResult> {
     const {
       newWindow = false,
@@ -72,32 +148,15 @@ class NavigateTool extends BaseBrowserToolExecutor {
         const targetTab = await this.resolveAffinityTab({ tabId, windowId, sessionId });
         if (!targetTab.id) return createErrorResponse('No target tab found to refresh');
         if (targetTab.url && targetTab.id) {
-          actionHistoryManager.pushAction(targetTab.id, { type: 'navigate', prevUrl: targetTab.url, timestamp: Date.now() });
+          actionHistoryManager.pushAction(targetTab.id, {
+            type: 'navigate',
+            prevUrl: targetTab.url,
+            timestamp: Date.now(),
+          });
         }
         const targetTabId = targetTab.id;
 
-        const reloadCompletePromise = new Promise<void>((resolve) => {
-          let timer: any;
-          const listener = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
-            if (updatedTabId === targetTabId && changeInfo.status === 'complete') {
-              cleanup();
-              resolve();
-            }
-          };
-          const cleanup = () => {
-            clearTimeout(timer);
-            chrome.tabs.onUpdated.removeListener(listener);
-          };
-          chrome.tabs.onUpdated.addListener(listener);
-          timer = setTimeout(() => {
-            cleanup();
-            resolve();
-          }, 15000);
-        });
-
-        await chrome.tabs.reload(targetTabId);
-        await reloadCompletePromise;
-        await waitForPageSettle(targetTabId, { timeoutMs: 1500, quietPeriodMs: 100 });
+        await this.navigateAndWait(targetTabId, () => chrome.tabs.reload(targetTabId));
 
         console.log(`Refreshed and settled tab ID: ${targetTabId}`);
 
@@ -139,7 +198,7 @@ class NavigateTool extends BaseBrowserToolExecutor {
           const isAllowed = await chrome.extension.isAllowedFileSchemeAccess();
           if (!isAllowed) {
             return createErrorResponse(
-              `Navigation to 'file://' URLs is blocked by Chrome security policy. Please enable "Allow access to file URLs" for the Chrome MCP extension in chrome://extensions/?id=${chrome.runtime.id} and retry.`
+              `Navigation to 'file://' URLs is blocked by Chrome security policy. Please enable "Allow access to file URLs" for the Chrome MCP extension in chrome://extensions/?id=${chrome.runtime.id} and retry.`,
             );
           }
         } catch {
@@ -184,7 +243,6 @@ class NavigateTool extends BaseBrowserToolExecutor {
       // 1. Check if URL is already open
       // Prefer Chrome's URL match patterns for robust matching (host/path variations)
       console.log(`Checking if URL is already open: ${url}`);
-
 
       // Build robust match patterns from the provided URL.
       // This mirrors the approach in CloseTabsTool: ensure wildcard path and
@@ -243,7 +301,9 @@ class NavigateTool extends BaseBrowserToolExecutor {
         } catch {
           candidateTabs = allTabs.filter((t) => t.url && t.url.startsWith(url));
         }
-        console.log(`Found ${candidateTabs.length} matching tabs via memory filter for IP/port URL: ${url}`);
+        console.log(
+          `Found ${candidateTabs.length} matching tabs via memory filter for IP/port URL: ${url}`,
+        );
       } else {
         const urlPatterns = buildUrlPatterns(url);
         try {
@@ -333,7 +393,9 @@ class NavigateTool extends BaseBrowserToolExecutor {
         );
         // Update URL when explicit tab specified or when existingTab URL differs from requested url
         if (typeof existingTab.id === 'number' && (explicitTab || existingTab.url !== url)) {
-          await chrome.tabs.update(existingTab.id, { url });
+          await this.navigateAndWait(existingTab.id, () =>
+            chrome.tabs.update(existingTab.id!, { url }),
+          );
         }
         // Optionally bring to foreground only if background is explicitly false (P0-1)
         await this.ensureFocus(existingTab, {
@@ -383,6 +445,9 @@ class NavigateTool extends BaseBrowserToolExecutor {
           if (firstTab?.id && sessionId) {
             sessionTabAffinity.setAffinity(sessionId, firstTab.id);
           }
+          if (firstTab?.id) {
+            await this.waitForTabNavigationComplete(firstTab.id);
+          }
 
           return {
             content: [
@@ -425,13 +490,16 @@ class NavigateTool extends BaseBrowserToolExecutor {
           });
           if (newTab.id) {
             if (args.autoGroup !== false) {
-              await tabGroupManager.ensureAgentTabGroup(newTab.id, {
-                title: args.groupTitle,
-                color: args.groupColor,
-                windowId: targetWindow.id,
-              }).catch(() => {});
+              await tabGroupManager
+                .ensureAgentTabGroup(newTab.id, {
+                  title: args.groupTitle,
+                  color: args.groupColor,
+                  windowId: targetWindow.id,
+                })
+                .catch(() => {});
             }
             await tabFaviconManager.setAgentFavicon(newTab.id).catch(() => {});
+            await this.waitForTabNavigationComplete(newTab.id);
           }
           if (sessionId && newTab.id) {
             sessionTabAffinity.setAffinity(sessionId, newTab.id);
@@ -543,7 +611,12 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
             const u = new URL(uStr);
             if (u.port && u.port !== '80' && u.port !== '443') return true;
             const h = u.hostname.toLowerCase();
-            return h === 'localhost' || h === '127.0.0.1' || /^(\d{1,3}\.){3}\d{1,3}$/.test(h) || h.includes(':');
+            return (
+              h === 'localhost' ||
+              h === '127.0.0.1' ||
+              /^(\d{1,3}\.){3}\d{1,3}$/.test(h) ||
+              h.includes(':')
+            );
           } catch {
             return false;
           }
@@ -569,7 +642,9 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
               }
             });
           } catch {
-            tabs = allTabs.filter((t) => t.url && (t.url === urlPattern || t.url.startsWith(urlPattern!)));
+            tabs = allTabs.filter(
+              (t) => t.url && (t.url === urlPattern || t.url.startsWith(urlPattern!)),
+            );
           }
         } else {
           try {
@@ -639,10 +714,10 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
         }
 
         for (const tid of tabIdsToClose) {
-            await tabFaviconManager.restoreFavicon(tid).catch(() => {});
-          }
-          await chrome.tabs.remove(tabIdsToClose);
-          await tabGroupManager.cleanupEmptyOrOrphanGroups().catch(() => {});
+          await tabFaviconManager.restoreFavicon(tid).catch(() => {});
+        }
+        await chrome.tabs.remove(tabIdsToClose);
+        await tabGroupManager.cleanupEmptyOrOrphanGroups().catch(() => {});
 
         return {
           content: [
@@ -698,10 +773,10 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
         }
 
         for (const tid of validTabIds) {
-            await tabFaviconManager.restoreFavicon(tid).catch(() => {});
-          }
-          await chrome.tabs.remove(validTabIds);
-          await tabGroupManager.cleanupEmptyOrOrphanGroups().catch(() => {});
+          await tabFaviconManager.restoreFavicon(tid).catch(() => {});
+        }
+        await chrome.tabs.remove(validTabIds);
+        await tabGroupManager.cleanupEmptyOrOrphanGroups().catch(() => {});
 
         return {
           content: [

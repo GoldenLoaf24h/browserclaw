@@ -16,8 +16,12 @@ if not exist "%LOG_DIR%" (
     if not exist "!LOG_DIR!" mkdir "!LOG_DIR!" 2>nul
 )
 
-REM Generate timestamp
-for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format 'yyyyMMdd_HHmmss'"') do set "TIMESTAMP=%%i"
+REM Generate timestamp (pure cmd string substitution, no slow PowerShell invocation)
+set "TS_RAW=%DATE%_%TIME%"
+set "TIMESTAMP=%TS_RAW:/=-%"
+set "TIMESTAMP=%TIMESTAMP::=-%"
+set "TIMESTAMP=%TIMESTAMP: =_%"
+set "TIMESTAMP=%TIMESTAMP:.=-%"
 set "WRAPPER_LOG=%LOG_DIR%\native_host_wrapper_windows_%TIMESTAMP%.log"
 set "STDERR_LOG=%LOG_DIR%\native_host_stderr_windows_%TIMESTAMP%.log"
 

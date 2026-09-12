@@ -1,11 +1,11 @@
-import { createErrorResponse, ToolResult } from "@/common/tool-handler";
-import { BaseBrowserToolExecutor } from "../base-browser";
-import { TOOL_NAMES } from "chrome-mcp-shared";
-import { cdpSessionManager } from "@/utils/cdp-session-manager";
+import { createErrorResponse, ToolResult } from '@/common/tool-handler';
+import { BaseBrowserToolExecutor } from '../base-browser';
+import { TOOL_NAMES } from 'chrome-mcp-shared';
+import { cdpSessionManager } from '@/utils/cdp-session-manager';
 
 export interface InterceptApiParams {
   urlPattern: string;
-  triggerAction?: "inspect_recent" | "wait_next";
+  triggerAction?: 'inspect_recent' | 'wait_next';
   timeoutMs?: number;
   tabId?: number;
   sessionId?: string;
@@ -41,79 +41,113 @@ class ApiInterceptorStore {
   }
 
   public matchesPattern(url: string, pattern: string): boolean {
-    if (!pattern || pattern === "*") return true;
+    if (!pattern || pattern === '*') return true;
     const clean = pattern.trim().toLowerCase();
     const targetUrl = url.toLowerCase();
-    if (clean.includes("*")) {
-      const sub = clean.replace(/\*/g, "");
+    if (clean.includes('*')) {
+      const sub = clean.replace(/\*/g, '');
       return targetUrl.includes(sub);
     }
     return targetUrl.includes(clean);
   }
+  public clearTab(tabId: number): void {
+    this.recentResponses.delete(tabId);
+  }
 }
 
 const apiInterceptorStore = new ApiInterceptorStore();
+
+if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved?.addListener) {
+  try {
+    chrome.tabs.onRemoved.addListener((tabId: number) => {
+      apiInterceptorStore.clearTab(tabId);
+    });
+  } catch {}
+}
 
 export class InterceptApiTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.INTERCEPT_API;
 
   async execute(args: InterceptApiParams): Promise<ToolResult> {
     if (!args || !args.urlPattern || !args.urlPattern.trim()) {
-      return createErrorResponse("urlPattern is required (e.g. \"*/api/v1/data*\")");
+      return createErrorResponse('urlPattern is required (e.g. "*/api/v1/data*")');
     }
 
     const sessionId = args.sessionId || args.sessionContext;
     let targetTab: chrome.tabs.Tab;
     try {
-      if (typeof args.tabId === "number") {
+      if (typeof args.tabId === 'number') {
         const t = await this.tryGetTab(args.tabId, sessionId);
-        if (!t || !t.id) return createErrorResponse("Tab not found");
+        if (!t || !t.id) return createErrorResponse('Tab not found');
         targetTab = t;
       } else {
         targetTab = await this.resolveAffinityTab({ tabId: args.tabId, sessionId });
       }
     } catch (e: any) {
-      return createErrorResponse("Failed to resolve tab: " + e.message);
+      return createErrorResponse('Failed to resolve tab: ' + e.message);
     }
 
     const tabId = targetTab.id;
-    if (typeof tabId !== "number") return createErrorResponse("Invalid tab ID");
+    if (typeof tabId !== 'number') return createErrorResponse('Invalid tab ID');
 
     const pattern = args.urlPattern.trim();
-    const action = args.triggerAction || "inspect_recent";
-    const timeoutMs = typeof args.timeoutMs === "number" && args.timeoutMs > 0 ? args.timeoutMs : 10000;
+    const action = args.triggerAction || 'inspect_recent';
+    const timeoutMs =
+      typeof args.timeoutMs === 'number' && args.timeoutMs > 0 ? args.timeoutMs : 10000;
 
-    if (action === "inspect_recent") {
+    if (action === 'inspect_recent') {
       const cached = apiInterceptorStore.findRecent(tabId, pattern);
       if (cached) {
         return {
-          content: [{ type: "text", text: JSON.stringify({ success: true, source: "recent-cache", ...cached }, null, 2) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ success: true, source: 'recent-cache', ...cached }, null, 2),
+            },
+          ],
           isError: false,
         };
       }
     }
 
+    let listener:
+      ((source: chrome.debugger.Debuggee, method: string, params?: any) => void) | null = null;
+    let timeoutTimer: any = null;
+
     try {
-      await cdpSessionManager.sendCommand(tabId, "Network.enable");
+      await cdpSessionManager.sendCommand(tabId, 'Network.enable');
       const capturePromise = new Promise<CapturedApiResponse>((resolve) => {
-        const listener = async (source: chrome.debugger.Debuggee, method: string, params?: any) => {
+        listener = async (source: chrome.debugger.Debuggee, method: string, params?: any) => {
           if (source.tabId !== tabId) return;
-          if (method === "Network.responseReceived" && params?.response) {
-            const respUrl = params.response.url || "";
+          if (method === 'Network.responseReceived' && params?.response) {
+            const respUrl = params.response.url || '';
             if (apiInterceptorStore.matchesPattern(respUrl, pattern)) {
-              chrome.debugger.onEvent.removeListener(listener);
+              if (listener) {
+                chrome.debugger.onEvent.removeListener(listener);
+                listener = null;
+              }
               try {
-                const bodyObj: any = await cdpSessionManager.sendCommand(tabId, "Network.getResponseBody", { requestId: params.requestId });
-                let decoded = bodyObj?.body || "";
-                if (bodyObj?.base64Encoded) { try { decoded = atob(decoded); } catch {} }
+                const bodyObj: any = await cdpSessionManager.sendCommand(
+                  tabId,
+                  'Network.getResponseBody',
+                  { requestId: params.requestId },
+                );
+                let decoded = bodyObj?.body || '';
+                if (bodyObj?.base64Encoded) {
+                  try {
+                    decoded = atob(decoded);
+                  } catch {}
+                }
                 let parsed: any = decoded;
-                try { parsed = JSON.parse(decoded); } catch {}
+                try {
+                  parsed = JSON.parse(decoded);
+                } catch {}
 
                 const item: CapturedApiResponse = {
                   requestId: params.requestId,
                   url: respUrl,
                   status: params.response.status,
-                  mimeType: params.response.mimeType || "application/json",
+                  mimeType: params.response.mimeType || 'application/json',
                   timestamp: Date.now(),
                   data: parsed,
                 };
@@ -124,7 +158,7 @@ export class InterceptApiTool extends BaseBrowserToolExecutor {
                   requestId: params.requestId,
                   url: respUrl,
                   status: params.response.status,
-                  mimeType: "unknown",
+                  mimeType: 'unknown',
                   timestamp: Date.now(),
                   data: { error: e.message },
                 });
@@ -135,17 +169,43 @@ export class InterceptApiTool extends BaseBrowserToolExecutor {
         chrome.debugger.onEvent.addListener(listener);
       });
 
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timed out waiting for API response matching: " + pattern)), timeoutMs),
-      );
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutTimer = setTimeout(() => {
+          if (
+            listener &&
+            typeof chrome !== 'undefined' &&
+            chrome.debugger?.onEvent?.removeListener
+          ) {
+            try {
+              chrome.debugger.onEvent.removeListener(listener);
+              listener = null;
+            } catch {}
+          }
+          reject(new Error('Timed out waiting for API response matching: ' + pattern));
+        }, timeoutMs);
+      });
 
       const outcome: any = await Promise.race([capturePromise, timeoutPromise]);
+      clearTimeout(timeoutTimer);
       return {
-        content: [{ type: "text", text: JSON.stringify({ success: true, source: "live-intercept", ...outcome }, null, 2) }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ success: true, source: 'live-intercept', ...outcome }, null, 2),
+          },
+        ],
         isError: false,
       };
     } catch (e: any) {
-      return createErrorResponse("API intercept failed: " + e.message);
+      clearTimeout(timeoutTimer);
+      return createErrorResponse('API intercept failed: ' + e.message);
+    } finally {
+      if (listener && typeof chrome !== 'undefined' && chrome.debugger?.onEvent?.removeListener) {
+        try {
+          chrome.debugger.onEvent.removeListener(listener);
+          listener = null;
+        } catch {}
+      }
     }
   }
 }

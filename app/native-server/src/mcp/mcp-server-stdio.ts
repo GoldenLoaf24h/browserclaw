@@ -142,7 +142,11 @@ export const setupTools = (server: Server) => {
     }
 
     // Dynamic activation hook for chrome_tool_docs
-    if (name === 'chrome_tool_docs' && (args as any)?.activateForSession && (args as any)?.category) {
+    if (
+      name === 'chrome_tool_docs' &&
+      (args as any)?.activateForSession &&
+      (args as any)?.category
+    ) {
       const cat = (args as any).category;
       const catList = TOOL_CATEGORIES[cat] ? TOOL_CATEGORIES[cat].split(' ') : [];
       for (const tName of catList) dynamicExtraTools.add(tName);
@@ -194,7 +198,9 @@ const handleToolCall = async (name: string, args: any): Promise<CallToolResult> 
     return await executeCall();
   } catch (error: any) {
     if (isConnectionError(error)) {
-      console.warn(`[Stdio MCP] Connection lost during tool call (${error.message}). Attempting auto-reconnect...`);
+      console.warn(
+        `[Stdio MCP] Connection lost during tool call (${error.message}). Attempting auto-reconnect...`,
+      );
       try {
         mcpClient?.close();
       } catch {}
@@ -228,7 +234,7 @@ const handleToolCall = async (name: string, args: any): Promise<CallToolResult> 
 };
 
 let isExiting = false;
-export function triggerCleanExit(code = 0): void {
+export async function triggerCleanExit(code = 0): Promise<void> {
   if (isExiting) return;
   isExiting = true;
 
@@ -241,9 +247,28 @@ export function triggerCleanExit(code = 0): void {
   // Teardown client and transport
   if (mcpClient) {
     try {
-      mcpClient.close();
+      await mcpClient.close();
     } catch {}
   }
+  if (stdioMcpServer) {
+    try {
+      await stdioMcpServer.close();
+    } catch {}
+  }
+
+  // Allow stdio streams to flush before exiting
+  if (process.stdout.writableLength > 0 || process.stderr.writableLength > 0) {
+    await new Promise<void>((resolve) => {
+      let remaining = 2;
+      const done = () => {
+        if (--remaining <= 0) resolve();
+      };
+      process.stdout.write('', () => done());
+      process.stderr.write('', () => done());
+      setTimeout(resolve, 100);
+    });
+  }
+
   process.exit(code);
 }
 
@@ -274,8 +299,11 @@ async function main() {
 
   // Check parent PID from args or env or default to process.ppid
   const parentPidArgIndex = process.argv.indexOf('--parent-pid');
-  const parentPidVal = parentPidArgIndex !== -1 ? parseInt(process.argv[parentPidArgIndex + 1], 10) : undefined;
-  const parentPid = parentPidVal || (process.env.MCP_PARENT_PID ? parseInt(process.env.MCP_PARENT_PID, 10) : process.ppid);
+  const parentPidVal =
+    parentPidArgIndex !== -1 ? parseInt(process.argv[parentPidArgIndex + 1], 10) : undefined;
+  const parentPid =
+    parentPidVal ||
+    (process.env.MCP_PARENT_PID ? parseInt(process.env.MCP_PARENT_PID, 10) : process.ppid);
   if (parentPid && parentPid > 1) {
     startParentWatchdog(parentPid);
   }

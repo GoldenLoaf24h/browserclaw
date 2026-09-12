@@ -2,17 +2,21 @@ import { createErrorResponse, ToolResult } from '../../../../common/tool-handler
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { cdpSessionManager } from '../../../../utils/cdp-session-manager';
-import { raceCdp, DialogOpenedError, createDialogInterruptResponse } from '../../../../utils/race-cdp';
+import {
+  raceCdp,
+  DialogOpenedError,
+  createDialogInterruptResponse,
+} from '../../../../utils/race-cdp';
 import { executeInPage } from './in-page-engine';
 import { waitForPageSettle } from '../../../../utils/action-watchdog';
-import {
-  inPageArmDeliveryProbe,
-  inPageReadDeliveryProbe,
-} from './dom-indexer';
+import { inPageArmDeliveryProbe, inPageReadDeliveryProbe } from './dom-indexer';
 import { screenshotContextManager, scaleCoordinates } from '../../../../utils/screenshot-context';
 import { computeHumanizedPoints } from '../../../../utils/mouse-trajectory';
 import type { CdpEventObserver } from '../../../../utils/cdp-session-manager';
-import { parseUnifiedCoordinate, type PolymorphicCoordinate } from '../../../../utils/coordinate-parser';
+import {
+  parseUnifiedCoordinate,
+  type PolymorphicCoordinate,
+} from '../../../../utils/coordinate-parser';
 import { sessionTabAffinity } from '../../../../utils/session-tab-affinity';
 import { animateAgentCursor } from './agent-cursor';
 import { captureDeltaIfRequested } from '../../../../utils/delta-helper';
@@ -55,6 +59,62 @@ if (typeof chrome !== 'undefined' && chrome?.tabs?.onRemoved?.addListener) {
 
 export { computeHumanizedPoints };
 
+export async function getSubframeViewportOffset(
+  tabId: number,
+  frameId: number,
+): Promise<{ offsetX: number; offsetY: number }> {
+  if (!frameId || frameId === 0) return { offsetX: 0, offsetY: 0 };
+  try {
+    let frameUrl: string | undefined;
+    if (typeof chrome !== 'undefined' && chrome.webNavigation?.getFrame) {
+      const details = await chrome.webNavigation.getFrame({ tabId, frameId }).catch(() => null);
+      frameUrl = details?.url;
+    }
+
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (targetUrl?: string) => {
+        const iframes = Array.from(document.querySelectorAll('iframe'));
+        if (iframes.length === 0) return { offsetX: 0, offsetY: 0 };
+        let match = iframes.find((f) => {
+          try {
+            return (
+              targetUrl &&
+              f.src &&
+              (f.src === targetUrl || targetUrl.startsWith(f.src) || f.src.startsWith(targetUrl))
+            );
+          } catch {
+            return false;
+          }
+        });
+        if (!match) {
+          match = iframes[0];
+        }
+        if (match) {
+          const rect = match.getBoundingClientRect();
+          const style = window.getComputedStyle(match);
+          const borderLeft = parseFloat(style?.borderLeftWidth || '0') || 0;
+          const borderTop = parseFloat(style?.borderTopWidth || '0') || 0;
+          return {
+            offsetX: Math.round(rect.left + borderLeft),
+            offsetY: Math.round(rect.top + borderTop),
+          };
+        }
+        return { offsetX: 0, offsetY: 0 };
+      },
+      args: [frameUrl],
+    });
+
+    const res = results?.[0]?.result;
+    if (res && typeof res.offsetX === 'number' && typeof res.offsetY === 'number') {
+      return res;
+    }
+  } catch (err) {
+    console.warn(`Failed to resolve subframe ${frameId} viewport offset:`, err);
+  }
+  return { offsetX: 0, offsetY: 0 };
+}
+
 /**
  * Resolve drag end point from end.index / end.coordinate. Returns viewport coordinates.
  */
@@ -65,14 +125,40 @@ async function resolveDragEndPoint(
 ): Promise<{ x: number; y: number } | null> {
   if (!end) return null;
   if (typeof end.index === 'number' && end.index > 0) {
-    let coordResult: any = (await executeInPage({ tabId }, 'inPageGetElementCoordinates', [end.index]))?.[0]?.result;
+    let coordResult: any = (
+      await executeInPage({ tabId }, 'inPageGetElementCoordinates', [end.index])
+    )?.[0]?.result;
+    let endFrameId: number | undefined = undefined;
     if (!coordResult?.success) {
-      const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageGetElementCoordinates', [end.index]);
+      const frameResults = await executeInPage(
+        { tabId, allFrames: true },
+        'inPageGetElementCoordinates',
+        [end.index],
+      );
       const match = frameResults.find((r) => r.result?.success);
-      if (match?.result) coordResult = match.result;
+      if (match?.result) {
+        coordResult = match.result;
+        endFrameId = match.frameId;
+      }
     }
-    if (coordResult?.success && typeof coordResult.x === 'number' && typeof coordResult.y === 'number') {
-      return { x: coordResult.x, y: coordResult.y };
+    if (
+      coordResult?.success &&
+      typeof coordResult.x === 'number' &&
+      typeof coordResult.y === 'number'
+    ) {
+      let endX = coordResult.x;
+      let endY = coordResult.y;
+      if (
+        endFrameId &&
+        endFrameId !== 0 &&
+        !coordResult.frameOffsetX &&
+        !coordResult.frameOffsetY
+      ) {
+        const offset = await getSubframeViewportOffset(tabId, endFrameId);
+        endX += offset.offsetX;
+        endY += offset.offsetY;
+      }
+      return { x: endX, y: endY };
     }
     return null;
   }
@@ -88,7 +174,11 @@ async function resolveDragEndPoint(
       if (coordinateSpace === 'screenshot') {
         const ctx = screenshotContextManager.getContext(tabId);
         if (ctx) {
-          const scaled = scaleCoordinates((end.coordinate as any).x, (end.coordinate as any).y, ctx);
+          const scaled = scaleCoordinates(
+            (end.coordinate as any).x,
+            (end.coordinate as any).y,
+            ctx,
+          );
           return { x: scaled.x, y: scaled.y };
         }
       }
@@ -175,7 +265,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         typeof (args.coordinate as any).y === 'number' &&
         !isNaN((args.coordinate as any).x) &&
         !isNaN((args.coordinate as any).y)) ||
-      (args?.coordinate && parseUnifiedCoordinate(args.coordinate))
+      (args?.coordinate && parseUnifiedCoordinate(args.coordinate)),
     );
 
     if (!hasIndex && !hasCoord && !hasPoints) {
@@ -213,8 +303,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       // input silently landed on whatever page the user was viewing. Surface
       // that fallback in the response so the agent can correct with an
       // explicit tabId. Non-blocking for backward compatibility.
-      const explicitOrBound =
-        typeof args.tabId === 'number' || interactHadPreexistingBinding;
+      const explicitOrBound = typeof args.tabId === 'number' || interactHadPreexistingBinding;
       const affinityWarning = explicitOrBound
         ? undefined
         : `input routed to active tab (tabId=${tabId}); pass explicit tabId to target another tab`;
@@ -298,7 +387,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         let burstDelivery: Record<string, unknown> = {};
         if (probeArmed) {
           try {
-            const probe = (await executeInPage({ tabId }, 'inPageReadDeliveryProbe', [true]))?.[0]?.result;
+            const probe = (await executeInPage({ tabId }, 'inPageReadDeliveryProbe', [true]))?.[0]
+              ?.result;
             burstDelivery = probe?.delivered
               ? { deliveryVerified: true }
               : { deliveryVerified: false, deliveryHits: probe?.hits ?? [] };
@@ -351,7 +441,11 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
 
         // Check subframes if not in main frame
         if (!coordResult || !coordResult.success) {
-          const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageGetElementCoordinates', [args.index!]);
+          const frameResults = await executeInPage(
+            { tabId, allFrames: true },
+            'inPageGetElementCoordinates',
+            [args.index!],
+          );
           const match = frameResults.find((r) => r.result?.success);
           if (match?.result) {
             coordResult = match.result;
@@ -370,7 +464,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             isFallback = true;
           } else {
             return createErrorResponse(
-              coordResult?.error || `Element with index [${args.index}] not found in active DOM index map`,
+              coordResult?.error ||
+                `Element with index [${args.index}] not found in active DOM index map`,
             );
           }
         } else {
@@ -382,9 +477,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       }
 
       if (typeof x !== 'number' || typeof y !== 'number') {
-        return createErrorResponse(
-          `Failed to resolve valid pixel coordinates for interaction`,
-        );
+        return createErrorResponse(`Failed to resolve valid pixel coordinates for interaction`);
       }
 
       // Animate virtual agent cursor to target position before physical interaction
@@ -423,8 +516,11 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         // same-origin iframes positioned at (0,0) (e.g. srcdoc). Compare origins to decide:
         // same-origin iframes must go through native CDP dispatch (isTrusted=true).
         try {
-          const mainOrigin = (await executeInPage({ tabId }, 'inPageGetFrameOrigin', []))?.[0]?.result;
-          const frameOrigin = (await executeInPage({ tabId, frameIds: [targetFrameId] }, 'inPageGetFrameOrigin', []))?.[0]?.result;
+          const mainOrigin = (await executeInPage({ tabId }, 'inPageGetFrameOrigin', []))?.[0]
+            ?.result;
+          const frameOrigin = (
+            await executeInPage({ tabId, frameIds: [targetFrameId] }, 'inPageGetFrameOrigin', [])
+          )?.[0]?.result;
           isCrossOriginSubframe = !mainOrigin || !frameOrigin || mainOrigin !== frameOrigin;
         } catch {
           isCrossOriginSubframe = true;
@@ -433,6 +529,11 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
 
       let dragOutcome: any = undefined;
       if (action === 'drag') {
+        if (isCrossOriginSubframe && targetFrameId) {
+          const offset = await getSubframeViewportOffset(tabId, targetFrameId);
+          x += offset.offsetX;
+          y += offset.offsetY;
+        }
         dragOutcome = { dragIntercepted: false, dndDispatched: false };
         const endPoint = await resolveDragEndPoint(tabId, args.end, args.coordinateSpace);
         if (!endPoint) {
@@ -445,7 +546,9 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           const dragSteps = Math.max(2, Math.min(120, args.steps ?? 48));
           const holdMs = Math.max(0, Math.min(1000, args.holdMs ?? 80));
           if (enableDnd) {
-            await cdpSessionManager.sendCommand(tabId, 'Input.setInterceptDrags', { enabled: true });
+            await cdpSessionManager.sendCommand(tabId, 'Input.setInterceptDrags', {
+              enabled: true,
+            });
           }
           let dragData: any = null;
           const observer: CdpEventObserver = (tid, method, params) => {
@@ -537,10 +640,19 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             // dragIntercepted data instead of pointermove.
             if (!dragData) {
               try {
-                const pmResult = (await executeInPage({ tabId }, 'inPagePointerDragMove', [x, y, endPoint.x, endPoint.y]))?.[0]?.result;
+                const pmResult = (
+                  await executeInPage({ tabId }, 'inPagePointerDragMove', [
+                    x,
+                    y,
+                    endPoint.x,
+                    endPoint.y,
+                  ])
+                )?.[0]?.result;
                 dragOutcome.pointerMove = pmResult ?? null;
               } catch (pmErr) {
-                dragOutcome.pointerMove = { error: String(pmErr instanceof Error ? pmErr.message : pmErr) };
+                dragOutcome.pointerMove = {
+                  error: String(pmErr instanceof Error ? pmErr.message : pmErr),
+                };
               }
             }
             await raceCdp(tabId, 'Input.dispatchMouseEvent', {
@@ -557,18 +669,25 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             cdpSessionManager.removeCdpEventObserver(observer);
             if (enableDnd) {
               try {
-                await cdpSessionManager.sendCommand(tabId, 'Input.setInterceptDrags', { enabled: false });
+                await cdpSessionManager.sendCommand(tabId, 'Input.setInterceptDrags', {
+                  enabled: false,
+                });
               } catch {}
             }
           }
         });
         usedNativeCDP = true;
       } else if (isCrossOriginSubframe) {
-        const frameResults = await executeInPage({ tabId, frameIds: [targetFrameId!] }, 'inPageInteractIndex', [args.index!, action]);
+        const frameResults = await executeInPage(
+          { tabId, frameIds: [targetFrameId!] },
+          'inPageInteractIndex',
+          [args.index!, action],
+        );
         const frameOutcome = frameResults?.[0]?.result;
         if (!frameOutcome?.success) {
           return createErrorResponse(
-            frameOutcome?.error || `Failed to interact with index [${args.index}] in frame ${targetFrameId}`,
+            frameOutcome?.error ||
+              `Failed to interact with index [${args.index}] in frame ${targetFrameId}`,
           );
         }
       } else {
@@ -668,14 +787,17 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
               });
               if (typeof args.index === 'number' && args.index > 0) {
                 try {
-                  await executeInPage({ tabId }, 'inPageInteractIndex', [args.index, 'right_click']);
+                  await executeInPage({ tabId }, 'inPageInteractIndex', [
+                    args.index,
+                    'right_click',
+                  ]);
                 } catch {}
               }
             } else if (action === 'hover') {
               // Mouse movement already dispatched above
             }
           });
-        usedNativeCDP = true;
+          usedNativeCDP = true;
         } catch (cdpErr) {
           if (cdpErr instanceof DialogOpenedError) {
             throw cdpErr;
@@ -690,7 +812,10 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           );
           // Fallback to inPageInteractIndex if CDP is unavailable and index is provided
           if (typeof args.index === 'number' && args.index > 0) {
-            const fallbackResults = await executeInPage({ tabId }, 'inPageInteractIndex', [args.index, action]);
+            const fallbackResults = await executeInPage({ tabId }, 'inPageInteractIndex', [
+              args.index,
+              action,
+            ]);
             const fallbackOutcome = fallbackResults?.[0]?.result;
             if (!fallbackOutcome?.success) {
               return createErrorResponse(
@@ -719,7 +844,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       let fallbackTriggered: string | undefined;
       if (probeArmed && usedNativeCDP) {
         try {
-          const probe = (await executeInPage({ tabId }, 'inPageReadDeliveryProbe', [true]))?.[0]?.result;
+          const probe = (await executeInPage({ tabId }, 'inPageReadDeliveryProbe', [true]))?.[0]
+            ?.result;
           deliveryVerified = Boolean(probe?.delivered);
           if (!deliveryVerified) {
             deliveryHits = probe?.hits ?? [];

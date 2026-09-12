@@ -36,8 +36,9 @@ export async function stitchImages(
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   for (const part of parts) {
+    let img: ImageBitmap | null = null;
     try {
-      const img = await createImageBitmapFromUrl(part.dataUrl);
+      img = await createImageBitmapFromUrl(part.dataUrl);
       const sx = 0;
       const sy = 0;
       const sWidth = img.width;
@@ -53,6 +54,10 @@ export async function stitchImages(
       ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, dy, sWidth, sHeight);
     } catch (error) {
       console.error('Error stitching image part:', error, part);
+    } finally {
+      if (img && typeof img.close === 'function') {
+        img.close();
+      }
     }
   }
   return canvas;
@@ -75,61 +80,66 @@ export async function cropAndResizeImage(
   targetHeightOpt?: number,
 ): Promise<OffscreenCanvas> {
   const img = await createImageBitmapFromUrl(originalDataUrl);
+  try {
+    let sx = cropRectPx.x;
+    let sy = cropRectPx.y;
+    let sWidth = cropRectPx.width;
+    let sHeight = cropRectPx.height;
 
-  let sx = cropRectPx.x;
-  let sy = cropRectPx.y;
-  let sWidth = cropRectPx.width;
-  let sHeight = cropRectPx.height;
+    // Ensure crop area is within image boundaries
+    if (sx < 0) {
+      sWidth += sx;
+      sx = 0;
+    }
+    if (sy < 0) {
+      sHeight += sy;
+      sy = 0;
+    }
+    if (sx + sWidth > img.width) {
+      sWidth = img.width - sx;
+    }
+    if (sy + sHeight > img.height) {
+      sHeight = img.height - sy;
+    }
 
-  // Ensure crop area is within image boundaries
-  if (sx < 0) {
-    sWidth += sx;
-    sx = 0;
+    if (sWidth <= 0 || sHeight <= 0) {
+      throw new Error(
+        'Invalid calculated crop size (<=0). Element may not be visible or fully captured.',
+      );
+    }
+
+    let finalCanvasWidthPx: number;
+    let finalCanvasHeightPx: number;
+
+    if (targetWidthOpt && targetHeightOpt) {
+      finalCanvasWidthPx = targetWidthOpt * dpr;
+      finalCanvasHeightPx = targetHeightOpt * dpr;
+    } else if (targetWidthOpt && !targetHeightOpt) {
+      finalCanvasWidthPx = targetWidthOpt * dpr;
+      finalCanvasHeightPx = Math.round((finalCanvasWidthPx * sHeight) / sWidth);
+    } else if (!targetWidthOpt && targetHeightOpt) {
+      finalCanvasHeightPx = targetHeightOpt * dpr;
+      finalCanvasWidthPx = Math.round((finalCanvasHeightPx * sWidth) / sHeight);
+    } else {
+      finalCanvasWidthPx = sWidth;
+      finalCanvasHeightPx = sHeight;
+    }
+
+    const canvas = new OffscreenCanvas(finalCanvasWidthPx, finalCanvasHeightPx);
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      throw new Error('Unable to get canvas context');
+    }
+
+    ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, finalCanvasWidthPx, finalCanvasHeightPx);
+
+    return canvas;
+  } finally {
+    if (img && typeof img.close === 'function') {
+      img.close();
+    }
   }
-  if (sy < 0) {
-    sHeight += sy;
-    sy = 0;
-  }
-  if (sx + sWidth > img.width) {
-    sWidth = img.width - sx;
-  }
-  if (sy + sHeight > img.height) {
-    sHeight = img.height - sy;
-  }
-
-  if (sWidth <= 0 || sHeight <= 0) {
-    throw new Error(
-      'Invalid calculated crop size (<=0). Element may not be visible or fully captured.',
-    );
-  }
-
-  let finalCanvasWidthPx: number;
-  let finalCanvasHeightPx: number;
-
-  if (targetWidthOpt && targetHeightOpt) {
-    finalCanvasWidthPx = targetWidthOpt * dpr;
-    finalCanvasHeightPx = targetHeightOpt * dpr;
-  } else if (targetWidthOpt && !targetHeightOpt) {
-    finalCanvasWidthPx = targetWidthOpt * dpr;
-    finalCanvasHeightPx = Math.round((finalCanvasWidthPx * sHeight) / sWidth);
-  } else if (!targetWidthOpt && targetHeightOpt) {
-    finalCanvasHeightPx = targetHeightOpt * dpr;
-    finalCanvasWidthPx = Math.round((finalCanvasHeightPx * sWidth) / sHeight);
-  } else {
-    finalCanvasWidthPx = sWidth;
-    finalCanvasHeightPx = sHeight;
-  }
-
-  const canvas = new OffscreenCanvas(finalCanvasWidthPx, finalCanvasHeightPx);
-  const ctx = canvas.getContext('2d');
-
-  if (!ctx) {
-    throw new Error('Unable to get canvas context');
-  }
-
-  ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, finalCanvasWidthPx, finalCanvasHeightPx);
-
-  return canvas;
 }
 
 /**
@@ -177,35 +187,40 @@ export async function compressImage(
 
   // 1. Create an ImageBitmap from the original data URL for efficient drawing.
   const imageBitmap = await createImageBitmapFromUrl(imageDataUrl);
+  try {
+    // 2. Calculate the new dimensions based on the scale factor.
+    const newWidth = Math.round(imageBitmap.width * scale);
+    const newHeight = Math.round(imageBitmap.height * scale);
 
-  // 2. Calculate the new dimensions based on the scale factor.
-  const newWidth = Math.round(imageBitmap.width * scale);
-  const newHeight = Math.round(imageBitmap.height * scale);
+    // 3. Use OffscreenCanvas for performance, as it doesn't need to be in the DOM.
+    const canvas = new OffscreenCanvas(newWidth, newHeight);
+    const ctx = canvas.getContext('2d');
 
-  // 3. Use OffscreenCanvas for performance, as it doesn't need to be in the DOM.
-  const canvas = new OffscreenCanvas(newWidth, newHeight);
-  const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Failed to get 2D context from OffscreenCanvas');
+    }
 
-  if (!ctx) {
-    throw new Error('Failed to get 2D context from OffscreenCanvas');
+    // 4. Draw the original image onto the smaller canvas, effectively resizing it.
+    ctx.drawImage(imageBitmap, 0, 0, newWidth, newHeight);
+
+    // 5. Export the canvas content to the target format with the specified quality.
+    // This is the step that performs the data compression.
+    const compressedDataUrl = await canvas.convertToBlob({ type: format, quality: quality });
+
+    // A helper to convert blob to data URL since OffscreenCanvas.toDataURL is not standard yet
+    // on all execution contexts (like service workers).
+    const dataUrl = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(compressedDataUrl);
+    });
+
+    return { dataUrl, mimeType: format };
+  } finally {
+    if (imageBitmap && typeof imageBitmap.close === 'function') {
+      imageBitmap.close();
+    }
   }
-
-  // 4. Draw the original image onto the smaller canvas, effectively resizing it.
-  ctx.drawImage(imageBitmap, 0, 0, newWidth, newHeight);
-
-  // 5. Export the canvas content to the target format with the specified quality.
-  // This is the step that performs the data compression.
-  const compressedDataUrl = await canvas.convertToBlob({ type: format, quality: quality });
-
-  // A helper to convert blob to data URL since OffscreenCanvas.toDataURL is not standard yet
-  // on all execution contexts (like service workers).
-  const dataUrl = await new Promise<string>((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.readAsDataURL(compressedDataUrl);
-  });
-
-  return { dataUrl, mimeType: format };
 }
 
 /**
@@ -220,85 +235,90 @@ export async function overlayCoordinateGrid(
   quality?: number,
 ): Promise<string> {
   const imageBitmap = await createImageBitmapFromUrl(imageDataUrl);
-  const canvas = new OffscreenCanvas(imageBitmap.width, imageBitmap.height);
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('Failed to get 2D context from OffscreenCanvas');
-  }
+  try {
+    const canvas = new OffscreenCanvas(imageBitmap.width, imageBitmap.height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Failed to get 2D context from OffscreenCanvas');
+    }
 
-  // Draw base image
-  ctx.drawImage(imageBitmap, 0, 0);
+    // Draw base image
+    ctx.drawImage(imageBitmap, 0, 0);
 
-  const stepPx = Math.max(10, Math.round(gridStepCss * dpr));
-  ctx.save();
-  ctx.lineWidth = Math.max(1, Math.round(dpr));
-  ctx.setLineDash([4 * dpr, 4 * dpr]);
-  ctx.strokeStyle = 'rgba(255, 30, 80, 0.35)'; // high contrast semi-transparent red
+    const stepPx = Math.max(10, Math.round(gridStepCss * dpr));
+    ctx.save();
+    ctx.lineWidth = Math.max(1, Math.round(dpr));
+    ctx.setLineDash([4 * dpr, 4 * dpr]);
+    ctx.strokeStyle = 'rgba(255, 30, 80, 0.35)'; // high contrast semi-transparent red
 
-  // Draw vertical grid lines
-  for (let x = stepPx; x < canvas.width; x += stepPx) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
-    ctx.stroke();
-  }
+    // Draw vertical grid lines
+    for (let x = stepPx; x < canvas.width; x += stepPx) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, canvas.height);
+      ctx.stroke();
+    }
 
-  // Draw horizontal grid lines
-  for (let y = stepPx; y < canvas.height; y += stepPx) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
-    ctx.stroke();
-  }
+    // Draw horizontal grid lines
+    for (let y = stepPx; y < canvas.height; y += stepPx) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvas.width, y);
+      ctx.stroke();
+    }
 
-  // Draw coordinate labels at intersections and along axes
-  ctx.setLineDash([]);
-  const fontSize = Math.max(9, Math.round(9 * dpr));
-  ctx.font = `${fontSize}px monospace`;
+    // Draw coordinate labels at intersections and along axes
+    ctx.setLineDash([]);
+    const fontSize = Math.max(9, Math.round(9 * dpr));
+    ctx.font = `${fontSize}px monospace`;
 
-  // Intersections: Draw unobtrusive, semi-transparent labels at 200px intervals (or 100px on small canvases)
-  const intersectionInterval = canvas.width > 800 && canvas.height > 600 ? stepPx * 2 : stepPx;
-  for (let x = intersectionInterval; x < canvas.width; x += intersectionInterval) {
-    for (let y = intersectionInterval; y < canvas.height; y += intersectionInterval) {
+    // Intersections: Draw unobtrusive, semi-transparent labels at 200px intervals (or 100px on small canvases)
+    const intersectionInterval = canvas.width > 800 && canvas.height > 600 ? stepPx * 2 : stepPx;
+    for (let x = intersectionInterval; x < canvas.width; x += intersectionInterval) {
+      for (let y = intersectionInterval; y < canvas.height; y += intersectionInterval) {
+        const xCss = Math.round(x / dpr);
+        const yCss = Math.round(y / dpr);
+        const label = `(${xCss},${yCss})`;
+        const tm = ctx.measureText(label);
+        const pad = 1.5 * dpr;
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.45)'; // semi-transparent slate
+        ctx.fillRect(x + pad, y + pad, tm.width + pad * 2, fontSize + pad * 2);
+        ctx.fillStyle = '#00ffff'; // bright cyan text
+        ctx.fillText(label, x + pad * 2, y + pad + fontSize);
+      }
+    }
+
+    // Along top axis
+    for (let x = stepPx; x < canvas.width; x += stepPx) {
       const xCss = Math.round(x / dpr);
-      const yCss = Math.round(y / dpr);
-      const label = `(${xCss},${yCss})`;
+      const label = `x:${xCss}`;
       const tm = ctx.measureText(label);
       const pad = 1.5 * dpr;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
+      ctx.fillRect(x + pad, pad, tm.width + pad * 2, fontSize + pad * 2);
+      ctx.fillStyle = '#facc15'; // bright amber text
+      ctx.fillText(label, x + pad * 2, pad + fontSize);
+    }
 
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.45)'; // semi-transparent slate
-      ctx.fillRect(x + pad, y + pad, tm.width + pad * 2, fontSize + pad * 2);
-      ctx.fillStyle = '#00ffff'; // bright cyan text
-      ctx.fillText(label, x + pad * 2, y + pad + fontSize);
+    // Along left axis
+    for (let y = stepPx; y < canvas.height; y += stepPx) {
+      const yCss = Math.round(y / dpr);
+      const label = `y:${yCss}`;
+      const tm = ctx.measureText(label);
+      const pad = 1.5 * dpr;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
+      ctx.fillRect(pad, y + pad, tm.width + pad * 2, fontSize + pad * 2);
+      ctx.fillStyle = '#facc15'; // bright amber text
+      ctx.fillText(label, pad * 2, y + pad + fontSize);
+    }
+
+    ctx.restore();
+
+    return await canvasToDataURL(canvas, format, quality);
+  } finally {
+    if (imageBitmap && typeof imageBitmap.close === 'function') {
+      imageBitmap.close();
     }
   }
-
-  // Along top axis
-  for (let x = stepPx; x < canvas.width; x += stepPx) {
-    const xCss = Math.round(x / dpr);
-    const label = `x:${xCss}`;
-    const tm = ctx.measureText(label);
-    const pad = 1.5 * dpr;
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
-    ctx.fillRect(x + pad, pad, tm.width + pad * 2, fontSize + pad * 2);
-    ctx.fillStyle = '#facc15'; // bright amber text
-    ctx.fillText(label, x + pad * 2, pad + fontSize);
-  }
-
-  // Along left axis
-  for (let y = stepPx; y < canvas.height; y += stepPx) {
-    const yCss = Math.round(y / dpr);
-    const label = `y:${yCss}`;
-    const tm = ctx.measureText(label);
-    const pad = 1.5 * dpr;
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
-    ctx.fillRect(pad, y + pad, tm.width + pad * 2, fontSize + pad * 2);
-    ctx.fillStyle = '#facc15'; // bright amber text
-    ctx.fillText(label, pad * 2, y + pad + fontSize);
-  }
-
-  ctx.restore();
-
-  return await canvasToDataURL(canvas, format, quality);
 }
-

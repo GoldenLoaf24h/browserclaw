@@ -358,6 +358,25 @@ async function ensureNativeConnected(trigger: string, portOverride?: unknown): P
 import { safePostMessage, MAX_NATIVE_MESSAGE_BYTES } from '@/utils/safe-post-message';
 export { safePostMessage, MAX_NATIVE_MESSAGE_BYTES };
 
+export type FileOperationResponseCallback = (response: any) => void;
+const fileOperationCallbacks = new Map<string, FileOperationResponseCallback>();
+
+export function sendFileOperationToNative(
+  message: { type: string; requestId: string; payload: any },
+  callback?: FileOperationResponseCallback,
+): boolean {
+  if (!nativePort) return false;
+  if (callback && message.requestId) {
+    fileOperationCallbacks.set(message.requestId, callback);
+  }
+  safePostMessage(nativePort, message);
+  return true;
+}
+
+export function cancelFileOperation(requestId: string): void {
+  fileOperationCallbacks.delete(requestId);
+}
+
 /**
  * Connect to the native messaging host
  * @returns Whether the connection was initiated successfully
@@ -474,9 +493,14 @@ export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): bool
         await saveServerStatus(currentServerStatus);
         broadcastServerStatusChange(currentServerStatus);
         console.log(SUCCESS_MESSAGES.SERVER_STOPPED);
-      } else if (message.type === NativeMessageType.ERROR_FROM_NATIVE_HOST || message.type === NativeMessageType.ERROR) {
+      } else if (
+        message.type === NativeMessageType.ERROR_FROM_NATIVE_HOST ||
+        message.type === NativeMessageType.ERROR
+      ) {
         const errorMsg = message.payload?.message || message.payload || message.error || '';
-        const isBenign = typeof errorMsg === 'string' && (errorMsg.includes('already running') || errorMsg.includes('EADDRINUSE'));
+        const isBenign =
+          typeof errorMsg === 'string' &&
+          (errorMsg.includes('already running') || errorMsg.includes('EADDRINUSE'));
         if (isBenign) {
           console.log('[NativeHost] Server notice (already running / active):', errorMsg);
         } else {
@@ -496,12 +520,24 @@ export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): bool
               await saveServerStatus(currentServerStatus);
               broadcastServerStatusChange(currentServerStatus);
               resetReconnectState();
-              console.log(`${LOG_PREFIX} Self-healed existing running server via HTTP /ping on port ${targetPort}`);
+              console.log(
+                `${LOG_PREFIX} Self-healed existing running server via HTTP /ping on port ${targetPort}`,
+              );
             }
           });
         }
       } else if (message.type === 'file_operation_response') {
-        // Forward file operation response back to the requesting tool
+        const reqId = message.responseToRequestId;
+        if (reqId && fileOperationCallbacks.has(reqId)) {
+          const cb = fileOperationCallbacks.get(reqId)!;
+          fileOperationCallbacks.delete(reqId);
+          try {
+            cb(message);
+          } catch (e) {
+            console.error('[NativeHost] Error in file operation callback:', e);
+          }
+        }
+        // Forward file operation response back to the requesting tool (compat fallback)
         chrome.runtime.sendMessage(message).catch(() => {
           // Ignore if no listeners
         });
@@ -512,6 +548,18 @@ export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): bool
       clearHandshakeTimer();
       console.warn(ERROR_MESSAGES.NATIVE_DISCONNECTED, chrome.runtime.lastError);
       nativePort = null;
+
+      // Fail and clean up all pending file operations immediately
+      for (const [reqId, cb] of fileOperationCallbacks.entries()) {
+        try {
+          cb({
+            type: 'file_operation_response',
+            responseToRequestId: reqId,
+            payload: { success: false, error: 'Native host disconnected' },
+          });
+        } catch {}
+      }
+      fileOperationCallbacks.clear();
 
       // Mark server as stopped since native host disconnection means server is down
       void markServerStopped('native_port_disconnected');
@@ -531,7 +579,9 @@ export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): bool
     // Self-healing handshake watchdog: If SERVER_STARTED is not received within 2s, verify via /ping
     handshakeTimeoutTimer = setTimeout(async () => {
       if (!currentServerStatus.isRunning && nativePort) {
-        console.warn(`${LOG_PREFIX} Handshake timeout waiting for SERVER_STARTED on port ${port}, probing /ping...`);
+        console.warn(
+          `${LOG_PREFIX} Handshake timeout waiting for SERVER_STARTED on port ${port}, probing /ping...`,
+        );
         const isAlive = await verifyServerViaHttp(port);
         if (isAlive) {
           currentServerStatus = {
@@ -542,7 +592,9 @@ export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): bool
           await saveServerStatus(currentServerStatus);
           broadcastServerStatusChange(currentServerStatus);
           resetReconnectState();
-          console.log(`${LOG_PREFIX} Successfully self-healed connection status via HTTP /ping on port ${port}`);
+          console.log(
+            `${LOG_PREFIX} Successfully self-healed connection status via HTTP /ping on port ${port}`,
+          );
         } else {
           // Re-send start message once before disconnecting
           safePostMessage(nativePort, { type: NativeMessageType.START, payload: { port } });

@@ -23,6 +23,14 @@ const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const contexts = new Map<number, ScreenshotContext>();
 
+if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved?.addListener) {
+  try {
+    chrome.tabs.onRemoved.addListener((closedTabId: number) => {
+      contexts.delete(closedTabId);
+    });
+  } catch {}
+}
+
 export const screenshotContextManager = {
   setContext(tabId: number, ctx: Omit<ScreenshotContext, 'timestamp'>) {
     contexts.set(tabId, { ...ctx, timestamp: Date.now() });

@@ -17,19 +17,18 @@ function parseIpv6Blocks(ip: string): number[] | null {
   const norm = ip.toLowerCase();
   const doubleColon = norm.indexOf('::');
   const leftParts =
-    doubleColon !== -1
-      ? norm.slice(0, doubleColon).split(':').filter(Boolean)
-      : norm.split(':');
+    doubleColon !== -1 ? norm.slice(0, doubleColon).split(':').filter(Boolean) : norm.split(':');
   const rightParts =
     doubleColon !== -1
-      ? norm.slice(doubleColon + 2).split(':').filter(Boolean)
+      ? norm
+          .slice(doubleColon + 2)
+          .split(':')
+          .filter(Boolean)
       : [];
 
   // Handle embedded IPv4 (e.g., ::ffff:127.0.0.1)
   const lastPart =
-    rightParts.length > 0
-      ? rightParts[rightParts.length - 1]
-      : leftParts[leftParts.length - 1];
+    rightParts.length > 0 ? rightParts[rightParts.length - 1] : leftParts[leftParts.length - 1];
   let embeddedV4: number[] | null = null;
   if (lastPart && lastPart.includes('.')) {
     if (net.isIPv4(lastPart)) {
@@ -154,11 +153,14 @@ export function assertSafeUrl(fileUrl: string): URL {
   }
 
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`SSRF Protection: Disallowed protocol '${parsed.protocol}'. Only http: and https: are permitted.`);
+    throw new Error(
+      `SSRF Protection: Disallowed protocol '${parsed.protocol}'. Only http: and https: are permitted.`,
+    );
   }
 
   const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
-  const cleanHost = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+  const cleanHost =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
 
   if (
     cleanHost === 'localhost' ||
@@ -171,7 +173,9 @@ export function assertSafeUrl(fileUrl: string): URL {
   }
 
   if (isPrivateOrBlockedIp(cleanHost)) {
-    throw new Error(`SSRF Protection: Access to private/internal IP address '${hostname}' is forbidden.`);
+    throw new Error(
+      `SSRF Protection: Access to private/internal IP address '${hostname}' is forbidden.`,
+    );
   }
 
   return parsed;
@@ -183,7 +187,8 @@ export function assertSafeUrl(fileUrl: string): URL {
 export async function assertSafeUrlAsync(fileUrl: string): Promise<URL> {
   const parsed = assertSafeUrl(fileUrl);
   const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
-  const cleanHost = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+  const cleanHost =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
 
   if (!net.isIP(cleanHost)) {
     try {
@@ -228,7 +233,10 @@ export function safeLookup(
         ? { family: options }
         : options || {};
 
-  const cleanHost = hostname.toLowerCase().replace(/\.$/, '').replace(/^\[|\]$/g, '');
+  const cleanHost = hostname
+    .toLowerCase()
+    .replace(/\.$/, '')
+    .replace(/^\[|\]$/g, '');
   if (
     cleanHost === 'localhost' ||
     cleanHost.endsWith('.localhost') ||
@@ -236,12 +244,18 @@ export function safeLookup(
     cleanHost.endsWith('.internal') ||
     cleanHost.endsWith('.localdomain')
   ) {
-    cb(new Error(`SSRF Protection: Access to local domain '${hostname}' is forbidden.`), '' as any, 4);
+    cb(
+      new Error(`SSRF Protection: Access to local domain '${hostname}' is forbidden.`),
+      '' as any,
+      4,
+    );
     return;
   }
   if (net.isIP(cleanHost) && isPrivateOrBlockedIp(cleanHost)) {
     cb(
-      new Error(`SSRF Protection: Access to private/internal IP address '${hostname}' is forbidden.`),
+      new Error(
+        `SSRF Protection: Access to private/internal IP address '${hostname}' is forbidden.`,
+      ),
       '' as any,
       4,
     );
@@ -303,12 +317,21 @@ export class FileHandler {
     if (!fs.existsSync(this.tempDir)) {
       fs.mkdirSync(this.tempDir, { recursive: true });
     }
+    // Clean up old temporary files upon startup and schedule periodic cleanup
+    try {
+      this.cleanupOldFiles();
+    } catch {}
+    const cleanupTimer = setInterval(() => this.cleanupOldFiles(), 30 * 60 * 1000);
+    cleanupTimer.unref();
   }
 
   /**
    * Helper to compute safe destination path inside this.tempDir, forbidding path traversal
    */
-  private getSafeTempFilePath(fileName?: string, defaultPrefix = 'upload'): { filePath: string; fileName: string } {
+  private getSafeTempFilePath(
+    fileName?: string,
+    defaultPrefix = 'upload',
+  ): { filePath: string; fileName: string } {
     let rawName = fileName;
     if (rawName) {
       // Normalize both POSIX and Windows separators for cross-platform traversal prevention
@@ -322,11 +345,14 @@ export class FileHandler {
     const resolvedTempDir = path.resolve(this.tempDir);
     const resolvedPath = path.resolve(resolvedTempDir, rawName);
 
-    const normTempDir = process.platform === 'win32' ? resolvedTempDir.toLowerCase() : resolvedTempDir;
+    const normTempDir =
+      process.platform === 'win32' ? resolvedTempDir.toLowerCase() : resolvedTempDir;
     const normPath = process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
 
     if (!normPath.startsWith(normTempDir + path.sep)) {
-      throw new Error('Access denied: target path must reside strictly within the temporary directory');
+      throw new Error(
+        'Access denied: target path must reside strictly within the temporary directory',
+      );
     }
 
     return { filePath: resolvedPath, fileName: rawName };
@@ -365,8 +391,10 @@ export class FileHandler {
           }
           const resolvedPath = path.resolve(targetPath);
           const resolvedTempDir = path.resolve(this.tempDir);
-          const normalizedPath = process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
-          const normalizedTempDir = process.platform === 'win32' ? resolvedTempDir.toLowerCase() : resolvedTempDir;
+          const normalizedPath =
+            process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
+          const normalizedTempDir =
+            process.platform === 'win32' ? resolvedTempDir.toLowerCase() : resolvedTempDir;
           if (!normalizedPath.startsWith(normalizedTempDir + path.sep)) {
             return {
               success: false,
@@ -448,7 +476,10 @@ export class FileHandler {
       }
 
       const candidateName = fileName || this.generateFileName(currentUrl);
-      const { filePath, fileName: finalFileName } = this.getSafeTempFilePath(candidateName, 'download');
+      const { filePath, fileName: finalFileName } = this.getSafeTempFilePath(
+        candidateName,
+        'download',
+      );
 
       // Stream response to disk with running size counter to avoid OOM and event loop blocking
       const fileStream = fs.createWriteStream(filePath);
@@ -512,7 +543,9 @@ export class FileHandler {
         size: downloadedBytes,
       };
     } catch (error) {
-      throw new Error(`Failed to download file from URL: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to download file from URL: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -536,8 +569,12 @@ export class FileHandler {
         throw new Error(`File size exceeds limit of ${MAX_DOWNLOAD_SIZE} bytes (50MB)`);
       }
 
-      const candidateName = fileName || `upload-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.bin`;
-      const { filePath, fileName: finalFileName } = this.getSafeTempFilePath(candidateName, 'upload');
+      const candidateName =
+        fileName || `upload-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.bin`;
+      const { filePath, fileName: finalFileName } = this.getSafeTempFilePath(
+        candidateName,
+        'upload',
+      );
 
       // Save to file asynchronously to prevent blocking the event loop
       await fs.promises.writeFile(filePath, buffer);
@@ -549,7 +586,9 @@ export class FileHandler {
         size: buffer.length,
       };
     } catch (error) {
-      throw new Error(`Failed to save base64 file: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to save base64 file: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -592,8 +631,10 @@ export class FileHandler {
     try {
       const resolvedPath = path.resolve(filePath);
       const resolvedTempDir = path.resolve(this.tempDir);
-      const normalizedPath = process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
-      const normalizedTempDir = process.platform === 'win32' ? resolvedTempDir.toLowerCase() : resolvedTempDir;
+      const normalizedPath =
+        process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
+      const normalizedTempDir =
+        process.platform === 'win32' ? resolvedTempDir.toLowerCase() : resolvedTempDir;
       if (!normalizedPath.startsWith(normalizedTempDir + path.sep)) {
         return {
           success: false,
@@ -644,8 +685,10 @@ export class FileHandler {
       // Only allow cleanup of files strictly inside our temp directory
       const resolvedPath = path.resolve(filePath);
       const resolvedTempDir = path.resolve(this.tempDir);
-      const normalizedPath = process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
-      const normalizedTempDir = process.platform === 'win32' ? resolvedTempDir.toLowerCase() : resolvedTempDir;
+      const normalizedPath =
+        process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
+      const normalizedTempDir =
+        process.platform === 'win32' ? resolvedTempDir.toLowerCase() : resolvedTempDir;
       if (!normalizedPath.startsWith(normalizedTempDir + path.sep)) {
         return {
           success: false,

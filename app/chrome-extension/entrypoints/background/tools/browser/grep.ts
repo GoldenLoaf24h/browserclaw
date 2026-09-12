@@ -39,9 +39,14 @@ export class GrepTool extends BaseBrowserToolExecutor {
 
       let pattern: RegExp;
       try {
-        pattern = args.isRegex ? new RegExp(args.query, 'i') : new RegExp(args.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        pattern = args.isRegex
+          ? new RegExp(args.query, 'i')
+          : new RegExp(args.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
       } catch (regexErr) {
-        return createErrorResponse('Invalid regular expression: ' + (regexErr instanceof Error ? regexErr.message : String(regexErr)));
+        return createErrorResponse(
+          'Invalid regular expression: ' +
+            (regexErr instanceof Error ? regexErr.message : String(regexErr)),
+        );
       }
 
       if (searchType === 'page_text') {
@@ -101,16 +106,12 @@ export class GrepTool extends BaseBrowserToolExecutor {
         );
       } catch {
         // Fallback to main frame only if allFrames fails
-        prunerResults = await executeInPage<PrunedDOMTreeResult>(
-          { tabId },
-          'inPageDOMPruner',
-          [
-            {
-              viewportThreshold: 1000,
-              highlight: false,
-            },
-          ],
-        );
+        prunerResults = await executeInPage<PrunedDOMTreeResult>({ tabId }, 'inPageDOMPruner', [
+          {
+            viewportThreshold: 1000,
+            highlight: false,
+          },
+        ]);
       }
 
       const mainFrame = prunerResults?.find((r) => r.frameId === 0) || prunerResults?.[0];
@@ -137,18 +138,6 @@ export class GrepTool extends BaseBrowserToolExecutor {
               tagName: el.tagName,
             };
           }
-
-          if (typeof frame.frameId === 'number' && frame.frameId !== 0) {
-            try {
-              await executeInPage(
-                { tabId, frameIds: [frame.frameId] },
-                'inPageReindexFrame',
-                [frameOffset, false],
-              );
-            } catch (reindexErr) {
-              console.warn(`Failed to synchronize subframe ${frame.frameId} index map in grep:`, reindexErr);
-            }
-          }
         }
       }
       const matches: Array<{
@@ -171,14 +160,9 @@ export class GrepTool extends BaseBrowserToolExecutor {
         const ariaLabel =
           (el as any).ariaLabel || el.attributes?.['aria-label'] || el.attributes?.ariaLabel;
         const value = (el as any).value || el.attributes?.['value'] || el.attributes?.value;
-        const searchableParts = [
-          elText,
-          el.role,
-          el.tagName,
-          placeholder,
-          ariaLabel,
-          value,
-        ].filter(Boolean).join(' ');
+        const searchableParts = [elText, el.role, el.tagName, placeholder, ariaLabel, value]
+          .filter(Boolean)
+          .join(' ');
 
         if (pattern.test(searchableParts)) {
           matches.push({
@@ -213,7 +197,9 @@ export class GrepTool extends BaseBrowserToolExecutor {
         isError: false,
       };
     } catch (error) {
-      return createErrorResponse('Error executing chrome_grep: ' + (error instanceof Error ? error.message : String(error)));
+      return createErrorResponse(
+        'Error executing chrome_grep: ' + (error instanceof Error ? error.message : String(error)),
+      );
     }
   }
 }

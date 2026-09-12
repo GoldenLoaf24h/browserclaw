@@ -34,7 +34,7 @@ export const handleCallTool = async (param: ToolCallParam) => {
   try {
     const session = await chrome.storage.session.get('agentControlEnabled');
     const isEnabled = session.agentControlEnabled !== false; // Default: true (enabled on browser start)
-    if (!isEnabled && !param.args?.__admin_bypass__) {
+    if (!isEnabled) {
       return createErrorResponse(
         'Agent control is currently paused by the user via the extension popup switch. Please enable the switch in the extension popup to resume browser automation.',
       );

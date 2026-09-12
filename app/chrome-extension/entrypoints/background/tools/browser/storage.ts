@@ -42,9 +42,10 @@ export class StorageTool extends BaseBrowserToolExecutor {
         return createErrorResponse('No active tab found for chrome_storage');
       }
 
-      const types = Array.isArray(args.types) && args.types.length > 0
-        ? args.types
-        : (['localStorage', 'sessionStorage', 'cookies'] as const);
+      const types =
+        Array.isArray(args.types) && args.types.length > 0
+          ? args.types
+          : (['localStorage', 'sessionStorage', 'cookies'] as const);
       const filter = String(args.filter ?? '').toLowerCase();
       const limit = typeof args.limit === 'number' && args.limit > 0 ? args.limit : DEFAULT_LIMIT;
 
@@ -73,11 +74,7 @@ export class StorageTool extends BaseBrowserToolExecutor {
                 const key = store.key(i);
                 if (key === null) continue;
                 const raw = store.getItem(key) ?? '';
-                if (
-                  flt &&
-                  !key.toLowerCase().includes(flt) &&
-                  !raw.toLowerCase().includes(flt)
-                ) {
+                if (flt && !key.toLowerCase().includes(flt) && !raw.toLowerCase().includes(flt)) {
                   continue;
                 }
                 total += 1;
@@ -108,16 +105,18 @@ export class StorageTool extends BaseBrowserToolExecutor {
         const filtered = cookies.filter((c) => {
           if (!includeHttpOnly && c.httpOnly) return false;
           if (!filter) return true;
-          return (
-            c.name.toLowerCase().includes(filter) || c.value.toLowerCase().includes(filter)
-          );
+          const matchesName = c.name.toLowerCase().includes(filter);
+          const matchesDomain = (c.domain || '').toLowerCase().includes(filter);
+          const matchesValue = !c.httpOnly && c.value.toLowerCase().includes(filter);
+          return matchesName || matchesDomain || matchesValue;
         });
         const entries = filtered.slice(0, limit).map((c) => ({
           name: c.name,
           ...(c.httpOnly
             ? { valueIncluded: false }
             : {
-                value: c.value.length > MAX_VALUE_CHARS ? c.value.slice(0, MAX_VALUE_CHARS) : c.value,
+                value:
+                  c.value.length > MAX_VALUE_CHARS ? c.value.slice(0, MAX_VALUE_CHARS) : c.value,
                 ...(c.value.length > MAX_VALUE_CHARS ? { truncated: true } : {}),
               }),
           domain: c.domain,

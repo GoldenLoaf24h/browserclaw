@@ -10,7 +10,10 @@ describe('GrepTool (chrome_grep)', () => {
 
   it('reports invalid regex gracefully', async () => {
     // Mock resolveAffinityTab
-    vi.spyOn(grepTool as any, 'resolveAffinityTab').mockResolvedValue({ id: 123, url: 'https://example.com' });
+    vi.spyOn(grepTool as any, 'resolveAffinityTab').mockResolvedValue({
+      id: 123,
+      url: 'https://example.com',
+    });
     const res = await grepTool.execute({ query: '[invalid-regex(', isRegex: true });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain('Invalid regular expression');
@@ -19,7 +22,10 @@ describe('GrepTool (chrome_grep)', () => {
   it('matches placeholder and aria-label attributes across multi-frame hierarchy', async () => {
     const engine = await import('../entrypoints/background/tools/browser/in-page-engine');
     const spy = vi.spyOn(engine, 'executeInPage');
-    vi.spyOn(grepTool as any, 'resolveAffinityTab').mockResolvedValue({ id: 123, url: 'https://example.com' });
+    vi.spyOn(grepTool as any, 'resolveAffinityTab').mockResolvedValue({
+      id: 123,
+      url: 'https://example.com',
+    });
 
     spy.mockImplementation(async (target: any, fnName: string, args: any) => {
       if (fnName === 'inPageDOMPruner') {
@@ -76,11 +82,9 @@ describe('GrepTool (chrome_grep)', () => {
     expect(parsed.matches[0].index).toBe(2);
     expect(parsed.matches[0].tagName).toBe('button');
 
-    // Verify inPageReindexFrame was called with frameOffset = 1
+    // Verify inPageReindexFrame was NOT called (read-only search must not mutate subframe index maps)
     const reindexCall = spy.mock.calls.find((c) => c[1] === 'inPageReindexFrame');
-    expect(reindexCall).toBeDefined();
-    expect(reindexCall?.[0]).toEqual({ tabId: 123, frameIds: [42] });
-    expect(reindexCall?.[2]).toEqual([1, false]);
+    expect(reindexCall).toBeUndefined();
 
     spy.mockRestore();
   });

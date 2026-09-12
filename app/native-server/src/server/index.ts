@@ -46,7 +46,8 @@ export function safeWriteError(
     return;
   }
   try {
-    const body = typeof payload === 'string' ? JSON.stringify({ error: payload }) : JSON.stringify(payload);
+    const body =
+      typeof payload === 'string' ? JSON.stringify({ error: payload }) : JSON.stringify(payload);
     raw.writeHead(statusCode, {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(body),
@@ -300,13 +301,23 @@ export class Server {
 
   private setupMcpRoutes(): void {
     // SSE endpoint
-    this.fastify.get('/sse', async (_, reply) => {
+    this.fastify.get('/sse', async (req, reply) => {
       reply.hijack();
       try {
         const transport = new SSEServerTransport('/messages', reply.raw);
-        await mcpSessionManager.createSession(transport, transport.sessionId);
+        const { sessionId } = await mcpSessionManager.createSession(transport, transport.sessionId);
+        reply.raw.on('close', () => {
+          mcpSessionManager.closeSession(sessionId).catch(() => {});
+        });
+        req.raw.on('close', () => {
+          mcpSessionManager.closeSession(sessionId).catch(() => {});
+        });
       } catch (error) {
-        safeWriteError(reply, HTTP_STATUS.INTERNAL_SERVER_ERROR, ERROR_MESSAGES.INTERNAL_SERVER_ERROR);
+        safeWriteError(
+          reply,
+          HTTP_STATUS.INTERNAL_SERVER_ERROR,
+          ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+        );
       }
     });
 
@@ -324,7 +335,11 @@ export class Server {
 
         await transport.handlePostMessage(req.raw, reply.raw, req.body);
       } catch (error) {
-        safeWriteError(reply, HTTP_STATUS.INTERNAL_SERVER_ERROR, ERROR_MESSAGES.INTERNAL_SERVER_ERROR);
+        safeWriteError(
+          reply,
+          HTTP_STATUS.INTERNAL_SERVER_ERROR,
+          ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+        );
       }
     });
 
@@ -332,11 +347,14 @@ export class Server {
     this.fastify.post('/mcp', async (request, reply) => {
       reply.hijack();
       const sessionId = request.headers['mcp-session-id'] as string | undefined;
-      let session = sessionId ? mcpSessionManager.getSession(sessionId) : undefined;
-      let transport: StreamableHTTPServerTransport | undefined = session?.transport as StreamableHTTPServerTransport | undefined;
+      const session = sessionId ? mcpSessionManager.getSession(sessionId) : undefined;
+      let transport: StreamableHTTPServerTransport | undefined = session?.transport as
+        StreamableHTTPServerTransport | undefined;
 
       const body = request.body;
-      const isInit = Array.isArray(body) ? body.some(isInitializeRequest) : isInitializeRequest(body);
+      const isInit = Array.isArray(body)
+        ? body.some(isInitializeRequest)
+        : isInitializeRequest(body);
 
       if (!transport && !sessionId && isInit) {
         const newSessionId = randomUUID();
@@ -346,7 +364,9 @@ export class Server {
         await mcpSessionManager.createSession(transport, newSessionId);
       } else if (!transport) {
         const status = sessionId ? HTTP_STATUS.NOT_FOUND : HTTP_STATUS.BAD_REQUEST;
-        const message = sessionId ? ERROR_MESSAGES.INVALID_SESSION_ID : ERROR_MESSAGES.INVALID_MCP_REQUEST;
+        const message = sessionId
+          ? ERROR_MESSAGES.INVALID_SESSION_ID
+          : ERROR_MESSAGES.INVALID_MCP_REQUEST;
         safeWriteError(reply, status, { error: message });
         return;
       }
@@ -354,7 +374,9 @@ export class Server {
       try {
         await transport.handleRequest(request.raw, reply.raw, request.body);
       } catch (error) {
-        safeWriteError(reply, HTTP_STATUS.INTERNAL_SERVER_ERROR, { error: ERROR_MESSAGES.MCP_REQUEST_PROCESSING_ERROR });
+        safeWriteError(reply, HTTP_STATUS.INTERNAL_SERVER_ERROR, {
+          error: ERROR_MESSAGES.MCP_REQUEST_PROCESSING_ERROR,
+        });
       }
     });
 
@@ -366,7 +388,9 @@ export class Server {
       const transport = session?.transport as StreamableHTTPServerTransport | undefined;
 
       if (!transport) {
-        safeWriteError(reply, HTTP_STATUS.BAD_REQUEST, { error: ERROR_MESSAGES.INVALID_SSE_SESSION });
+        safeWriteError(reply, HTTP_STATUS.BAD_REQUEST, {
+          error: ERROR_MESSAGES.INVALID_SSE_SESSION,
+        });
         return;
       }
 
@@ -374,7 +398,9 @@ export class Server {
         await transport.handleRequest(request.raw, reply.raw);
       } catch (error) {
         if (!reply.raw.writableEnded) {
-          try { reply.raw.end(); } catch {}
+          try {
+            reply.raw.end();
+          } catch {}
         }
       }
 
@@ -404,7 +430,9 @@ export class Server {
           reply.raw.end();
         }
       } catch (error) {
-        safeWriteError(reply, HTTP_STATUS.INTERNAL_SERVER_ERROR, { error: ERROR_MESSAGES.MCP_SESSION_DELETION_ERROR });
+        safeWriteError(reply, HTTP_STATUS.INTERNAL_SERVER_ERROR, {
+          error: ERROR_MESSAGES.MCP_SESSION_DELETION_ERROR,
+        });
       } finally {
         if (sessionId) {
           await mcpSessionManager.closeSession(sessionId);

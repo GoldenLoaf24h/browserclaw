@@ -73,28 +73,61 @@ export class ScrollToTextTool extends BaseBrowserToolExecutor {
         await cdpSessionManager.withSession(tabId, 'scroll-to-text', async () => {
           await cdpSessionManager.sendCommand(tabId, 'DOM.enable', {});
 
-          // Try both plain text and XPath text content queries (with proper quote escaping)
-          const queries = [text, `//*[contains(., ${toXPathString(text)})]`];
+          // Try targeted XPath queries prioritizing innermost elements, avoiding <html> and <body>
+          const queries = [
+            `//*[contains(text(), ${toXPathString(text)})]`,
+            `//*[contains(., ${toXPathString(text)}) and not(.//*[contains(., ${toXPathString(text)})])]`,
+            `//*[not(self::html or self::head or self::body) and contains(., ${toXPathString(text)})]`,
+          ];
 
           for (const query of queries) {
             let searchId: string | undefined;
             try {
-              const searchRes: any = await cdpSessionManager.sendCommand(tabId, 'DOM.performSearch', {
-                query,
-              });
+              const searchRes: any = await cdpSessionManager.sendCommand(
+                tabId,
+                'DOM.performSearch',
+                {
+                  query,
+                },
+              );
 
               searchId = searchRes?.searchId;
               const resultCount = searchRes?.resultCount || 0;
 
               if (resultCount > 0 && searchId) {
-                const results: any = await cdpSessionManager.sendCommand(tabId, 'DOM.getSearchResults', {
-                  searchId,
-                  fromIndex: 0,
-                  toIndex: 1,
-                });
+                const results: any = await cdpSessionManager.sendCommand(
+                  tabId,
+                  'DOM.getSearchResults',
+                  {
+                    searchId,
+                    fromIndex: 0,
+                    toIndex: Math.min(resultCount, 30),
+                  },
+                );
 
                 const nodeIds: number[] = results?.nodeIds || [];
-                if (nodeIds.length > 0) {
+                let targetNodeId: number | null = null;
+
+                for (const nodeId of nodeIds) {
+                  try {
+                    const desc: any = await cdpSessionManager.sendCommand(
+                      tabId,
+                      'DOM.describeNode',
+                      {
+                        nodeId,
+                      },
+                    );
+                    const nodeName = desc?.node?.nodeName?.toUpperCase();
+                    if (nodeName && !['HTML', 'BODY', 'HEAD', '#DOCUMENT'].includes(nodeName)) {
+                      targetNodeId = nodeId;
+                      break;
+                    }
+                  } catch {
+                    // Continue checking next node if describeNode fails
+                  }
+                }
+
+                if (targetNodeId !== null) {
                   try {
                     const metrics: any = await cdpSessionManager.sendCommand(
                       tabId,
@@ -103,7 +136,7 @@ export class ScrollToTextTool extends BaseBrowserToolExecutor {
                     );
                     const vp = metrics?.layoutViewport || metrics?.visualViewport;
                     const box: any = await cdpSessionManager.sendCommand(tabId, 'DOM.getBoxModel', {
-                      nodeId: nodeIds[0],
+                      nodeId: targetNodeId,
                     });
                     const quad = box?.model?.border;
                     if (vp && quad && quad.length === 8) {
@@ -117,7 +150,7 @@ export class ScrollToTextTool extends BaseBrowserToolExecutor {
                     }
                   } catch {}
                   await cdpSessionManager.sendCommand(tabId, 'DOM.scrollIntoViewIfNeeded', {
-                    nodeId: nodeIds[0],
+                    nodeId: targetNodeId,
                   });
                   scrolled = true;
                   break;
@@ -147,11 +180,20 @@ export class ScrollToTextTool extends BaseBrowserToolExecutor {
                 const parent = node.parentElement;
                 if (!parent) return NodeFilter.FILTER_REJECT;
                 const tag = parent.tagName.toLowerCase();
-                if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'template') {
+                if (
+                  tag === 'script' ||
+                  tag === 'style' ||
+                  tag === 'noscript' ||
+                  tag === 'template'
+                ) {
                   return NodeFilter.FILTER_REJECT;
                 }
                 const style = window.getComputedStyle(parent);
-                if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity || '1') <= 0) {
+                if (
+                  style.display === 'none' ||
+                  style.visibility === 'hidden' ||
+                  parseFloat(style.opacity || '1') <= 0
+                ) {
                   return NodeFilter.FILTER_REJECT;
                 }
                 return NodeFilter.FILTER_ACCEPT;
@@ -169,7 +211,11 @@ export class ScrollToTextTool extends BaseBrowserToolExecutor {
                   if (window !== window.top) {
                     try {
                       if (window.frameElement) {
-                        window.frameElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+                        window.frameElement.scrollIntoView({
+                          behavior: 'smooth',
+                          block: 'center',
+                          inline: 'center',
+                        });
                       }
                     } catch {}
                   }
@@ -208,7 +254,9 @@ export class ScrollToTextTool extends BaseBrowserToolExecutor {
             func: inPageSearchAndScroll,
             args: [text],
           });
-          const matchFrame = frameResults.find((r) => r.result?.success && r.frameId !== undefined && r.frameId !== 0);
+          const matchFrame = frameResults.find(
+            (r) => r.result?.success && r.frameId !== undefined && r.frameId !== 0,
+          );
           if (matchFrame) {
             scrolled = true;
             // Scroll specifically the subframe's container iframe into view in the top-level window
@@ -217,7 +265,9 @@ export class ScrollToTextTool extends BaseBrowserToolExecutor {
               await this.safeExecuteScript(tabId, {
                 target: { tabId },
                 func: (targetUrl: string) => {
-                  const iframes = Array.from(document.querySelectorAll('iframe, frame')) as HTMLIFrameElement[];
+                  const iframes = Array.from(
+                    document.querySelectorAll('iframe, frame'),
+                  ) as HTMLIFrameElement[];
                   let targetIframe = iframes.find((f) => {
                     try {
                       return f.src === targetUrl || f.contentWindow?.location.href === targetUrl;
@@ -229,7 +279,11 @@ export class ScrollToTextTool extends BaseBrowserToolExecutor {
                     targetIframe = iframes[0];
                   }
                   if (targetIframe) {
-                    targetIframe.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+                    targetIframe.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'center',
+                      inline: 'center',
+                    });
                   }
                 },
                 args: [subframeUrl],

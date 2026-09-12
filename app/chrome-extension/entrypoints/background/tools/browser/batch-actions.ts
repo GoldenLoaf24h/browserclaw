@@ -5,7 +5,11 @@ import { DIAGNOSTIC_REFRESH_GUIDANCE } from './dom-indexer';
 import { executeInPage } from './in-page-engine';
 import { waitForPageSettle } from '@/utils/action-watchdog';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
-import { raceCdp as raceCdpBatch, DialogOpenedError, createDialogInterruptResponse } from '@/utils/race-cdp';
+import {
+  raceCdp as raceCdpBatch,
+  DialogOpenedError,
+  createDialogInterruptResponse,
+} from '@/utils/race-cdp';
 import { resolveTargetLocation } from './unified-locator';
 import { captureDeltaIfRequested } from '@/utils/delta-helper';
 
@@ -152,13 +156,29 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
       }
       const tabId = tab.id;
 
-        const initialUrl = tab.url || '';
-        const actionResults: Array<{ actionIndex: number; success: boolean; error?: string; output?: any }> = [];
-        const extractedData: Record<string, string> = {};
-        const assertions: Array<{ actionIndex: number; passed: boolean; condition?: string; error?: string }> = [];
-        let interruptedReason: string | undefined;
+      const initialUrl = tab.url || '';
+      const actionResults: Array<{
+        actionIndex: number;
+        success: boolean;
+        error?: string;
+        output?: any;
+      }> = [];
+      const extractedData: Record<string, string> = {};
+      const assertions: Array<{
+        actionIndex: number;
+        passed: boolean;
+        condition?: string;
+        error?: string;
+      }> = [];
+      let interruptedReason: string | undefined;
 
-        let spaDriftNotice: string | undefined;
+      let spaDriftNotice: string | undefined;
+
+      let isMac = false;
+      try {
+        const platform = await chrome.runtime.getPlatformInfo();
+        isMac = platform?.os === 'mac';
+      } catch {}
 
       for (let i = 0; i < actions.length; i++) {
         const item = actions[i];
@@ -205,21 +225,35 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
               let targetFrameId = 0;
               const directCoord = item.coordinate ?? (item as any).coordinates;
-              if (directCoord && typeof directCoord.x === 'number' && typeof directCoord.y === 'number') {
+              if (
+                directCoord &&
+                typeof directCoord.x === 'number' &&
+                typeof directCoord.y === 'number'
+              ) {
                 x = directCoord.x;
                 y = directCoord.y;
               } else if (typeof item.index === 'number') {
-                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [item.index]);
+                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [
+                  item.index,
+                ]);
                 coords = res?.[0]?.result;
                 if (!coords?.success) {
-                  const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageGetElementCoordinates', [item.index]);
+                  const frameResults = await executeInPage(
+                    { tabId, allFrames: true },
+                    'inPageGetElementCoordinates',
+                    [item.index],
+                  );
                   const match = frameResults.find((r) => r.result?.success);
                   if (match?.result) {
                     coords = match.result;
                     targetFrameId = match.frameId ?? 0;
                   }
                 }
-                if (!coords?.success || typeof coords.x !== 'number' || typeof coords.y !== 'number') {
+                if (
+                  !coords?.success ||
+                  typeof coords.x !== 'number' ||
+                  typeof coords.y !== 'number'
+                ) {
                   throw new Error(
                     coords?.error ||
                       `Element with index [${item.index}] not found in active DOM index map. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
@@ -228,7 +262,9 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 x = coords.x;
                 y = coords.y;
               } else {
-                throw new Error(`Action ${i} of type '${item.type}' requires 'index' or 'coordinate' parameter`);
+                throw new Error(
+                  `Action ${i} of type '${item.type}' requires 'index' or 'coordinate' parameter`,
+                );
               }
 
               if (typeof x !== 'number' || typeof y !== 'number') {
@@ -238,14 +274,18 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               const targetY = y;
 
               let isCrossOriginSubframe = false;
-              if (
-                targetFrameId !== 0 &&
-                !coords?.frameOffsetX &&
-                !coords?.frameOffsetY
-              ) {
+              if (targetFrameId !== 0 && !coords?.frameOffsetX && !coords?.frameOffsetY) {
                 try {
-                  const mainOrigin = (await executeInPage({ tabId }, 'inPageGetFrameOrigin', []))?.[0]?.result;
-                  const frameOrigin = (await executeInPage({ tabId, frameIds: [targetFrameId] }, 'inPageGetFrameOrigin', []))?.[0]?.result;
+                  const mainOrigin = (
+                    await executeInPage({ tabId }, 'inPageGetFrameOrigin', [])
+                  )?.[0]?.result;
+                  const frameOrigin = (
+                    await executeInPage(
+                      { tabId, frameIds: [targetFrameId] },
+                      'inPageGetFrameOrigin',
+                      [],
+                    )
+                  )?.[0]?.result;
                   isCrossOriginSubframe = !mainOrigin || !frameOrigin || mainOrigin !== frameOrigin;
                 } catch {
                   isCrossOriginSubframe = true;
@@ -253,11 +293,16 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               }
 
               if (isCrossOriginSubframe) {
-                const frameResults = await executeInPage({ tabId, frameIds: [targetFrameId] }, 'inPageInteractIndex', [item.index, item.type]);
+                const frameResults = await executeInPage(
+                  { tabId, frameIds: [targetFrameId] },
+                  'inPageInteractIndex',
+                  [item.index, item.type],
+                );
                 const frameOutcome = frameResults?.[0]?.result;
                 if (!frameOutcome?.success) {
                   throw new Error(
-                    frameOutcome?.error || `Failed to ${item.type} index [${item.index}] in cross-origin frame ${targetFrameId}`,
+                    frameOutcome?.error ||
+                      `Failed to ${item.type} index [${item.index}] in cross-origin frame ${targetFrameId}`,
                   );
                 }
                 stepOutput = {
@@ -320,10 +365,16 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
               let targetFrameId = 0;
               try {
-                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [item.index]);
+                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [
+                  item.index,
+                ]);
                 coords = res?.[0]?.result;
                 if (!coords?.success) {
-                  const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageGetElementCoordinates', [item.index]);
+                  const frameResults = await executeInPage(
+                    { tabId, allFrames: true },
+                    'inPageGetElementCoordinates',
+                    [item.index],
+                  );
                   const match = frameResults.find((r) => r.result?.success);
                   if (match?.result) {
                     coords = match.result;
@@ -332,21 +383,31 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 }
 
                 let isCrossOriginSubframe = false;
-                if (
-                  targetFrameId !== 0 &&
-                  !coords?.frameOffsetX &&
-                  !coords?.frameOffsetY
-                ) {
+                if (targetFrameId !== 0 && !coords?.frameOffsetX && !coords?.frameOffsetY) {
                   try {
-                    const mainOrigin = (await executeInPage({ tabId }, 'inPageGetFrameOrigin', []))?.[0]?.result;
-                    const frameOrigin = (await executeInPage({ tabId, frameIds: [targetFrameId] }, 'inPageGetFrameOrigin', []))?.[0]?.result;
-                    isCrossOriginSubframe = !mainOrigin || !frameOrigin || mainOrigin !== frameOrigin;
+                    const mainOrigin = (
+                      await executeInPage({ tabId }, 'inPageGetFrameOrigin', [])
+                    )?.[0]?.result;
+                    const frameOrigin = (
+                      await executeInPage(
+                        { tabId, frameIds: [targetFrameId] },
+                        'inPageGetFrameOrigin',
+                        [],
+                      )
+                    )?.[0]?.result;
+                    isCrossOriginSubframe =
+                      !mainOrigin || !frameOrigin || mainOrigin !== frameOrigin;
                   } catch {
                     isCrossOriginSubframe = true;
                   }
                 }
 
-                if (!isCrossOriginSubframe && coords?.success && typeof coords.x === 'number' && typeof coords.y === 'number') {
+                if (
+                  !isCrossOriginSubframe &&
+                  coords?.success &&
+                  typeof coords.x === 'number' &&
+                  typeof coords.y === 'number'
+                ) {
                   const targetX = coords.x;
                   const targetY = coords.y;
                   isKnownEmpty = typeof coords.value === 'string' && coords.value === '';
@@ -375,11 +436,6 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
                     // Clear existing content if clear is not explicitly false
                     if (item.clear !== false && !isKnownEmpty) {
-                      let isMac = false;
-                      try {
-                        const platform = await chrome.runtime.getPlatformInfo();
-                        isMac = platform?.os === 'mac';
-                      } catch {}
                       const mod = isMac ? 4 : 2; // Meta or Control
                       await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
                         type: 'rawKeyDown',
@@ -431,14 +487,25 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 if (cdpErr instanceof DialogOpenedError) {
                   throw cdpErr;
                 }
-                console.warn(`CDP native fill failed on index [${item.index}], falling back to inPageFillIndex:`, cdpErr);
+                console.warn(
+                  `CDP native fill failed on index [${item.index}], falling back to inPageFillIndex:`,
+                  cdpErr,
+                );
               }
 
               if (!filledViaCdp) {
-                const res = await executeInPage({ tabId }, 'inPageFillIndex', [item.index, text, item.clear !== false]);
+                const res = await executeInPage({ tabId }, 'inPageFillIndex', [
+                  item.index,
+                  text,
+                  item.clear !== false,
+                ]);
                 let outcome = res?.[0]?.result;
                 if (!outcome?.success) {
-                  const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageFillIndex', [item.index, text, item.clear !== false]);
+                  const frameResults = await executeInPage(
+                    { tabId, allFrames: true },
+                    'inPageFillIndex',
+                    [item.index, text, item.clear !== false],
+                  );
                   const match = frameResults.find((r) => r.result?.success);
                   if (match?.result) outcome = match.result;
                 }
@@ -456,14 +523,11 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
             case 'fill_form': {
               const fields = (item as any).fields;
               if (!Array.isArray(fields) || fields.length === 0) {
-                throw new Error(`Action ${i} of type 'fill_form' requires non-empty 'fields' array`);
+                throw new Error(
+                  `Action ${i} of type 'fill_form' requires non-empty 'fields' array`,
+                );
               }
               const fillFormResults: any[] = [];
-              let isMac = false;
-              try {
-                const platform = await chrome.runtime.getPlatformInfo();
-                isMac = platform?.os === 'mac';
-              } catch {}
               const selectAllMod = isMac ? 4 : 2;
 
               await cdpSessionManager.withSession(tabId, 'batch-actions-fill-form', async () => {
@@ -555,14 +619,22 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
             case 'scroll': {
               if (typeof item.index === 'number') {
-                const scrollRes = await executeInPage({ tabId }, 'inPageScrollToIndex', [item.index]);
+                const scrollRes = await executeInPage({ tabId }, 'inPageScrollToIndex', [
+                  item.index,
+                ]);
                 let scrolled = Boolean(scrollRes?.[0]?.result);
                 if (!scrolled) {
-                  const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageScrollToIndex', [item.index]);
+                  const frameResults = await executeInPage(
+                    { tabId, allFrames: true },
+                    'inPageScrollToIndex',
+                    [item.index],
+                  );
                   scrolled = Boolean(frameResults.some((r) => r.result));
                 }
                 if (!scrolled) {
-                  throw new Error(`Element with index [${item.index}] not found for scroll. ${DIAGNOSTIC_REFRESH_GUIDANCE}`);
+                  throw new Error(
+                    `Element with index [${item.index}] not found for scroll. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
+                  );
                 }
                 stepOutput = { scrolledIndex: item.index };
                 break;
@@ -573,7 +645,8 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               // and only up/down were mapped, so horizontal scrolls silently
               // turned into vertical ones.
               const isHorizontal = item.direction === 'left' || item.direction === 'right';
-              const amount = item.direction === 'up' || item.direction === 'left' ? -rawAmount : rawAmount;
+              const amount =
+                item.direction === 'up' || item.direction === 'left' ? -rawAmount : rawAmount;
               const deltaX = isHorizontal ? amount : 0;
               const deltaY = isHorizontal ? 0 : amount;
               let cdpScrolled = false;
@@ -665,8 +738,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     code: keyDef.code,
                     windowsVirtualKeyCode: vk,
                   });
-                }
-                else {
+                } else {
                   let heldMask = 0;
                   for (const mod of modifierDefs) {
                     heldMask |= mod.mask;
@@ -713,10 +785,16 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               let actualText = '';
               let isVisible = false;
               if (typeof item.index === 'number') {
-                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [item.index]);
+                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [
+                  item.index,
+                ]);
                 let coords = res?.[0]?.result;
                 if (!coords?.success) {
-                  const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageGetElementCoordinates', [item.index]);
+                  const frameResults = await executeInPage(
+                    { tabId, allFrames: true },
+                    'inPageGetElementCoordinates',
+                    [item.index],
+                  );
                   const match = frameResults.find((r) => r.result?.success);
                   if (match?.result) coords = match.result;
                 }
@@ -731,7 +809,10 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     const el = document.querySelector(sel);
                     if (!el) return { found: false };
                     const rect = el.getBoundingClientRect();
-                    const visible = rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).visibility !== 'hidden';
+                    const visible =
+                      rect.width > 0 &&
+                      rect.height > 0 &&
+                      window.getComputedStyle(el).visibility !== 'hidden';
                     return {
                       found: true,
                       visible,
@@ -772,11 +853,15 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 actionIndex: i,
                 passed,
                 condition,
-                error: passed ? undefined : `Assertion failed: expected "${expected}" with condition "${condition}", got "${actualText}" (visible=${isVisible})`,
+                error: passed
+                  ? undefined
+                  : `Assertion failed: expected "${expected}" with condition "${condition}", got "${actualText}" (visible=${isVisible})`,
               });
 
               if (!passed && item.abortOnFailure !== false) {
-                throw new Error(`Assertion failed at action ${i}: condition "${condition}" not met for expected "${expected}". Actual: "${actualText}"`);
+                throw new Error(
+                  `Assertion failed at action ${i}: condition "${condition}" not met for expected "${expected}". Actual: "${actualText}"`,
+                );
               }
 
               stepOutput = { asserted: true, passed, condition, actualText, isVisible };
@@ -787,15 +872,22 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               let extractedValue = '';
               const prop = item.property || 'text';
               if (typeof item.index === 'number') {
-                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [item.index]);
+                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [
+                  item.index,
+                ]);
                 let coords = res?.[0]?.result;
                 if (!coords?.success) {
-                  const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageGetElementCoordinates', [item.index]);
+                  const frameResults = await executeInPage(
+                    { tabId, allFrames: true },
+                    'inPageGetElementCoordinates',
+                    [item.index],
+                  );
                   const match = frameResults.find((r) => r.result?.success);
                   if (match?.result) coords = match.result;
                 }
                 if (coords?.success) {
-                  extractedValue = prop === 'value' ? String(coords.value ?? '') : String(coords.text ?? '');
+                  extractedValue =
+                    prop === 'value' ? String(coords.value ?? '') : String(coords.text ?? '');
                 }
               } else if (item.selector) {
                 const selRes = await this.safeExecuteScript(tabId, {
@@ -814,7 +906,12 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
               const varName = item.variableName || `var_${i}`;
               extractedData[varName] = extractedValue;
-              stepOutput = { extracted: true, variableName: varName, value: extractedValue, property: prop };
+              stepOutput = {
+                extracted: true,
+                variableName: varName,
+                value: extractedValue,
+                property: prop,
+              };
               break;
             }
 

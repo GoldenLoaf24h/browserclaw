@@ -168,11 +168,14 @@ describe('Fastify MCP Native Server Integration Tests', () => {
   });
 
   test('Full MCP client lifecycle over Streamable HTTP', async () => {
-    const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${TEST_PORT}/mcp`), {
-      requestInit: {
-        headers: { Authorization: `Bearer ${getBridgeToken()}` },
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${TEST_PORT}/mcp`),
+      {
+        requestInit: {
+          headers: { Authorization: `Bearer ${getBridgeToken()}` },
+        },
       },
-    });
+    );
     const client = new Client({ name: 'jest-test-client', version: '1.0.0' }, { capabilities: {} });
     await client.connect(transport);
     expect(transport.sessionId).toBeDefined();
@@ -182,7 +185,10 @@ describe('Fastify MCP Native Server Integration Tests', () => {
 
     // Call tool when extension is disconnected -> returns isError: true immediately without blocking
     const t0 = Date.now();
-    const toolRes = (await client.callTool({ name: 'chrome_click_index', arguments: { index: 1 } })) as any;
+    const toolRes = (await client.callTool({
+      name: 'chrome_click_index',
+      arguments: { index: 1 },
+    })) as any;
     const duration = Date.now() - t0;
     expect(duration).toBeLessThan(1000);
     expect(toolRes.isError).toBe(true);
@@ -250,7 +256,9 @@ describe('Fastify MCP Native Server Integration Tests', () => {
         .set('Origin', `chrome-extension://${allowedId}`)
         .set('Access-Control-Request-Method', 'POST');
 
-      expect(response.headers['access-control-allow-origin']).toBe(`chrome-extension://${allowedId}`);
+      expect(response.headers['access-control-allow-origin']).toBe(
+        `chrome-extension://${allowedId}`,
+      );
     });
 
     test('rejects unauthorized extension ID origin', async () => {
@@ -452,5 +460,22 @@ describe('Fastify MCP Native Server Integration Tests', () => {
       expect(typeof result).toBe('boolean');
     });
   });
-});
 
+  describe('Architecture: Native Messaging Host Ceiling Defense', () => {
+    test('sendRequestToExtensionAndWait immediately rejects requests exceeding 1MB ceiling without hanging', async () => {
+      nativeMessagingHostInstance.isConnected = true;
+      try {
+        const hugePayload = 'x'.repeat(1024 * 1024 + 100);
+        await expect(
+          nativeMessagingHostInstance.sendRequestToExtensionAndWait(
+            hugePayload,
+            'test_request',
+            1000,
+          ),
+        ).rejects.toThrow(/exceeds Chrome Native Messaging 1MB ceiling/i);
+      } finally {
+        nativeMessagingHostInstance.isConnected = false;
+      }
+    });
+  });
+});

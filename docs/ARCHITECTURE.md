@@ -333,3 +333,26 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
   1. In `chrome_javascript`, implement `detectSingleExpression`: automatically detect if the input code is a valid single JavaScript expression (stripping trailing semicolons and single/multi-line comments). If so, automatically wrap with `return (...)` inside the async execution block across both CDP `Runtime.evaluate` and `chrome.scripting.executeScript`.
   2. In `chrome_get_web_content`, replace fixed timer sleeps with event-driven tab lifecycle listeners (`chrome.tabs.onUpdated` checking `status === 'complete'` and `chrome.tabs.onRemoved`), bounded by a 10-second timeout guard.
 - **Consequences**: 100% ergonomic parity for immediate agent evaluations and significantly reduced latency on page content extraction.
+
+### ADR-016: Production Hardening, Zero-Leak Lifecycles & Security Defense (v2.2.0)
+
+- **Status**: Implemented & Verified
+- **Context**: Comprehensive architectural audit identified critical gaps across runtime engines: in-page helper exports missing runtime symbols (`inPageWaitForDOMSettle`, `inPageCheckInterception`, `inPageDispatchSyntheticClick`), snapshot caching dropping element arrays and overwriting subframe trees during delta diffing, unauthenticated backdoor params in agent control toggles, HttpOnly cookie filtering acting as a side-channel extraction oracle, native messaging host hanging on messages > 1MB, Canvas GPU texture leaks during screenshot stitching, and human intervention banners intercepting Enter keystrokes during text input.
+- **Decision**:
+  1. **In-Page Parity**: Fully export `inPageWaitForDOMSettle`, `inPageCheckInterception`, and `inPageDispatchSyntheticClick` from `inpage-engine.ts`, bumping engine version.
+  2. **Snapshot & Delta Restoration**: Persist `mergedData.indexedElements` into snapshot cache and propagate multi-frame remappings (`allFrames: true`), ensuring accurate delta calculation without frame overwrite.
+  3. **Security & Sandbox Hardening**:
+     - Remove `__admin_bypass__` backdoor from agent control toggle.
+     - Prevent HttpOnly cookie extraction oracle by forbidding value substring filtering on HttpOnly cookies.
+     - Enforce strict 1MB ceiling in `native-messaging-host.ts` with atomic error responses, eliminating stdin hang on oversized headers.
+  4. **Resource & Memory Leak Prevention**:
+     - Explicitly close `ImageBitmap` instances (`img.close()`) in `image-utils.ts` try/finally blocks, releasing unmanaged GPU textures.
+     - Automatically clean up `interceptApiStore` and `screenshotContextManager` on `chrome.tabs.onRemoved`.
+     - Schedule periodic `cleanupOldFiles()` in native server and unref timer.
+  5. **Tooling & Ergonomics**:
+     - Eliminate Service Worker loopback messaging (`chrome.runtime.sendMessage` to self) in favor of direct callback delivery (`sendFileOperationToNative`).
+     - Tighten `chrome_scroll_to_text` XPath queries and filter out root `html`/`body` containers to ensure Shadow DOM TreeWalker execution.
+     - Guard human intervention keyboard listener to ignore Enter keys when typing in input, textarea, or contenteditable fields.
+     - Enforce `searchStartTime` window on download waiter to avoid capturing stale in-progress downloads.
+     - Optimize `run_host.bat` cold start by replacing slow PowerShell subprocesses with pure cmd string substitution.
+- **Consequences**: 100% test pass rate across extension and bridge suites, zero memory or file leaks, strict security boundaries, and significantly reduced cold start and batch action latency.

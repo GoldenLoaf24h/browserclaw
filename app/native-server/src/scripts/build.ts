@@ -120,7 +120,7 @@ filesToMakeExecutable.forEach((file) => {
 
 // Write node_path.txt immediately after build to ensure Chrome uses the correct Node.js version.
 // This is critical for development mode where dist is deleted on each rebuild.
-// The file points to the same Node.js that compiled the native modules (better-sqlite3 etc.)
+// The file points to the Node.js executable used during build/installation
 console.log('写入 node_path.txt...');
 const nodePathFile = path.join(distDir, 'node_path.txt');
 fs.writeFileSync(nodePathFile, process.execPath, 'utf8');

@@ -8,22 +8,12 @@ export type InPageLocatorExecutor = (
   args: any[],
 ) => Promise<any[]>;
 
-export type CdpCommandSender = (
-  tabId: number,
-  method: string,
-  params: any,
-) => Promise<any>;
+export type CdpCommandSender = (tabId: number, method: string, params: any) => Promise<any>;
 
 export interface UnifiedLocatorDependencies {
   executeInPage?: InPageLocatorExecutor;
   sendCdpCommand?: CdpCommandSender;
   coordinateScaler?: (tabId: number, x: number, y: number) => { x: number; y: number };
-}
-
-let globalDependencies: UnifiedLocatorDependencies = {};
-
-export function setUnifiedLocatorDependencies(deps: UnifiedLocatorDependencies): void {
-  globalDependencies = { ...globalDependencies, ...deps };
 }
 
 /**
@@ -40,7 +30,7 @@ export async function resolveTargetLocation(
   options: UnifiedLocatorOptions,
   customDeps?: UnifiedLocatorDependencies,
 ): Promise<UnifiedLocatorResult> {
-  const deps = { ...globalDependencies, ...customDeps };
+  const deps = customDeps || {};
   const coordParam = options.coordinate || options.coordinates;
   const targetText = options.targetText || options.text;
   const hasRef = options.ref !== undefined || options.index !== undefined;
@@ -49,11 +39,11 @@ export async function resolveTargetLocation(
   const parsedCoord = coordParam ? parseUnifiedCoordinate(coordParam, { tabId }) : null;
   const hasCoordinate = Boolean(
     parsedCoord ||
-      (coordParam &&
-        typeof (coordParam as any).x === 'number' &&
-        typeof (coordParam as any).y === 'number' &&
-        !isNaN((coordParam as any).x) &&
-        !isNaN((coordParam as any).y)),
+    (coordParam &&
+      typeof (coordParam as any).x === 'number' &&
+      typeof (coordParam as any).y === 'number' &&
+      !isNaN((coordParam as any).x) &&
+      !isNaN((coordParam as any).y)),
   );
 
   if (!hasRef && !hasSelector && !hasTextOrRole && !hasCoordinate) {
@@ -67,7 +57,8 @@ export async function resolveTargetLocation(
   }
 
   const isSnapshotValid = hasRef ? snapshotCacheManager.isSnapshotValid(tabId) : true;
-  const invalidationWarning = (!isSnapshotValid && hasRef) ? snapshotCacheManager.getInvalidationMessage(tabId) : undefined;
+  const invalidationWarning =
+    !isSnapshotValid && hasRef ? snapshotCacheManager.getInvalidationMessage(tabId) : undefined;
 
   // 1. Primary: Try ref / index
   if (hasRef && deps.executeInPage) {
@@ -197,7 +188,13 @@ export async function resolveTargetLocation(
     let targetY = Math.round(rawY);
 
     const wantsScreenshotSpace = (options as any)?.coordinateSpace === 'screenshot';
-    if (deps.coordinateScaler && wantsScreenshotSpace && !parsedCoord && typeof (coordParam as any)?.x === 'number' && typeof (coordParam as any)?.y === 'number') {
+    if (
+      deps.coordinateScaler &&
+      wantsScreenshotSpace &&
+      !parsedCoord &&
+      typeof (coordParam as any)?.x === 'number' &&
+      typeof (coordParam as any)?.y === 'number'
+    ) {
       const scaled = deps.coordinateScaler(tabId, (coordParam as any).x, (coordParam as any).y);
       targetX = scaled.x;
       targetY = scaled.y;
@@ -215,21 +212,28 @@ export async function resolveTargetLocation(
         });
 
         if (locRes && locRes.backendNodeId) {
-          const boxRes: any = await deps.sendCdpCommand(tabId, 'DOM.getBoxModel', {
-            backendNodeId: locRes.backendNodeId,
-          }).catch(() => null);
+          const boxRes: any = await deps
+            .sendCdpCommand(tabId, 'DOM.getBoxModel', {
+              backendNodeId: locRes.backendNodeId,
+            })
+            .catch(() => null);
 
           if (boxRes && boxRes.model) {
             const width = boxRes.model.width || 0;
             const height = boxRes.model.height || 0;
             if (width <= 0 && height <= 0) {
               coordinateWarning = `Target element at (${targetX}, ${targetY}) has zero dimensions or may be invisible according to CDP box model.`;
-              console.warn(`[UnifiedLocator] Target at (${targetX}, ${targetY}) has 0 dimensions in box model`);
+              console.warn(
+                `[UnifiedLocator] Target at (${targetX}, ${targetY}) has 0 dimensions in box model`,
+              );
             }
           }
         }
       } catch (cdpCheckErr) {
-        console.warn('[UnifiedLocator] CDP coordinate visibility check non-fatal notice:', cdpCheckErr);
+        console.warn(
+          '[UnifiedLocator] CDP coordinate visibility check non-fatal notice:',
+          cdpCheckErr,
+        );
       }
     }
 

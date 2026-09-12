@@ -29,7 +29,9 @@ export class UndoLastActionTool extends BaseBrowserToolExecutor {
         targetTab = await this.resolveAffinityTab({ tabId: args.tabId, sessionId });
       }
     } catch (error) {
-      return createErrorResponse(`Failed to resolve tab: ${error instanceof Error ? error.message : String(error)}`);
+      return createErrorResponse(
+        `Failed to resolve tab: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     const tabId = targetTab.id;
@@ -37,7 +39,9 @@ export class UndoLastActionTool extends BaseBrowserToolExecutor {
 
     const lastAction = actionHistoryManager.popAction(tabId);
     if (!lastAction) {
-      return createErrorResponse('No undoable action recorded for this tab in current session history.');
+      return createErrorResponse(
+        'No undoable action recorded for this tab in current session history.',
+      );
     }
 
     try {
@@ -77,10 +81,19 @@ export class UndoLastActionTool extends BaseBrowserToolExecutor {
                   (window as any)[Symbol.for('BROWSERCLAW_ISOLATED_INDEX_MAP')] ||
                   (window as any).__MCP_INDEX_MAP__;
                 const raw = isolatedMap?.get(targetIdx);
-                el = raw?.deref ? (raw.deref() ?? null) : (raw || null);
-                if (!el) el = document.querySelector(`[data-mcp-index="${targetIdx}"]`);
+                el = raw?.deref ? (raw.deref() ?? null) : raw || null;
+                if (el && (el as any).isConnected === false) el = null;
+                if (!el) {
+                  try {
+                    el = document.querySelector(`[data-mcp-idx="${targetIdx}"]`);
+                  } catch {}
+                }
               }
-              if (!el && targetSelector) el = document.querySelector(targetSelector);
+              if (!el && targetSelector) {
+                try {
+                  el = document.querySelector(targetSelector);
+                } catch {}
+              }
               if (!el) return { success: false, reason: 'Element no longer in DOM' };
 
               const inputEl = el as HTMLInputElement | HTMLTextAreaElement;

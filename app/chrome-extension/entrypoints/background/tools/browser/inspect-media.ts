@@ -34,14 +34,18 @@ export class InspectMediaTool extends BaseBrowserToolExecutor {
         targetTab = await this.resolveAffinityTab({ tabId: args.tabId, sessionId });
       }
     } catch (error) {
-      return createErrorResponse(`Failed to resolve tab: ${error instanceof Error ? error.message : String(error)}`);
+      return createErrorResponse(
+        `Failed to resolve tab: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     const tabId = targetTab.id;
     if (typeof tabId !== 'number') return createErrorResponse('Invalid target tab ID');
 
     if (typeof args.index !== 'number' && (!args.selector || !args.selector.trim())) {
-      return createErrorResponse('Either "index" (1-based from chrome_read_dom) or "selector" must be provided');
+      return createErrorResponse(
+        'Either "index" (1-based from chrome_read_dom) or "selector" must be provided',
+      );
     }
 
     // Path 1: In-Memory Lossless Canvas/Image Extraction
@@ -57,13 +61,18 @@ export class InspectMediaTool extends BaseBrowserToolExecutor {
                 (window as any)[Symbol.for('BROWSERCLAW_ISOLATED_INDEX_MAP')] ||
                 (window as any).__MCP_INDEX_MAP__;
               const raw = isolatedMap?.get(targetIdx);
-              el = raw?.deref ? (raw.deref() ?? null) : (raw || null);
+              el = raw?.deref ? (raw.deref() ?? null) : raw || null;
+              if (el && (el as any).isConnected === false) el = null;
               if (!el) {
-                el = document.querySelector(`[data-mcp-index="${targetIdx}"]`);
+                try {
+                  el = document.querySelector(`[data-mcp-idx="${targetIdx}"]`);
+                } catch {}
               }
             }
             if (!el && targetSelector) {
-              el = document.querySelector(targetSelector);
+              try {
+                el = document.querySelector(targetSelector);
+              } catch {}
             }
             if (!el) return { found: false };
 
@@ -163,7 +172,7 @@ export class InspectMediaTool extends BaseBrowserToolExecutor {
             },
             {
               type: 'image',
-              data: outcome.dataUrl.split(",")[1] || outcome.dataUrl,
+              data: outcome.dataUrl.split(',')[1] || outcome.dataUrl,
               mimeType: 'image/png',
             },
           ],
@@ -181,7 +190,7 @@ export class InspectMediaTool extends BaseBrowserToolExecutor {
         tabId,
         targetIndex: args.index,
         selector: args.selector,
-        
+
         autoExpand: true,
       });
 
@@ -196,7 +205,7 @@ export class InspectMediaTool extends BaseBrowserToolExecutor {
                 success: true,
                 extractionTrack: 'super-sampled-crop',
                 zoom: zoomFactor,
-                
+
                 targetIndex: args.index,
                 selector: args.selector,
                 note: 'Captured via 2.0x super-sampled viewport crop without boundary distortions',
@@ -210,7 +219,9 @@ export class InspectMediaTool extends BaseBrowserToolExecutor {
         isError: false,
       };
     } catch (cropErr) {
-      return createErrorResponse(`Inspect media failed: ${cropErr instanceof Error ? cropErr.message : String(cropErr)}`);
+      return createErrorResponse(
+        `Inspect media failed: ${cropErr instanceof Error ? cropErr.message : String(cropErr)}`,
+      );
     }
   }
 }

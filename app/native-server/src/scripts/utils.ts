@@ -127,7 +127,7 @@ export async function getMainPath(): Promise<string> {
 /**
  * Write Node.js executable path to node_path.txt for run_host scripts.
  * This ensures the native host uses the same Node.js version that was used during installation,
- * avoiding NODE_MODULE_VERSION mismatch errors with native modules like better-sqlite3.
+ * avoiding NODE_MODULE_VERSION mismatch errors.
  *
  * @param distDir - The dist directory where node_path.txt should be written
  * @param nodeExecPath - The Node.js executable path to write (defaults to current process.execPath)

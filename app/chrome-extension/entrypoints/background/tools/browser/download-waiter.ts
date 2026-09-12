@@ -102,7 +102,11 @@ export async function waitForDownload(opts: WaitForDownloadOptions): Promise<Dow
             const item = arr && arr[0];
             if (!item || !matches(item)) return;
             if (item.state === 'interrupted' || delta.state?.current === 'interrupted') {
-              onError(new Error(`Download interrupted: ${item.error || delta.error?.current || 'interrupted'}`));
+              onError(
+                new Error(
+                  `Download interrupted: ${item.error || delta.error?.current || 'interrupted'}`,
+                ),
+              );
               return;
             }
             if (waitForComplete) {
@@ -128,49 +132,31 @@ export async function waitForDownload(opts: WaitForDownloadOptions): Promise<Dow
       .search({ orderBy: ['-startTime'], limit: 30 })
       .then((arr) => {
         if (isSettled) return;
-        const matching = (arr || []).filter((d) => matches(d));
+        const matching = (arr || []).filter((d) => {
+          if (!matches(d)) return false;
+          const itemStartTime = d.startTime ? new Date(d.startTime).getTime() : 0;
+          const itemEndTime = (d as any).endTime ? new Date((d as any).endTime).getTime() : 0;
+          const latestActivityTime = Math.max(itemStartTime, itemEndTime);
+          return !isNaN(latestActivityTime) && latestActivityTime >= searchStartTime;
+        });
         if (matching.length === 0) return;
 
         if (waitForComplete) {
-          const completeHit = matching.find((d) => {
-            if (d.state !== 'complete') return false;
-            const itemTime = d.endTime
-              ? new Date(d.endTime).getTime()
-              : d.startTime
-              ? new Date(d.startTime).getTime()
-              : 0;
-            return !isNaN(itemTime) && itemTime >= searchStartTime;
-          });
+          const completeHit = matching.find((d) => d.state === 'complete');
           if (completeHit) {
             fulfill(completeHit);
             return;
           }
 
           // If recently interrupted with no in_progress alternative, fail early
-          const interruptedHit = matching.find((d) => {
-            if (d.state !== 'interrupted') return false;
-            const itemTime = d.endTime
-              ? new Date(d.endTime).getTime()
-              : d.startTime
-              ? new Date(d.startTime).getTime()
-              : 0;
-            return !isNaN(itemTime) && itemTime >= searchStartTime;
-          });
+          const interruptedHit = matching.find((d) => d.state === 'interrupted');
           const inProgressHit = matching.find((d) => d.state === 'in_progress');
           if (interruptedHit && !inProgressHit) {
             onError(new Error(`Download interrupted: ${interruptedHit.error || 'interrupted'}`));
             return;
           }
         } else {
-          const hit = matching.find((d) => {
-            if (d.state === 'in_progress') return true;
-            const itemTime = d.endTime
-              ? new Date(d.endTime).getTime()
-              : d.startTime
-              ? new Date(d.startTime).getTime()
-              : 0;
-            return !isNaN(itemTime) && itemTime >= searchStartTime;
-          });
+          const hit = matching.find((d) => d.state === 'in_progress' || d.state === 'complete');
           if (hit) {
             fulfill(hit);
             return;
@@ -206,4 +192,3 @@ export async function resolveDownloadedFilePath(
   } catch {}
   return fallbackFilename;
 }
-

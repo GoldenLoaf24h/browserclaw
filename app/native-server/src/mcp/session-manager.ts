@@ -1,6 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { createMcpServerInstance } from './mcp-server';
+import { clearSessionExtraTools } from './register-tools';
 import { randomUUID } from 'node:crypto';
 
 export interface SessionTransport {
@@ -60,6 +61,7 @@ export class McpSessionManager {
         }
       } finally {
         this.sessions.delete(sessionId);
+        clearSessionExtraTools(sessionId);
       }
     };
 
@@ -88,6 +90,7 @@ export class McpSessionManager {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     this.sessions.delete(sessionId);
+    clearSessionExtraTools(sessionId);
 
     try {
       await session.server.close();

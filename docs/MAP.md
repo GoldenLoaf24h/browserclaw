@@ -41,26 +41,27 @@ Welcome to the **BrowserClaw** Project Map. Whether you are an end-user, an AI a
 mcp-chrome-master/
 ├── packages/
 │   └── shared/                  # 🌟 Single Source of Truth
-│       ├── src/
-│       ├── tools.ts         # All 52 tool schemas, Profile definitions
-│       ├── types.ts         # Universal coordinate, batch item & diff result types
-│       └── error-format.ts  # Standardized error reporting with stack control
+│       └── src/
+│           ├── tools.ts         # All 52 tool schemas, tool names
+│           ├── tool-profiles.ts # Profile definitions (Core 24, Crawl 15, Full 52)
+│           ├── types.ts         # Universal coordinate, batch item & diff result types
+│           └── error-format.ts  # Standardized error reporting with stack control
 │
 ├── app/
 │   ├── chrome-extension/        # 🧩 Chrome MV3 Extension (WXT + Vue 3)
 │   │   ├── entrypoints/
 │   │   │   ├── background/      # Main Service Worker (52 Tool Executors)
+│   │   │   │   └── tools/browser/tab-group-manager.ts # Tab grouping & orphan cleanup
 │   │   │   ├── agent-cursor.content.ts # Closed Shadow DOM virtual mouse overlay
 │   │   │   ├── inpage-engine.ts # Isolated-world DOM indexing & pruning engine
 │   │   │   └── popup/           # Extension popup UI (Agent on/off)
 │   │   └── utils/
 │   │       ├── cdp-session-manager.ts # Session-aware CDP retention (10-min idle)
-│   │       ├── tab-group-manager.ts   # Automatic tab grouping & orphan cleanup
 │   │       └── snapshot-cache-manager.ts # DOM fingerprint caching & delta diffing
 │   │
 │   └── native-server/           # 🔌 Fastify Native Messaging Bridge
 │       ├── src/index.ts         # Fastify HTTP (127.0.0.1:12306) & Streamable SSE
-│       ├── src/native-host.ts   # StdIO IPC with Chrome (1MB buffer ceiling guard)
+│       ├── src/native-messaging-host.ts # StdIO IPC with Chrome (1MB buffer ceiling guard)
 │       └── src/scripts/         # Auto-installer for Native Messaging manifest
 │
 ├── docs/                        # 📚 Documentation Vault (MAP, TOOLS, ARCHITECTURE)
@@ -163,20 +164,20 @@ AI Agent                            BrowserClaw Extension                     Us
 
 ## 🛡️ 6. Hardened Security & MV3 Lifecycle Architecture (核心安全与架构加固)
 
-| 架构维度                | 实现机制                                                                                                | 解决的痛点与安全隐患                                                                       |
-| :---------------------- | :------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------- |
-| **Sender 权限隔离**     | `chrome.runtime.onMessage` 严格校验 `_sender.id === chrome.runtime.id` 并拒绝 `_sender.tab`             | 彻底杜绝恶意网页 content script 或外部扩展通过消息伪造窃取 Token 或执行特权工具            |
-| **DOM XSS 防护**        | `agent-cursor.content.ts` 纯 DOM 原生 API 节点构建 (`createElement` / `createTextNode`)                 | 消除浮条原因字符串 `reason` 经由 `innerHTML` 拼接导致的 DOM XSS 风险                       |
-| **跨 Frame 隔离防污染** | 单 Frame 独立执行上下文 (`frameIds: [targetFrameId]`) + 纯符号 WeakRef 索引空间隔离                     | 杜绝跨 Frame 消息串扰，防止子 Frame 污染主 Frame 索引树与全局 WeakRef Map                  |
-| **多 Frame 索引重映射** | `chrome_grep` 全 Frame 扫描 + `inPageReindexFrame` 坐标同步 + `placeholder/aria-label/value` 检索       | 攻破多层嵌套与跨域 iframe 盲区，杜绝子 Frame 索引碰撞与未投影坐标越界派发                  |
-| **CDP 域引用计数**      | `CDPSessionManager` 域级别引用计数 (`enableDomain` / `disableDomain`) + 核心域 (`Page`/`Network`) 常驻  | 解决并发与流水线工具中途 disable 导致后续监听器（Dialog / Network / Settle）崩溃的竞态问题 |
-| **调试器防挂死脱钩**    | `timeout-guard` 与 `detachDebugger` 物理级快速强制解挂 (`chrome.debugger.detach`) 清理域引用计数        | 消除页面未响应或断开时引用计数下溢导致的调试会话假死与死锁                                 |
-| **后台 Tab 离屏截图**   | 后台静默 Tab 强制走 CDP `Page.captureScreenshot(fromSurface: true)`                                     | 彻底消除 `captureVisibleTab` 截取前台活跃窗口导致的隐私泄露，消除非激活 Tab 的 rAF 卡死    |
-| **MV3 会话持久化**      | `SessionTabAffinityManager` / `TabGroupManager` / `TabFaviconManager` 全面接入 `chrome.storage.session` | 抵御 Chrome MV3 30 秒后台 Service Worker 休眠回收，Worker 重启后无损恢复状态               |
-| **误关活跃 Tab 保护**   | `chrome_close_tabs` 空参数关闭活跃 Tab 必须显式传入 `confirm: true` 或携带会话亲缘 `sessionId`          | 杜绝大模型误调用导致意外关闭用户正在操作的日常标签页                                       |
-| **平台按键位掩码**      | macOS Cmd 键位掩码严格对齐 `mod = 4` (Meta)                                                             | 修复 macOS 环境下全选、剪切等组合快捷键位掩码偏差                                          |
-| **单表达式自动 return** | `chrome_javascript` 智能语法检测，无 return 单表达式自动包装 `return (...)`                             | 提升 Agent 即席计算、DOM 属性查询的体验与容错率                                            |
-| **事件驱动加载等待**    | `chrome_get_web_content` 监听 `chrome.tabs.onUpdated` / `onRemoved` 事件驱动完成                        | 替代盲等休眠，大幅降低等待延迟并增强鲁棒性                                                 |
+| 架构维度                    | 实现机制                                                                                                 | 解决的痛点与安全隐患                                                                       |
+| :-------------------------- | :------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------- |
+| **Sender 权限隔离**         | `chrome.runtime.onMessage` 严格校验 `_sender.id === chrome.runtime.id` 并拒绝 `_sender.tab`              | 彻底杜绝恶意网页 content script 或外部扩展通过消息伪造窃取 Token 或执行特权工具            |
+| **DOM XSS 防护**            | `agent-cursor.content.ts` 纯 DOM 原生 API 节点构建 (`createElement` / `createTextNode`)                  | 消除浮条原因字符串 `reason` 经由 `innerHTML` 拼接导致的 DOM XSS 风险                       |
+| **跨 Frame 隔离防污染**     | 单 Frame 独立执行上下文 (`frameIds: [targetFrameId]`) + 纯符号 WeakRef 索引空间隔离                      | 杜绝跨 Frame 消息串扰，防止子 Frame 污染主 Frame 索引树与全局 WeakRef Map                  |
+| **多 Frame 索引隔离与扫描** | `chrome_grep` 全 Frame 扫描 + 纯只读检索 (不污染子 Frame 索引偏移) + `placeholder/aria-label/value` 检索 | 攻破多层嵌套与跨域 iframe 盲区，消除子 Frame 索引篡改副作用                                |
+| **CDP 域引用计数**          | `CDPSessionManager` 域级别引用计数 (`enableDomain` / `disableDomain`) + 核心域 (`Page`/`Network`) 常驻   | 解决并发与流水线工具中途 disable 导致后续监听器（Dialog / Network / Settle）崩溃的竞态问题 |
+| **调试器防挂死脱钩**        | `timeout-guard` 与 `detachDebugger` 物理级快速强制解挂 (`chrome.debugger.detach`) 清理域引用计数         | 消除页面未响应或断开时引用计数下溢导致的调试会话假死与死锁                                 |
+| **后台 Tab 离屏截图**       | 后台静默 Tab 强制走 CDP `Page.captureScreenshot(fromSurface: true)`                                      | 彻底消除 `captureVisibleTab` 截取前台活跃窗口导致的隐私泄露，消除非激活 Tab 的 rAF 卡死    |
+| **MV3 会话持久化**          | `SessionTabAffinityManager` / `TabGroupManager` / `TabFaviconManager` 全面接入 `chrome.storage.session`  | 抵御 Chrome MV3 30 秒后台 Service Worker 休眠回收，Worker 重启后无损恢复状态               |
+| **误关活跃 Tab 保护**       | `chrome_close_tabs` 空参数关闭活跃 Tab 必须显式传入 `confirm: true` 或携带会话亲缘 `sessionId`           | 杜绝大模型误调用导致意外关闭用户正在操作的日常标签页                                       |
+| **平台按键位掩码**          | macOS Cmd 键位掩码严格对齐 `mod = 4` (Meta)                                                              | 修复 macOS 环境下全选、剪切等组合快捷键位掩码偏差                                          |
+| **单表达式自动 return**     | `chrome_javascript` 智能语法检测，无 return 单表达式自动包装 `return (...)`                              | 提升 Agent 即席计算、DOM 属性查询的体验与容错率                                            |
+| **事件驱动加载等待**        | `chrome_get_web_content` 监听 `chrome.tabs.onUpdated` / `onRemoved` 事件驱动完成                         | 替代盲等休眠，大幅降低等待延迟并增强鲁棒性                                                 |
 
 ---
 

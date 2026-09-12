@@ -166,10 +166,13 @@ class CDPSessionManager {
       clearTimeout(this.idleTimers.get(tabId));
       this.idleTimers.delete(tabId);
     }
+    this.dialogStates.delete(tabId);
     this.inFlightRequests.delete(tabId);
     this.domainRefCounts.delete(tabId);
     if (this.sessions.has(tabId)) {
-      console.warn(`[CDPSessionManager] Tab ${tabId} disconnected/closed via ${reason}. Cleaning up session.`);
+      console.warn(
+        `[CDPSessionManager] Tab ${tabId} disconnected/closed via ${reason}. Cleaning up session.`,
+      );
       this.sessions.delete(tabId);
     }
   }
@@ -267,7 +270,11 @@ class CDPSessionManager {
         await this.sendDebuggerCommand(tabId, `${domain}.enable`, params || {}, 3000);
       } catch (e: any) {
         const msg = String(e?.message || e || '').toLowerCase();
-        if (msg.includes('target closed') || msg.includes('tab closed') || msg.includes('not attached')) {
+        if (
+          msg.includes('target closed') ||
+          msg.includes('tab closed') ||
+          msg.includes('not attached')
+        ) {
           throw e;
         }
       }
@@ -547,7 +554,10 @@ class CDPSessionManager {
             try {
               return (await this.sendDebuggerCommand(tabId, method, params)) as T;
             } catch (retryErr: any) {
-              this.handleDetachOrRemoved(tabId, `sendCommand temp-session retry error (${retryErr?.message})`);
+              this.handleDetachOrRemoved(
+                tabId,
+                `sendCommand temp-session retry error (${retryErr?.message})`,
+              );
               throw retryErr;
             }
           } else {

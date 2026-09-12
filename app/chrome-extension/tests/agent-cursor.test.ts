@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { animateAgentCursor, hideAgentCursor } from '../entrypoints/background/tools/browser/agent-cursor';
+import {
+  animateAgentCursor,
+  hideAgentCursor,
+} from '../entrypoints/background/tools/browser/agent-cursor';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -85,7 +88,7 @@ describe('Agent Cursor (Virtual Mouse) Tests', () => {
   it('verifies content script initializes cursor with strict hidden state', () => {
     const contentScriptPath = path.resolve(__dirname, '../entrypoints/agent-cursor.content.ts');
     const source = fs.readFileSync(contentScriptPath, 'utf-8');
-    
+
     // Verify cursorContainer is styled hidden and opacity 0 on mount
     expect(source).toContain("cursorContainer.style.opacity = '0'");
     expect(source).toContain("cursorContainer.style.visibility = 'hidden'");
@@ -93,5 +96,19 @@ describe('Agent Cursor (Virtual Mouse) Tests', () => {
     expect(source).toContain('if (vis <= 0.001)');
     // Verify initial call to renderCursor()
     expect(source).toContain('renderCursor();');
+  });
+
+  it('verifies human intervention ignores enter key in input elements and cleans up on cancel', () => {
+    const contentScriptPath = path.resolve(__dirname, '../entrypoints/agent-cursor.content.ts');
+    const source = fs.readFileSync(contentScriptPath, 'utf-8');
+
+    // Enter guard for inputs/textareas/contenteditable
+    expect(source).toContain("tagName === 'input'");
+    expect(source).toContain("tagName === 'textarea'");
+    expect(source).toContain('Boolean(target?.isContentEditable)');
+
+    // Active intervention cleanup tracking on cancel
+    expect(source).toContain('activeInterventionCleanup');
+    expect(source).toContain('window.removeEventListener');
   });
 });

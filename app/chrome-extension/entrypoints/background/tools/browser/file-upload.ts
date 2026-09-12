@@ -4,6 +4,7 @@ import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { cdpSessionManager } from '../../../../utils/cdp-session-manager';
 import { DIAGNOSTIC_REFRESH_GUIDANCE } from './dom-indexer';
 import { executeInPage } from './in-page-engine';
+import { sendFileOperationToNative, cancelFileOperation } from '../../native-host';
 
 interface FileUploadToolParams {
   selector?: string; // CSS selector for the file input element
@@ -44,7 +45,9 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
 
     // Validate input
     if (!targetSelector && !hasIndex && !hasClickTarget) {
-      return createErrorResponse('Either selector, index, or clickTargetIndex must be provided for file upload');
+      return createErrorResponse(
+        'Either selector, index, or clickTargetIndex must be provided for file upload',
+      );
     }
 
     if (!filePath && !fileUrl && !base64Data) {
@@ -99,7 +102,8 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
             enabled: true,
           });
 
-          let fileChooserListener: ((source: any, method: string, params: any) => void) | null = null;
+          let fileChooserListener: ((source: any, method: string, params: any) => void) | null =
+            null;
           try {
             const eventPromise = new Promise<any>((resolve, reject) => {
               const timer = setTimeout(() => {
@@ -124,7 +128,11 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
 
             // Resolve element coordinates first for trusted CDP mouse click
             let clicked = false;
-            const coordResults = await executeInPage({ tabId, allFrames: true }, 'inPageGetElementCoordinates', [clickIndex]);
+            const coordResults = await executeInPage(
+              { tabId, allFrames: true },
+              'inPageGetElementCoordinates',
+              [clickIndex],
+            );
             const coord = coordResults?.find((r) => r.result?.success)?.result;
             if (coord?.x && coord?.y) {
               await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
@@ -144,12 +152,18 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
               clicked = true;
             } else {
               // Fallback to inPageInteractIndex click
-              const clickResults = await executeInPage({ tabId, allFrames: true }, 'inPageInteractIndex', [clickIndex, 'click']);
+              const clickResults = await executeInPage(
+                { tabId, allFrames: true },
+                'inPageInteractIndex',
+                [clickIndex, 'click'],
+              );
               clicked = Boolean(clickResults?.find((r) => r.result?.success));
             }
 
             if (!clicked) {
-              throw new Error(`Target element with index [${clickIndex}] not found for file upload click trigger`);
+              throw new Error(
+                `Target element with index [${clickIndex}] not found for file upload click trigger`,
+              );
             }
 
             // Wait for file chooser opened event
@@ -280,7 +294,9 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
             await this.safeExecuteScript(tabId, {
               target: { tabId, allFrames: true },
               func: (marker: string) => {
-                document.querySelectorAll(`[${marker}="1"]`).forEach((el) => el.removeAttribute(marker));
+                document
+                  .querySelectorAll(`[${marker}="1"]`)
+                  .forEach((el) => el.removeAttribute(marker));
               },
               args: [markerAttr],
             }).catch(() => {});
@@ -368,7 +384,9 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
             } catch {}
           } else {
             // Fallback to top-level querySelector if resolveNode failed
-            const selectorStr = targetSelector ? targetSelector.replace(/'/g, "\\'") : 'input[type="file"]';
+            const selectorStr = targetSelector
+              ? targetSelector.replace(/'/g, "\\'")
+              : 'input[type="file"]';
             await cdpSessionManager.sendCommand(tabId, 'Runtime.evaluate', {
               expression: `
                 (function() {
@@ -434,55 +452,40 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
     const { fileUrl, base64Data, fileName } = options;
 
     return new Promise((resolve) => {
-      const requestId = `file-upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const requestId = `prep-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       const timeout = setTimeout(() => {
-        console.error('File preparation request timed out');
+        cancelFileOperation(requestId);
         resolve({ error: 'File preparation request timed out after 30 seconds' });
       }, 30000); // 30 second timeout
 
-      // Create listener for the response
-      const handleMessage = (message: any) => {
-        if (
-          message.type === 'file_operation_response' &&
-          message.responseToRequestId === requestId
-        ) {
+      const ok = sendFileOperationToNative(
+        {
+          type: 'file_operation',
+          requestId,
+          payload: {
+            action: 'prepareFile',
+            fileUrl,
+            base64Data,
+            fileName,
+          },
+        },
+        (message: any) => {
           clearTimeout(timeout);
-          chrome.runtime.onMessage.removeListener(handleMessage);
-
           if (message.payload?.success && message.payload?.filePath) {
             resolve({ filePath: message.payload.filePath });
           } else {
-            const err = message.error || message.payload?.error || 'Native host failed to prepare file';
+            const err =
+              message.error || message.payload?.error || 'Native host failed to prepare file';
             console.error('Native host failed to prepare file:', err);
             resolve({ error: err });
           }
-        }
-      };
+        },
+      );
 
-      // Add listener
-      chrome.runtime.onMessage.addListener(handleMessage);
-
-      // Send message to background script to forward to native host
-      chrome.runtime
-        .sendMessage({
-          type: 'forward_to_native',
-          message: {
-            type: 'file_operation',
-            requestId: requestId,
-            payload: {
-              action: 'prepareFile',
-              fileUrl,
-              base64Data,
-              fileName,
-            },
-          },
-        })
-        .catch((error) => {
-          console.error('Error sending message to background:', error);
-          clearTimeout(timeout);
-          chrome.runtime.onMessage.removeListener(handleMessage);
-          resolve({ error: `Failed to communicate with native host: ${error?.message || String(error)}` });
-        });
+      if (!ok) {
+        clearTimeout(timeout);
+        resolve({ error: 'Failed to communicate with native host: Native host not connected' });
+      }
     });
   }
 
@@ -494,35 +497,25 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
       const requestId = `cleanup-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       const timeout = setTimeout(() => resolve(), 5000);
 
-      const handleMessage = (message: any) => {
-        if (
-          message.type === 'file_operation_response' &&
-          message.responseToRequestId === requestId
-        ) {
-          clearTimeout(timeout);
-          chrome.runtime.onMessage.removeListener(handleMessage);
-          resolve();
-        }
-      };
-
-      chrome.runtime.onMessage.addListener(handleMessage);
-      chrome.runtime
-        .sendMessage({
-          type: 'forward_to_native',
-          message: {
-            type: 'file_operation',
-            requestId: requestId,
-            payload: {
-              action: 'cleanupFile',
-              filePath,
-            },
+      const ok = sendFileOperationToNative(
+        {
+          type: 'file_operation',
+          requestId,
+          payload: {
+            action: 'cleanupFile',
+            filePath,
           },
-        })
-        .catch(() => {
+        },
+        () => {
           clearTimeout(timeout);
-          chrome.runtime.onMessage.removeListener(handleMessage);
           resolve();
-        });
+        },
+      );
+
+      if (!ok) {
+        clearTimeout(timeout);
+        resolve();
+      }
     });
   }
 }

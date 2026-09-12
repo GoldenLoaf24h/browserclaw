@@ -23,8 +23,27 @@ describe('chrome_storage', () => {
       ...prevChrome,
       cookies: {
         getAll: vi.fn().mockResolvedValue([
-          { name: 'sid', value: 'abc', domain: '.app.test', path: '/', secure: true, httpOnly: true, sameSite: 'lax', session: true },
-          { name: 'theme', value: 'dark', domain: '.app.test', path: '/', secure: false, httpOnly: false, sameSite: 'lax', session: false, expirationDate: 1900000000 },
+          {
+            name: 'sid',
+            value: 'abc',
+            domain: '.app.test',
+            path: '/',
+            secure: true,
+            httpOnly: true,
+            sameSite: 'lax',
+            session: true,
+          },
+          {
+            name: 'theme',
+            value: 'dark',
+            domain: '.app.test',
+            path: '/',
+            secure: false,
+            httpOnly: false,
+            sameSite: 'lax',
+            session: false,
+            expirationDate: 1900000000,
+          },
         ]),
       },
     };
@@ -43,7 +62,12 @@ describe('chrome_storage', () => {
 
   it('returns HttpOnly cookies that document.cookie cannot see', async () => {
     (storageTool as any).safeExecuteScript = async () => [
-      { result: { localStorage: { available: true, entries: [{ key: 'token', value: 't1' }], total: 1 }, sessionStorage: { available: true, entries: [], total: 0 } } },
+      {
+        result: {
+          localStorage: { available: true, entries: [{ key: 'token', value: 't1' }], total: 1 },
+          sessionStorage: { available: true, entries: [], total: 0 },
+        },
+      },
     ];
 
     const payload = readPayload(await storageTool.execute({}));
@@ -58,7 +82,9 @@ describe('chrome_storage', () => {
   it('drops HttpOnly cookies when includeHttpOnly is false', async () => {
     (storageTool as any).safeExecuteScript = async () => [{ result: {} }];
 
-    const payload = readPayload(await storageTool.execute({ types: ['cookies'], includeHttpOnly: false }));
+    const payload = readPayload(
+      await storageTool.execute({ types: ['cookies'], includeHttpOnly: false }),
+    );
 
     expect(payload.cookies.entries.map((c: any) => c.name)).toEqual(['theme']);
   });
@@ -71,8 +97,21 @@ describe('chrome_storage', () => {
     expect(payload.cookies.entries.map((c: any) => c.name)).toEqual(['theme']);
   });
 
+  it('does not leak HttpOnly cookie values through filter oracle', async () => {
+    (storageTool as any).safeExecuteScript = async () => [{ result: {} }];
+
+    // 'abc' is the value of 'sid' which has httpOnly: true
+    const payload = readPayload(await storageTool.execute({ types: ['cookies'], filter: 'abc' }));
+
+    expect(payload.cookies.entries.map((c: any) => c.name)).toEqual([]);
+  });
+
   it('only reads the stores requested', async () => {
-    const spy = vi.fn().mockResolvedValue([{ result: { localStorage: { available: true, entries: [], total: 0 } } }]);
+    const spy = vi
+      .fn()
+      .mockResolvedValue([
+        { result: { localStorage: { available: true, entries: [], total: 0 } } },
+      ]);
     (storageTool as any).safeExecuteScript = spy;
 
     const payload = readPayload(await storageTool.execute({ types: ['localStorage'] }));

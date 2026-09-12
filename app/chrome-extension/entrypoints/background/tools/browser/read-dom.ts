@@ -44,32 +44,24 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
       let results: chrome.scripting.InjectionResult<PrunedDOMTreeResult>[] = [];
       try {
         // Multi-frame penetration using Chrome Extension native { allFrames: true }
-        results = await executeInPage(
-          { tabId: tab.id, allFrames: true },
-          'inPageDOMPruner',
-          [
-            {
-              viewportThreshold: args.viewportThreshold ?? 1000,
-              highlight: args.highlight ?? false,
-              maxTextLength: args.maxTextLength,
-              format: args.format ?? 'compact',
-            },
-          ],
-        );
+        results = await executeInPage({ tabId: tab.id, allFrames: true }, 'inPageDOMPruner', [
+          {
+            viewportThreshold: args.viewportThreshold ?? 1000,
+            highlight: args.highlight ?? false,
+            maxTextLength: args.maxTextLength,
+            format: args.format ?? 'compact',
+          },
+        ]);
       } catch (frameErr) {
         // Fallback to main frame only if allFrames fails
-        results = await executeInPage(
-          { tabId: tab.id },
-          'inPageDOMPruner',
-          [
-            {
-              viewportThreshold: args.viewportThreshold ?? 1000,
-              highlight: args.highlight ?? false,
-              maxTextLength: args.maxTextLength,
-              format: args.format ?? 'compact',
-            },
-          ],
-        );
+        results = await executeInPage({ tabId: tab.id }, 'inPageDOMPruner', [
+          {
+            viewportThreshold: args.viewportThreshold ?? 1000,
+            highlight: args.highlight ?? false,
+            maxTextLength: args.maxTextLength,
+            format: args.format ?? 'compact',
+          },
+        ]);
       }
 
       if (!results || results.length === 0) {
@@ -140,7 +132,10 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
           // Crucial: Re-index the subframe in the tab context so its in-page isolatedMap, data-mcp-idx,
           // and visual Set-of-Mark badges match the merged index!
           try {
-            await executeInPage({ tabId: tab.id, frameIds: [r.frameId] }, 'inPageReindexFrame', [frameOffset, args.highlight ?? false]);
+            await executeInPage({ tabId: tab.id, frameIds: [r.frameId] }, 'inPageReindexFrame', [
+              frameOffset,
+              args.highlight ?? false,
+            ]);
           } catch (reindexErr) {
             console.warn(`Failed to synchronize subframe ${r.frameId} index map:`, reindexErr);
           }
@@ -149,7 +144,10 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
           // Subframe asset geometry is viewport-local to that frame; tag them
           // with frameId so downstream crop/fetch can resolve the right frame.
           for (const a of subData.assets) {
-            mergedData.assets.push({ ...a, src: a.src ? `${a.src}#@frame=${r.frameId}` : undefined });
+            mergedData.assets.push({
+              ...a,
+              src: a.src ? `${a.src}#@frame=${r.frameId}` : undefined,
+            });
           }
         }
       }
@@ -168,73 +166,78 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         const assetLines = mergedData.assets
           .map(
             (a) =>
-              `[asset ${a.index}] ${a.kind} ${a.rect.width}x${a.rect.height} @(${a.rect.x},${a.rect.y})${a.src ? " " + a.src.slice(0, 120) : ""}${a.alt ? " alt=" + JSON.stringify(a.alt.slice(0, 60)) : ""}`,
+              `[asset ${a.index}] ${a.kind} ${a.rect.width}x${a.rect.height} @(${a.rect.x},${a.rect.y})${a.src ? ' ' + a.src.slice(0, 120) : ''}${a.alt ? ' alt=' + JSON.stringify(a.alt.slice(0, 60)) : ''}`,
           )
           .join('\n');
         mergedData.treeString += `\n[Visual Assets: ${mergedData.assets.length} found. Pass assetIndex to chrome_screenshot to view one.]\n${assetLines}`;
       }
 
-              // Delta DOM support: return only changed/added/removed diffs
-        if (args.deltaOnly && tab.id) {
-          const diff = snapshotCacheManager.diffWithPrevious(tab.id, mergedData.indexedElements || []);
-          snapshotCacheManager.setSnapshot(tab.id, {
-            url: tab.url || '',
-            elementCount: mergedData.elementCount,
-            elements: mergedData.indexedElements,
-          });
+      // Delta DOM support: return only changed/added/removed diffs
+      if (args.deltaOnly && tab.id) {
+        const diff = snapshotCacheManager.diffWithPrevious(
+          tab.id,
+          mergedData.indexedElements || [],
+        );
+        snapshotCacheManager.setSnapshot(tab.id, {
+          url: tab.url || '',
+          elementCount: mergedData.elementCount,
+          elements: mergedData.indexedElements,
+        });
 
-          if (diff.isDelta && diff.unchanged) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: true,
-                      unchanged: true,
-                      revision: diff.revision,
-                      totalElements: diff.totalCurrent,
-                      message: 'Page DOM unchanged since last snapshot. No new or modified interactive elements.',
-                    },
-                    null,
-                    2,
-                  ),
-                },
-              ],
-              isError: false,
-            };
-          }
-
-          if (diff.isDelta) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    {
-                      success: true,
-                      isDelta: true,
-                      revision: diff.revision,
-                      addedCount: diff.added.length,
-                      modifiedCount: diff.modified.length,
-                      removedIndices: diff.removed,
-                      added: diff.added,
-                      modified: diff.modified,
-                    },
-                    null,
-                    2,
-                  ),
-                },
-              ],
-              isError: false,
-            };
-          }
+        if (diff.isDelta && diff.unchanged) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    unchanged: true,
+                    revision: diff.revision,
+                    totalElements: diff.totalCurrent,
+                    message:
+                      'Page DOM unchanged since last snapshot. No new or modified interactive elements.',
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+            isError: false,
+          };
         }
 
-        // Record snapshot in cache manager (P1-6)
+        if (diff.isDelta) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    isDelta: true,
+                    revision: diff.revision,
+                    addedCount: diff.added.length,
+                    modifiedCount: diff.modified.length,
+                    removedIndices: diff.removed,
+                    added: diff.added,
+                    modified: diff.modified,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+            isError: false,
+          };
+        }
+      }
+
+      // Record snapshot in cache manager (P1-6)
       const snapshot = snapshotCacheManager.setSnapshot(tab.id, {
         url: tab.url || '',
         elementCount: mergedData.elementCount,
+        elements: mergedData.indexedElements,
       });
 
       // Pagination cursor support (P1-6)

@@ -25,13 +25,18 @@ const EXPOSED_TOOLS = filterToolSchemas(TOOL_SCHEMAS, TOOL_PROFILE);
 // Per-session dynamic tool activation store
 const sessionExtraTools = new Map<string, Set<string>>();
 
+export const clearSessionExtraTools = (sessionId: string): void => {
+  sessionExtraTools.delete(sessionId);
+};
 
 export const setupTools = (server: Server, serverSessionId?: string) => {
   // List tools handler
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const extra = serverSessionId ? sessionExtraTools.get(serverSessionId) : undefined;
     if (!extra || extra.size === 0) return { tools: EXPOSED_TOOLS };
-    const combined = TOOL_SCHEMAS.filter((t) => EXPOSED_TOOLS.some((e) => e.name === t.name) || extra.has(t.name));
+    const combined = TOOL_SCHEMAS.filter(
+      (t) => EXPOSED_TOOLS.some((e) => e.name === t.name) || extra.has(t.name),
+    );
     return { tools: combined };
   });
 
@@ -88,9 +93,11 @@ const handleToolCall = async (
     }
 
     // 发送请求到Chrome扩展并等待响应
-        // Dynamic activation hook for chrome_tool_docs
+    // Dynamic activation hook for chrome_tool_docs
     if (name === 'chrome_tool_docs' && args?.activateForSession && args?.category) {
-      const catList = TOOL_CATEGORIES[args.category] ? TOOL_CATEGORIES[args.category].split(' ') : [];
+      const catList = TOOL_CATEGORIES[args.category]
+        ? TOOL_CATEGORIES[args.category].split(' ')
+        : [];
       if (sessionId && catList.length > 0) {
         const set = sessionExtraTools.get(sessionId) || new Set<string>();
         for (const tName of catList) set.add(tName);

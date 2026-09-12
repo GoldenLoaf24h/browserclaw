@@ -32,13 +32,28 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const CDP_SESSION_KEY = 'javascript';
 
 export const MCP_INPAGE_HELPERS = `const mcp = (() => {
-  const getMap = () => (globalThis[Symbol.for('__browser_use_isolated_index_map__')] || new Map());
+  const getMap = () => (
+    (typeof globalThis !== 'undefined' && (
+      globalThis[Symbol.for('__browser_use_isolated_index_map__')] ||
+      globalThis[Symbol.for('BROWSERCLAW_ISOLATED_INDEX_MAP')] ||
+      globalThis.__MCP_INDEX_MAP__
+    )) || new Map()
+  );
   const deref = (e) => (e && typeof e.deref === 'function' ? e.deref() : e);
   const resolve = (t) => {
-    if (typeof t === 'number') return deref(getMap().get(t));
+    if (typeof t === 'number') {
+      const fromMap = deref(getMap().get(t));
+      if (fromMap && (fromMap.isConnected !== false)) return fromMap;
+      return document.querySelector(\`[data-mcp-idx="\${t}"]\`);
+    }
     if (typeof t === 'string') {
       const p = parseInt(t.replace(/^ref_/, ''), 10);
-      if (!isNaN(p) && getMap().has(p)) return deref(getMap().get(p));
+      if (!isNaN(p)) {
+        const fromMap = deref(getMap().get(p));
+        if (fromMap && (fromMap.isConnected !== false)) return fromMap;
+        const fromAttr = document.querySelector(\`[data-mcp-idx="\${p}"]\`);
+        if (fromAttr) return fromAttr;
+      }
       return document.querySelector(t);
     }
     return t instanceof Element ? t : null;
@@ -113,6 +128,7 @@ type ErrorKind =
 interface JavaScriptToolParams {
   code: string;
   tabId?: number;
+  contextId?: number;
   timeoutMs?: number;
   maxOutputBytes?: number;
 }
@@ -340,19 +356,28 @@ async function executeViaCdp(
   tabId: number,
   code: string,
   options: ExecutionOptions,
+  contextId?: number,
 ): Promise<ExecutionResult> {
   try {
     const expression = wrapUserCode(code);
 
     const response = await withTimeout(
       cdpSessionManager.withSession(tabId, CDP_SESSION_KEY, async () => {
-        return (await cdpSessionManager.sendCommand(tabId, 'Runtime.evaluate', {
+        const evalParams: Record<string, any> = {
           expression,
           returnByValue: true,
           awaitPromise: true,
           // CDP 内置超时（毫秒），与外层 withTimeout 双重保障
           timeout: options.timeoutMs,
-        })) as CDPEvaluateResult;
+        };
+        if (typeof contextId === 'number') {
+          evalParams.contextId = contextId;
+        }
+        return (await cdpSessionManager.sendCommand(
+          tabId,
+          'Runtime.evaluate',
+          evalParams,
+        )) as CDPEvaluateResult;
       }),
       // 外层超时稍长，给 CDP 一点余量处理超时响应
       options.timeoutMs + 1000,
@@ -586,7 +611,7 @@ class JavaScriptTool extends BaseBrowserToolExecutor {
       const warnings: string[] = [];
 
       // Try CDP execution first
-      const cdpResult = await executeViaCdp(tabId, code, options);
+      const cdpResult = await executeViaCdp(tabId, code, options, args.contextId);
 
       if (cdpResult.ok) {
         return this.buildSuccessResponse(tabId, cdpResult, startTime);

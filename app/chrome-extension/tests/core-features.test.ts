@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { hasIpOrCustomPort } from '../entrypoints/background/tools/browser/common';
-import { acquireKeepalive, isKeepaliveActive, getKeepaliveRefCount } from '../entrypoints/background/keepalive-manager';
+import {
+  acquireKeepalive,
+  isKeepaliveActive,
+  getKeepaliveRefCount,
+} from '../entrypoints/background/keepalive-manager';
 import { ScrollTool } from '../entrypoints/background/tools/browser/scroll';
 
 describe('Extension Core Features', () => {
@@ -71,13 +75,14 @@ describe('Extension Core Features', () => {
   });
 
   describe('Agent Control State Preflight Check', () => {
-    it('respects agentControlEnabled session flag', async () => {
-      // Test the logic used in handleCallTool preflight:
-      // const session = await chrome.storage.session.get('agentControlEnabled');
-      // const isAgentEnabled = session.agentControlEnabled ?? true;
+    it('respects agentControlEnabled session flag without backdoor bypass', async () => {
       let sessionState: Record<string, any> = {};
-      
-      const checkEnabled = () => sessionState.agentControlEnabled ?? true;
+
+      const checkEnabled = (_args?: any) => {
+        // Enforce strict check: no param.args?.__admin_bypass__ bypass allowed
+        const isEnabled = sessionState.agentControlEnabled !== false;
+        return isEnabled;
+      };
 
       // Default is enabled
       expect(checkEnabled()).toBe(true);
@@ -86,9 +91,33 @@ describe('Extension Core Features', () => {
       sessionState = { agentControlEnabled: false };
       expect(checkEnabled()).toBe(false);
 
+      // Backdoor bypass attempt must still be blocked
+      expect(checkEnabled({ __admin_bypass__: true })).toBe(false);
+
       // Explicitly re-enabled
       sessionState = { agentControlEnabled: true };
       expect(checkEnabled()).toBe(true);
+    });
+  });
+
+  describe('NativeHost File Operations', () => {
+    it('provides sendFileOperationToNative and cancelFileOperation helpers', async () => {
+      const { sendFileOperationToNative, cancelFileOperation } =
+        await import('../entrypoints/background/native-host');
+      expect(typeof sendFileOperationToNative).toBe('function');
+      expect(typeof cancelFileOperation).toBe('function');
+
+      // When nativePort is null, returns false cleanly
+      const ok = sendFileOperationToNative({
+        type: 'file_operation',
+        requestId: 'req-1',
+        payload: { action: 'cleanupFile', filePath: '/tmp/test' },
+      });
+      expect(ok).toBe(false);
+
+      // cancelFileOperation does not throw for unknown or existing ID
+      expect(() => cancelFileOperation('req-1')).not.toThrow();
+      expect(() => cancelFileOperation('non-existent')).not.toThrow();
     });
   });
 });

@@ -34,7 +34,7 @@ export class NativeMessagingHost {
     let buffer = Buffer.alloc(0);
     let expectedLength = -1;
     const MAX_MESSAGES_PER_TICK = 100; // Safety guard to avoid long-running loops per readable tick
-    const MAX_MESSAGE_SIZE_BYTES = 16 * 1024 * 1024; // 16MB upper bound for a single message
+    const MAX_MESSAGE_SIZE_BYTES = 1024 * 1024; // 1MB Chrome Native Messaging physical limit
 
     const processAvailable = () => {
       let processed = 0;
@@ -45,9 +45,9 @@ export class NativeMessagingHost {
           expectedLength = buffer.readUInt32LE(0);
           buffer = buffer.slice(4);
 
-          // Validate length header
+          // Validate length header: Chrome strictly caps messages at 1MB
           if (expectedLength <= 0 || expectedLength > MAX_MESSAGE_SIZE_BYTES) {
-            this.sendError(`Invalid message length: ${expectedLength}`);
+            this.sendError(`Invalid message length: ${expectedLength} (exceeds Chrome 1MB limit)`);
             // Reset state to resynchronize stream
             expectedLength = -1;
             buffer = Buffer.alloc(0);
@@ -230,6 +230,27 @@ export class NativeMessagingHost {
     return new Promise((resolve, reject) => {
       const requestId = uuidv4(); // Generate unique request ID
 
+      // Pre-check payload size to fail immediately rather than hang until timeout
+      try {
+        const testStr = JSON.stringify({
+          type: messageType,
+          payload: messagePayload,
+          requestId,
+        });
+        const byteLen = Buffer.byteLength(testStr);
+        if (byteLen >= 1000 * 1024) {
+          reject(
+            new Error(
+              `Outgoing request payload (${byteLen} bytes) exceeds Chrome Native Messaging 1MB ceiling.`,
+            ),
+          );
+          return;
+        }
+      } catch (err: any) {
+        reject(new Error(`Failed to serialize outgoing request: ${err?.message || err}`));
+        return;
+      }
+
       const timeoutId = setTimeout(() => {
         this.pendingRequests.delete(requestId); // Remove from Map after timeout
         reject(new Error(`Request timed out after ${timeoutMs}ms`));
@@ -318,6 +339,22 @@ export class NativeMessagingHost {
         console.error(
           `[NativeHost] Blocked outgoing message exceeding 1MB ceiling: ${messageBuffer.length} bytes`,
         );
+        if (
+          message &&
+          typeof message === 'object' &&
+          message.requestId &&
+          this.pendingRequests.has(message.requestId)
+        ) {
+          const pending = this.pendingRequests.get(message.requestId)!;
+          this.pendingRequests.delete(message.requestId);
+          clearTimeout(pending.timeoutId);
+          pending.reject(
+            new Error(
+              `Outgoing request payload (${messageBuffer.length} bytes) exceeds Chrome Native Messaging 1MB ceiling.`,
+            ),
+          );
+          return;
+        }
         if (message && typeof message === 'object' && message.responseToRequestId) {
           const errMsg = {
             type: message.type || 'error',

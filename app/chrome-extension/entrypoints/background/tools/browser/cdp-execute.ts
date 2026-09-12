@@ -59,14 +59,20 @@ export class CdpExecuteTool extends BaseBrowserToolExecutor {
             content: [
               {
                 type: 'text',
-                text: JSON.stringify({ success: true, method, result: { targetInfos: targets } }, null, 2),
+                text: JSON.stringify(
+                  { success: true, method, result: { targetInfos: targets } },
+                  null,
+                  2,
+                ),
               },
             ],
             isError: false,
           };
         }
       } catch (error) {
-        return createErrorResponse(`Target.getTargets failed: ${error instanceof Error ? error.message : String(error)}`);
+        return createErrorResponse(
+          `Target.getTargets failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
 
@@ -81,7 +87,8 @@ export class CdpExecuteTool extends BaseBrowserToolExecutor {
     }
 
     // If targetId is provided without a tabId (e.g. background worker or out-of-process iframe)
-    const specificTargetId = args.target && typeof args.target.targetId === 'string' ? args.target.targetId : undefined;
+    const specificTargetId =
+      args.target && typeof args.target.targetId === 'string' ? args.target.targetId : undefined;
 
     if (targetTabId === undefined && !specificTargetId) {
       try {
@@ -103,10 +110,7 @@ export class CdpExecuteTool extends BaseBrowserToolExecutor {
     }
 
     // Special case 2: Lifecycle intercept for tab-closing commands
-    if (
-      targetTabId !== undefined &&
-      (method === 'Page.close' || method === 'Target.closeTarget')
-    ) {
+    if (targetTabId !== undefined && (method === 'Page.close' || method === 'Target.closeTarget')) {
       await tabFaviconManager.restoreFavicon(targetTabId).catch(() => {});
     }
 
@@ -124,6 +128,7 @@ export class CdpExecuteTool extends BaseBrowserToolExecutor {
     // Execute with timeout and anti-hang guard
     let timeoutTimer: any;
     let isTimedOut = false;
+    let attachedSpecificTarget = false;
 
     try {
       const commandPromise = (async () => {
@@ -131,10 +136,11 @@ export class CdpExecuteTool extends BaseBrowserToolExecutor {
         if (targetTabId !== undefined && !specificTargetId) {
           return await cdpSessionManager.sendCommand(targetTabId, method, commandParams);
         }
-                // Direct chrome.debugger fallback for out-of-process targetId
+        // Direct chrome.debugger fallback for out-of-process targetId
         if (specificTargetId && typeof chrome !== 'undefined' && chrome.debugger?.attach) {
           try {
             await chrome.debugger.attach({ targetId: specificTargetId }, '1.3');
+            attachedSpecificTarget = true;
           } catch (attErr: any) {
             const attMsg = String(attErr?.message || attErr).toLowerCase();
             if (!attMsg.includes('already attached') && !attMsg.includes('another client')) {
@@ -152,6 +158,16 @@ export class CdpExecuteTool extends BaseBrowserToolExecutor {
           if (targetTabId !== undefined && args.preserveDebuggerOnTimeout !== true) {
             try {
               await cdpSessionManager.detach(targetTabId, 'timeout-guard');
+            } catch {}
+          }
+          if (
+            specificTargetId &&
+            args.preserveDebuggerOnTimeout !== true &&
+            typeof chrome !== 'undefined' &&
+            chrome.debugger?.detach
+          ) {
+            try {
+              await chrome.debugger.detach({ targetId: specificTargetId });
             } catch {}
           }
           reject(new Error(`Timed out after ${timeoutMs}ms waiting for CDP command "${method}".`));
@@ -192,9 +208,22 @@ export class CdpExecuteTool extends BaseBrowserToolExecutor {
     } catch (error) {
       clearTimeout(timeoutTimer);
       const msg = error instanceof Error ? error.message : String(error);
-      return createErrorResponse(
-        `CDP execution error (${method}): ${msg}`,
-      );
+      return createErrorResponse(`CDP execution error (${method}): ${msg}`);
+    } finally {
+      if (timeoutTimer) {
+        clearTimeout(timeoutTimer);
+      }
+      if (
+        attachedSpecificTarget &&
+        (args as any).preserveDebugger !== true &&
+        !isTimedOut &&
+        typeof chrome !== 'undefined' &&
+        chrome.debugger?.detach
+      ) {
+        try {
+          await chrome.debugger.detach({ targetId: specificTargetId });
+        } catch {}
+      }
     }
   }
 }
