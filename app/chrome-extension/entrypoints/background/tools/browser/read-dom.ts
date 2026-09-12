@@ -3,6 +3,7 @@ import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES, type PrunedDOMTreeResult, type IndexedElement } from 'chrome-mcp-shared';
 import { executeInPage } from './in-page-engine';
 import { snapshotCacheManager } from '@/utils/snapshot-cache-manager';
+import { renderCompactElementLine } from './dom-indexer';
 
 export interface ReadDOMParams {
   viewportThreshold?: number;
@@ -15,6 +16,7 @@ export interface ReadDOMParams {
   limit?: number;
   deltaOnly?: boolean;
   maxTextLength?: number;
+  format?: 'compact' | 'html';
   /**
    * Opt in to the bulky per-element detail blocks (indexedElements + indexMap).
    * Off by default: the pruned tree already carries index/tag/attributes/text
@@ -50,6 +52,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
               viewportThreshold: args.viewportThreshold ?? 1000,
               highlight: args.highlight ?? false,
               maxTextLength: args.maxTextLength,
+              format: args.format ?? 'compact',
             },
           ],
         );
@@ -63,6 +66,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
               viewportThreshold: args.viewportThreshold ?? 1000,
               highlight: args.highlight ?? false,
               maxTextLength: args.maxTextLength,
+              format: args.format ?? 'compact',
             },
           ],
         );
@@ -120,13 +124,17 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
               tagName: el.tagName,
             };
 
-            const attrStr = Object.entries(el.attributes || {})
-              .map(([k, v]) => `${k}="${v}"`)
-              .join(' ');
-            const textPart = el.text ? ` "${el.text}"` : '';
-            subframeLines.push(
-              `[${remappedIndex}] <${el.tagName}${attrStr ? ' ' + attrStr : ''} frame="${r.frameId}">${textPart}</${el.tagName}>`,
-            );
+            if (args.format === 'html') {
+              const attrStr = Object.entries(el.attributes || {})
+                .map(([k, v]) => `${k}="${v}"`)
+                .join(' ');
+              const textPart = el.text ? ` "${el.text}"` : '';
+              subframeLines.push(
+                `[${remappedIndex}] <${el.tagName}${attrStr ? ' ' + attrStr : ''} frame="${r.frameId}">${textPart}</${el.tagName}>`,
+              );
+            } else {
+              subframeLines.push(renderCompactElementLine(remappedEl, r.frameId));
+            }
           }
 
           // Crucial: Re-index the subframe in the tab context so its in-page isolatedMap, data-mcp-idx,

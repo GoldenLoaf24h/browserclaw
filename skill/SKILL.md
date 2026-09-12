@@ -120,7 +120,26 @@ When filling multiple fields or executing consecutive actions, **always prefer `
 }
 ```
 
-#### C. High-Frequency Micro-Interactions (`chrome_burst_interact`)
+#### C. Code-Driven Chained Execution (`chrome_javascript` with in-page `mcp.*`)
+
+For complex multi-step logic (conditional branches, loops, or form filling + data extraction), **write a single script with the injected `mcp` helper**. This compresses N roundtrips into 1, slashing latency and tokens:
+
+```json
+// Call chrome_javascript
+{
+  "code": "await mcp.fill(2, 'developer@example.com');\nawait mcp.fill(3, 'SuperSecretPass!');\nawait mcp.click(4);\nawait mcp.sleep(400);\nreturn await mcp.extract(5, 'text');"
+}
+```
+
+Injected `mcp` API:
+- `await mcp.click(indexOrSelector)`: Dispatch clean mouse sequence to numeric index or CSS selector.
+- `await mcp.fill(indexOrSelector, text, clearFirst?)`: Focus, clear, fill, and dispatch input/change events.
+- `await mcp.extract(indexOrSelector, 'text' | 'value' | attrName)`: Extract element data.
+- `await mcp.waitFor(indexOrSelector, timeoutMs?)`: Poll until target appears in DOM.
+- `await mcp.sleep(ms)`: Delay execution.
+- `await mcp.fetch(url, options)`: In-page fetch using the tab's logged-in session, cookies, and CORS context.
+
+#### D. High-Frequency Micro-Interactions (`chrome_burst_interact`)
 
 For dynamic UI targets, fast animations, or canvas items:
 
@@ -135,7 +154,7 @@ For dynamic UI targets, fast animations, or canvas items:
 }
 ```
 
-#### D. `chrome_computer` Action Reference
+#### E. `chrome_computer` Action Reference
 
 `chrome_computer` is the coordinate/gesture workhorse. There is **no `click` action** — the exact enum is:
 
@@ -154,7 +173,7 @@ For dynamic UI targets, fast animations, or canvas items:
 | `zoom`                         | `region` as `{x0,y0,x1,y1}` or `[ymin,xmin,ymax,xmax]`; returns a magnified crop.                                                                                                                                                                                                                                                                       |
 | `screenshot`                   | See `chrome_screenshot` for most cases.                                                                                                                                                                                                                                                                                                                 |
 
-#### E. Intelligent Scrolling (`chrome_smart_scroll` & `chrome_scroll`)
+#### F. Intelligent Scrolling (`chrome_smart_scroll` & `chrome_scroll`)
 
 - Auto-detects the most prominent scrollable container and scrolls it by direction + amount. `amount` accepts a pixel number, `"page"` (viewport height, default) or `"half_page"`:
   ```json
@@ -285,7 +304,22 @@ Extracts clean, readable Markdown from documentation, news, or articles without 
 
 Add `"fit": true` for content-only extraction: scopes to the main content region (`article` / `main` / `[role=main]`) and strips nav/header/footer/aside/form noise before conversion — the crawl4ai "fit markdown" equivalent, in-page.
 
-### D. Focus Isolation & Non-Disruptive Multi-Tab Operation (Zero User Interruption)
+### D. Four-Tier Layered Scraping Protocol (Token-Optimal Data Extraction)
+
+When asked to extract data from websites, **do not blindly dump the whole DOM**. Follow the 4-tier scraping escalation ladder:
+
+1. **Level 1 (Direct API Fetch via `chrome_network_request`)**:
+   - Websites (e.g. GitHub, Twitter, Bilibili, e-commerce) render data from structured JSON APIs.
+   - If you know or can deduce the endpoint, call `chrome_network_request` directly within the tab context. It inherits all session cookies, origin headers, and credentials, returning clean JSON in < 100 tokens.
+2. **Level 2 (Silent API Interception via `chrome_intercept_api`)**:
+   - Intercept background XHR/Fetch payloads triggered by clicks or page loads.
+3. **Level 3 (Semantic Text & Pruned DOM via `chrome_get_markdown` / `chrome_read_dom`)**:
+   - For articles/docs: `chrome_get_markdown { fit: true }`.
+   - For structured interaction: `chrome_read_dom { format: "compact" }` (default).
+4. **Level 4 (Visual Fallback via `chrome_screenshot`)**:
+   - Only for canvas, charts, or visual verification.
+
+### E. Focus Isolation & Non-Disruptive Multi-Tab Operation (Zero User Interruption)
 
 BrowserClaw is specifically engineered to let agents work completely in the background without interrupting the user's foreground browsing:
 
@@ -294,7 +328,7 @@ BrowserClaw is specifically engineered to let agents work completely in the back
 3. **Background Navigation**: `chrome_navigate` opens new tabs in the background (`active: false`) by default. Never pass `background: false` unless the user explicitly asked to bring the tab into the foreground.
 4. **Session Tab Affinity**: When working across multiple turns, pass `sessionId` to bind your agent session to its target tab, preventing accidental fallback to the user's active tab.
 
-### E. Session State Inspection (`chrome_storage`)
+### F. Session State Inspection (`chrome_storage`)
 
 Reads localStorage, sessionStorage, and cookies for the current tab in one call:
 

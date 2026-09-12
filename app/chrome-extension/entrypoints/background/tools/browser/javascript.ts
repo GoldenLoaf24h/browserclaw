@@ -31,6 +31,71 @@ import {
 const DEFAULT_TIMEOUT_MS = 15_000;
 const CDP_SESSION_KEY = 'javascript';
 
+export const MCP_INPAGE_HELPERS = `const mcp = (() => {
+  const getMap = () => (globalThis[Symbol.for('__browser_use_isolated_index_map__')] || new Map());
+  const deref = (e) => (e && typeof e.deref === 'function' ? e.deref() : e);
+  const resolve = (t) => {
+    if (typeof t === 'number') return deref(getMap().get(t));
+    if (typeof t === 'string') {
+      const p = parseInt(t.replace(/^ref_/, ''), 10);
+      if (!isNaN(p) && getMap().has(p)) return deref(getMap().get(p));
+      return document.querySelector(t);
+    }
+    return t instanceof Element ? t : null;
+  };
+  return {
+    get: resolve,
+    click: async (t) => {
+      const el = resolve(t);
+      if (!el) throw new Error('Element not found: ' + t);
+      const r = el.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      const init = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 };
+      el.dispatchEvent(new MouseEvent('mousemove', { ...init, buttons: 0 }));
+      el.dispatchEvent(new MouseEvent('mousedown', { ...init, buttons: 1 }));
+      el.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0 }));
+      el.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
+      return true;
+    },
+    fill: async (t, text, clearFirst = true) => {
+      const el = resolve(t);
+      if (!el) throw new Error('Element not found: ' + t);
+      if (typeof el.focus === 'function') el.focus();
+      if ('value' in el) {
+        if (clearFirst) el.value = '';
+        el.value = String(text ?? '');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      } else if (el.isContentEditable) {
+        if (clearFirst) el.innerText = '';
+        el.innerText = String(text ?? '');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return true;
+    },
+    extract: (t, prop = 'text') => {
+      const el = resolve(t);
+      if (!el) return null;
+      if (prop === 'text') return el.innerText || el.textContent || '';
+      if (prop === 'value') return el.value ?? '';
+      return el.getAttribute?.(prop) ?? el[prop] ?? null;
+    },
+    waitFor: async (t, ms = 5000) => {
+      const start = Date.now();
+      while (Date.now() - start < ms) {
+        const el = resolve(t);
+        if (el) return el;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      throw new Error('Timeout waiting for: ' + t);
+    },
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    fetch: (url, opts) => window.fetch(url, opts),
+  };
+})();
+`;
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -195,11 +260,14 @@ export function detectSingleExpression(code: string): string | null {
  * Automatically adds a return statement if user code is a single expression.
  */
 export function wrapUserCode(code: string): string {
+  if (!code.trim()) {
+    return `(async () => {\n${code}\n})()`;
+  }
   const expr = detectSingleExpression(code);
   if (expr !== null) {
-    return `(async () => {\nreturn (\n${expr}\n);\n})()`;
+    return `(async () => {\n${MCP_INPAGE_HELPERS}return (\n${expr}\n);\n})()`;
   }
-  return `(async () => {\n${code}\n})()`;
+  return `(async () => {\n${MCP_INPAGE_HELPERS}${code}\n})()`;
 }
 
 // ============================================================================
@@ -361,7 +429,7 @@ async function executeViaScripting(
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: 'MAIN',
-      func: async (userCode: string): Promise<ScriptingExecutionResult> => {
+      func: async (userCode: string, inpageHelpers?: string): Promise<ScriptingExecutionResult> => {
         try {
           // Use AsyncFunction constructor to support top-level await
           const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
@@ -398,7 +466,7 @@ async function executeViaScripting(
               codeToRun = `return (\n${validExpr}\n);`;
             }
           }
-          const fn = new AsyncFunction(codeToRun);
+          const fn = new AsyncFunction((inpageHelpers || '') + codeToRun);
           const value = await fn();
           return { ok: true, value };
         } catch (err: unknown) {
@@ -413,7 +481,7 @@ async function executeViaScripting(
           };
         }
       },
-      args: [code],
+      args: [code, MCP_INPAGE_HELPERS],
     });
 
     // Extract the first result

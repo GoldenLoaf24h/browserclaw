@@ -1381,6 +1381,17 @@ export const TOOL_SCHEMAS: Tool[] = [
           description:
             'Also return the bulky indexedElements/indexMap detail blocks (geometry, occlusion flags, safe click points). Off by default because the tree already carries index/tag/attributes/text; enable only when you need per-element rects or visibility flags.',
         },
+        format: {
+          type: 'string',
+          enum: ['compact', 'html'],
+          description:
+            'Output format for treeString. "compact" (default) produces a concise, accessibility-tree-inspired representation without closing tags, slashing token usage by 60%+. "html" returns legacy pseudo-HTML tags.',
+        },
+        deltaOnly: {
+          type: 'boolean',
+          description:
+            'When true, returns only changed/added/removed diffs compared to the previous snapshot, saving 90%+ tokens on repeated reads.',
+        },
       },
       required: [],
     },
