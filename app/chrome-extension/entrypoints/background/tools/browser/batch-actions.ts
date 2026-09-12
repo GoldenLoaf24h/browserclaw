@@ -12,6 +12,7 @@ import {
 } from '@/utils/race-cdp';
 import { resolveTargetLocation } from './unified-locator';
 import { captureDeltaIfRequested } from '@/utils/delta-helper';
+import { getSubframeViewportOffset } from './interact-index';
 
 export interface BatchActionsParams {
   actions: BatchActionItem[];
@@ -270,83 +271,49 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               if (typeof x !== 'number' || typeof y !== 'number') {
                 throw new Error(`Failed to resolve coordinates for action ${i}`);
               }
+
+              if (targetFrameId !== 0 && !coords?.frameOffsetX && !coords?.frameOffsetY) {
+                const offset = await getSubframeViewportOffset(tabId, targetFrameId);
+                x += offset.offsetX;
+                y += offset.offsetY;
+              }
               const targetX = x;
               const targetY = y;
 
-              let isCrossOriginSubframe = false;
-              if (targetFrameId !== 0 && !coords?.frameOffsetX && !coords?.frameOffsetY) {
-                try {
-                  const mainOrigin = (
-                    await executeInPage({ tabId }, 'inPageGetFrameOrigin', [])
-                  )?.[0]?.result;
-                  const frameOrigin = (
-                    await executeInPage(
-                      { tabId, frameIds: [targetFrameId] },
-                      'inPageGetFrameOrigin',
-                      [],
-                    )
-                  )?.[0]?.result;
-                  isCrossOriginSubframe = !mainOrigin || !frameOrigin || mainOrigin !== frameOrigin;
-                } catch {
-                  isCrossOriginSubframe = true;
-                }
-              }
-
-              if (isCrossOriginSubframe) {
-                const frameResults = await executeInPage(
-                  { tabId, frameIds: [targetFrameId] },
-                  'inPageInteractIndex',
-                  [item.index, item.type],
-                );
-                const frameOutcome = frameResults?.[0]?.result;
-                if (!frameOutcome?.success) {
-                  throw new Error(
-                    frameOutcome?.error ||
-                      `Failed to ${item.type} index [${item.index}] in cross-origin frame ${targetFrameId}`,
-                  );
-                }
-                stepOutput = {
+              await cdpSessionManager.withSession(tabId, 'batch-actions-mouse', async () => {
+                await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
+                  type: 'mouseMoved',
                   x: targetX,
                   y: targetY,
-                  [item.type === 'click' ? 'clicked' : 'hovered']: true,
-                  tagName: coords?.tagName,
-                  frameId: targetFrameId,
-                  method: 'synthetic_cross_origin_frame',
-                };
-              } else {
-                await cdpSessionManager.withSession(tabId, 'batch-actions-mouse', async () => {
-                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                    type: 'mouseMoved',
-                    x: targetX,
-                    y: targetY,
-                  });
-
-                  if (item.type === 'click') {
-                    await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                      type: 'mousePressed',
-                      x: targetX,
-                      y: targetY,
-                      button: 'left',
-                      clickCount: 1,
-                    });
-                    await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                      type: 'mouseReleased',
-                      x: targetX,
-                      y: targetY,
-                      button: 'left',
-                      clickCount: 1,
-                    });
-                  }
                 });
 
-                stepOutput = {
-                  x: targetX,
-                  y: targetY,
-                  [item.type === 'click' ? 'clicked' : 'hovered']: true,
-                  tagName: coords?.tagName,
-                  text: coords?.text,
-                };
-              }
+                if (item.type === 'click') {
+                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mousePressed',
+                    x: targetX,
+                    y: targetY,
+                    button: 'left',
+                    clickCount: 1,
+                  });
+                  await new Promise((r) => setTimeout(r, 35));
+                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mouseReleased',
+                    x: targetX,
+                    y: targetY,
+                    button: 'left',
+                    clickCount: 1,
+                  });
+                }
+              });
+
+              stepOutput = {
+                x: targetX,
+                y: targetY,
+                [item.type === 'click' ? 'clicked' : 'hovered']: true,
+                tagName: coords?.tagName,
+                text: coords?.text,
+                isTrusted: true,
+              };
               break;
             }
 

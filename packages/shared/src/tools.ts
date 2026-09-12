@@ -238,7 +238,11 @@ export const TOOL_SCHEMAS: Tool[] = [
           },
           oneOf: [
             { type: 'object', description: '{ x, y } coordinate object' },
-            { type: 'array', items: { type: 'number' }, description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]' },
+            {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
+            },
           ],
           description:
             'Coordinates for actions: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized, 0~1000 per-mille, or absolute viewport pixels across modern vision agents). Interpreted in the space set by coordinateSpace (default: viewport). Required for click/scroll and as end point for drag.',
@@ -257,13 +261,19 @@ export const TOOL_SCHEMAS: Tool[] = [
           },
           oneOf: [
             { type: 'object', description: '{ x, y } coordinate object' },
-            { type: 'array', items: { type: 'number' }, description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]' },
+            {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
+            },
           ],
-          description: 'Starting coordinates for drag action: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box.',
+          description:
+            'Starting coordinates for drag action: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box.',
         },
         startRef: {
           type: 'string',
-          description: 'Drag start ref/index from chrome_read_dom (alternative to startCoordinates).',
+          description:
+            'Drag start ref/index from chrome_read_dom (alternative to startCoordinates).',
         },
         scrollDirection: {
           type: 'string',
@@ -448,7 +458,10 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         width: { type: 'number', description: 'Width in pixels (default: 800)' },
         height: { type: 'number', description: 'Height in pixels (default: 600)' },
-        maxWidth: { type: 'number', description: 'Maximum width in pixels for compression (default: 1280)' },
+        maxWidth: {
+          type: 'number',
+          description: 'Maximum width in pixels for compression (default: 1280)',
+        },
         storeBase64: {
           type: 'boolean',
           description:
@@ -500,11 +513,13 @@ export const TOOL_SCHEMAS: Tool[] = [
         format: {
           type: 'string',
           enum: ['png', 'jpeg', 'webp'],
-          description: 'Image output format: webp (default, high compression for LLM), jpeg, or png',
+          description:
+            'Image output format: webp (default, high compression for LLM), jpeg, or png',
         },
         quality: {
           type: 'number',
-          description: 'Image compression quality from 0 to 100 for webp/jpeg formats (default: 80)',
+          description:
+            'Image compression quality from 0 to 100 for webp/jpeg formats (default: 80)',
         },
         sessionId: {
           type: 'string',
@@ -530,7 +545,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         tabIds: {
           type: 'array',
           items: { type: 'number' },
-          description: 'Array of tab IDs to close. If not provided, will close the active tab (requires confirm: true or session affinity).',
+          description:
+            'Array of tab IDs to close. If not provided, will close the active tab (requires confirm: true or session affinity).',
         },
         url: {
           type: 'string',
@@ -538,7 +554,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         confirm: {
           type: 'boolean',
-          description: 'Explicit confirmation required to close the active tab when tabIds or url are not specified.',
+          description:
+            'Explicit confirmation required to close the active tab when tabIds or url are not specified.',
         },
       },
       required: [],
@@ -659,7 +676,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         tabId: {
           type: 'number',
-          description: 'Optional ID of the tab to execute the request within (defaults to active tab)',
+          description:
+            'Optional ID of the tab to execute the request within (defaults to active tab)',
         },
         tabUrl: {
           type: 'string',
@@ -922,7 +940,8 @@ export const TOOL_SCHEMAS: Tool[] = [
       properties: {
         index: {
           type: 'number',
-          description: 'Compact 1-based index of the target element from chrome_read_dom (alias for ref).',
+          description:
+            'Compact 1-based index of the target element from chrome_read_dom (alias for ref).',
         },
         selector: {
           type: 'string',
@@ -939,7 +958,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         text: {
           type: 'string',
-          description: 'Target element by visible text content (evaluated after ref and selector in degradation chain).',
+          description:
+            'Target element by visible text content (evaluated after ref and selector in degradation chain).',
         },
         role: {
           type: 'string',
@@ -947,14 +967,19 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         coordinate: {
           type: 'object',
-          description: 'Coordinates to click at: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (preferred unified parameter). Interpreted in the space set by coordinateSpace (default: viewport).',
+          description:
+            'Coordinates to click at: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (preferred unified parameter). Interpreted in the space set by coordinateSpace (default: viewport).',
           properties: {
             x: { type: 'number', description: 'X coordinate in viewport/CSS pixels' },
             y: { type: 'number', description: 'Y coordinate in viewport/CSS pixels' },
           },
           oneOf: [
             { type: 'object', description: '{ x, y } coordinate object' },
-            { type: 'array', items: { type: 'number' }, description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]' },
+            {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
+            },
           ],
           required: ['x', 'y'],
         },
@@ -967,7 +992,11 @@ export const TOOL_SCHEMAS: Tool[] = [
           },
           oneOf: [
             { type: 'object', description: '{ x, y } coordinate object' },
-            { type: 'array', items: { type: 'number' }, description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]' },
+            {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
+            },
           ],
           required: ['x', 'y'],
         },
@@ -1039,7 +1068,8 @@ export const TOOL_SCHEMAS: Tool[] = [
       properties: {
         index: {
           type: 'number',
-          description: 'Compact 1-based index of the target element from chrome_read_dom (alias for ref).',
+          description:
+            'Compact 1-based index of the target element from chrome_read_dom (alias for ref).',
         },
         selector: {
           type: 'string',
@@ -1056,7 +1086,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         targetText: {
           type: 'string',
-          description: 'Target element by label or visible text content (used for locating target element).',
+          description:
+            'Target element by label or visible text content (used for locating target element).',
         },
         role: {
           type: 'string',
@@ -1064,7 +1095,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         coordinate: {
           type: 'object',
-          description: 'Viewport coordinates to click and focus before typing (fallback when ref/selector unavailable).',
+          description:
+            'Viewport coordinates to click and focus before typing (fallback when ref/selector unavailable).',
           properties: {
             x: { type: 'number', description: 'X coordinate in viewport/CSS pixels' },
             y: { type: 'number', description: 'Y coordinate in viewport/CSS pixels' },
@@ -1271,7 +1303,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         index: {
           type: 'number',
-          description: 'Compact 1-based numeric index of the file input element from chrome_read_dom',
+          description:
+            'Compact 1-based numeric index of the file input element from chrome_read_dom',
         },
         clickTargetIndex: {
           type: 'number',
@@ -1359,22 +1392,28 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         tabId: { type: 'number', description: 'Target tab ID (optional)' },
         windowId: { type: 'number', description: 'Target window ID (optional)' },
-        highlight: { type: 'boolean', description: 'Whether to visually highlight indexed elements' },
+        highlight: {
+          type: 'boolean',
+          description: 'Whether to visually highlight indexed elements',
+        },
         sessionId: {
           type: 'string',
           description: 'Optional session identifier to bind affinity to a specific tab context',
         },
         cursor: {
           type: 'number',
-          description: 'Pagination cursor offset for traversing very large DOM pages incrementally (default: 0)',
+          description:
+            'Pagination cursor offset for traversing very large DOM pages incrementally (default: 0)',
         },
         limit: {
           type: 'number',
-          description: 'Maximum number of indexed elements to return for current page cursor slice (default: unlimited)',
+          description:
+            'Maximum number of indexed elements to return for current page cursor slice (default: unlimited)',
         },
         maxTextLength: {
           type: 'number',
-          description: 'Maximum text length before truncation for element text content (default: 120)',
+          description:
+            'Maximum text length before truncation for element text content (default: 120)',
         },
         includeDetails: {
           type: 'boolean',
@@ -1410,7 +1449,10 @@ export const TOOL_SCHEMAS: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        index: { type: 'number', description: 'Compact 1-based numeric index of the target element' },
+        index: {
+          type: 'number',
+          description: 'Compact 1-based numeric index of the target element',
+        },
         coordinate: {
           type: 'object',
           properties: {
@@ -1419,7 +1461,11 @@ export const TOOL_SCHEMAS: Tool[] = [
           },
           oneOf: [
             { type: 'object', description: '{ x, y } coordinate object' },
-            { type: 'array', items: { type: 'number' }, description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]' },
+            {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
+            },
           ],
           required: ['x', 'y'],
           description:
@@ -1454,6 +1500,19 @@ export const TOOL_SCHEMAS: Tool[] = [
           description:
             'Interaction action to perform (default: click). "drag" requires `end` and moves from the indexed element to that target.',
         },
+        path: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              x: { type: 'number', description: 'X coordinate in viewport/CSS pixels' },
+              y: { type: 'number', description: 'Y coordinate in viewport/CSS pixels' },
+            },
+            required: ['x', 'y'],
+          },
+          description:
+            'Continuous drag path: an ordered array of { x, y } coordinates to smoothly drag the mouse through while pressed. Ideal for circular gestures, sliders, and drawing on canvas.',
+        },
         end: {
           type: 'object',
           properties: {
@@ -1476,11 +1535,13 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         steps: {
           type: 'number',
-          description: 'Number of intermediate mouse-move steps for drag (default 48; lower is faster, higher is smoother)',
+          description:
+            'Number of intermediate mouse-move steps for drag (default 48; lower is faster, higher is smoother)',
         },
         holdMs: {
           type: 'number',
-          description: 'How long to hold the mouse button before dragging, in ms (default 80, max 1000)',
+          description:
+            'How long to hold the mouse button before dragging, in ms (default 80, max 1000)',
         },
         dnd: {
           type: 'boolean',
@@ -1535,10 +1596,16 @@ export const TOOL_SCHEMAS: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        index: { type: 'number', description: 'Compact 1-based numeric index of the target element' },
+        index: {
+          type: 'number',
+          description: 'Compact 1-based numeric index of the target element',
+        },
         text: { type: 'string', description: 'Text content to fill into the element' },
         value: { type: 'string', description: 'Alias for text parameter' },
-        clear: { type: 'boolean', description: 'Whether to clear existing field content before typing (default: true)' },
+        clear: {
+          type: 'boolean',
+          description: 'Whether to clear existing field content before typing (default: true)',
+        },
         tabId: { type: 'number', description: 'Target tab ID (optional)' },
         windowId: { type: 'number', description: 'Target window ID (optional)' },
         waitForSettle: {
@@ -1584,7 +1651,18 @@ export const TOOL_SCHEMAS: Tool[] = [
             properties: {
               type: {
                 type: 'string',
-                enum: ['click', 'fill', 'hover', 'scroll', 'press_key', 'wait', 'key', 'fill_form', 'assert', 'extract'],
+                enum: [
+                  'click',
+                  'fill',
+                  'hover',
+                  'scroll',
+                  'press_key',
+                  'wait',
+                  'key',
+                  'fill_form',
+                  'assert',
+                  'extract',
+                ],
                 description: 'Action type to perform',
               },
               index: { type: 'number', description: 'Element index (for click, fill, hover)' },
@@ -1616,28 +1694,42 @@ export const TOOL_SCHEMAS: Tool[] = [
               durationMs: { type: 'number', description: 'Wait duration in ms' },
               waitForSettle: {
                 type: 'boolean',
-                description: 'Wait for DOM mutations to settle after this specific action (default: false)',
+                description:
+                  'Wait for DOM mutations to settle after this specific action (default: false)',
               },
               settleTimeoutMs: {
                 type: 'number',
-                description: 'Maximum settle timeout in milliseconds for this action (default: 1500)',
+                description:
+                  'Maximum settle timeout in milliseconds for this action (default: 1500)',
               },
               // For type: 'assert'
-              expectedText: { type: 'string', description: 'Expected text substring or exact match' },
+              expectedText: {
+                type: 'string',
+                description: 'Expected text substring or exact match',
+              },
               condition: {
                 type: 'string',
                 enum: ['contains', 'equals', 'visible', 'not_visible'],
                 description: 'Assertion condition (default: "contains")',
               },
-              abortOnFailure: { type: 'boolean', description: 'Abort batch if assertion fails (default: true)' },
+              abortOnFailure: {
+                type: 'boolean',
+                description: 'Abort batch if assertion fails (default: true)',
+              },
               // For type: 'extract'
               property: {
                 type: 'string',
                 enum: ['text', 'value', 'attribute'],
                 description: 'Property to extract (default: "text")',
               },
-              attributeName: { type: 'string', description: 'Attribute name when property is "attribute"' },
-              variableName: { type: 'string', description: 'Key name under extractedData to store the result' },
+              attributeName: {
+                type: 'string',
+                description: 'Attribute name when property is "attribute"',
+              },
+              variableName: {
+                type: 'string',
+                description: 'Key name under extractedData to store the result',
+              },
             },
             required: ['type'],
           },
@@ -1681,7 +1773,10 @@ export const TOOL_SCHEMAS: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        includeLinks: { type: 'boolean', description: 'Whether to preserve hyperlinks in markdown (default: true)' },
+        includeLinks: {
+          type: 'boolean',
+          description: 'Whether to preserve hyperlinks in markdown (default: true)',
+        },
         fit: {
           type: 'boolean',
           description:
@@ -1761,10 +1856,23 @@ export const TOOL_SCHEMAS: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        tabId: { type: 'number', description: 'Single tab ID to move (optional if tabIds provided)' },
-        tabIds: { type: 'array', items: { type: 'number' }, description: 'Multiple tab IDs to move' },
-        index: { type: 'number', description: 'Target position index in the window (0-based, or -1 for end of window)' },
-        windowId: { type: 'number', description: 'Target window ID (optional, defaults to current window)' },
+        tabId: {
+          type: 'number',
+          description: 'Single tab ID to move (optional if tabIds provided)',
+        },
+        tabIds: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Multiple tab IDs to move',
+        },
+        index: {
+          type: 'number',
+          description: 'Target position index in the window (0-based, or -1 for end of window)',
+        },
+        windowId: {
+          type: 'number',
+          description: 'Target window ID (optional, defaults to current window)',
+        },
       },
       required: ['index'],
     },
@@ -1782,7 +1890,11 @@ export const TOOL_SCHEMAS: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        tabIds: { type: 'array', items: { type: 'number' }, description: 'Array of tab IDs to add to the group' },
+        tabIds: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Array of tab IDs to add to the group',
+        },
         groupId: { type: 'number', description: 'Optional existing group ID to add tabs into' },
         title: { type: 'string', description: 'Optional title label for the tab group' },
         color: {
@@ -1790,7 +1902,10 @@ export const TOOL_SCHEMAS: Tool[] = [
           enum: ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'],
           description: 'Optional color for the tab group',
         },
-        collapsed: { type: 'boolean', description: 'Whether the tab group should be collapsed (default: false)' },
+        collapsed: {
+          type: 'boolean',
+          description: 'Whether the tab group should be collapsed (default: false)',
+        },
         windowId: { type: 'number', description: 'Target window ID (optional)' },
       },
       required: ['tabIds'],
@@ -1853,7 +1968,11 @@ export const TOOL_SCHEMAS: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        tabIds: { type: 'array', items: { type: 'number' }, description: 'Array of tab IDs to ungroup' },
+        tabIds: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Array of tab IDs to ungroup',
+        },
       },
       required: ['tabIds'],
     },
@@ -1918,7 +2037,11 @@ export const TOOL_SCHEMAS: Tool[] = [
           },
           oneOf: [
             { type: 'object', description: '{ x, y } coordinate object' },
-            { type: 'array', items: { type: 'number' }, description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]' },
+            {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
+            },
           ],
           required: ['x', 'y'],
           description:
@@ -1950,13 +2073,14 @@ export const TOOL_SCHEMAS: Tool[] = [
       openWorldHint: true,
     },
     description:
-      'Explicitly attach CDP debugger and session affinity to a specific tab (by tabId) or the user\'s currently active tab. WARNING / SIDE EFFECT: Attaching to the user\'s active tab displays Chrome\'s debugger warning banner (\'browserclaw is debugging this browser\') and directly shares execution state with the user. Avoid calling unless interaction with the user\'s active tab is explicitly requested.',
+      "Explicitly attach CDP debugger and session affinity to a specific tab (by tabId) or the user's currently active tab. WARNING / SIDE EFFECT: Attaching to the user's active tab displays Chrome's debugger warning banner ('browserclaw is debugging this browser') and directly shares execution state with the user. Avoid calling unless interaction with the user's active tab is explicitly requested.",
     inputSchema: {
       type: 'object',
       properties: {
         tabId: {
           type: 'number',
-          description: 'The target tab ID to attach. If omitted, attaches to the user\'s currently active foreground tab.',
+          description:
+            "The target tab ID to attach. If omitted, attaches to the user's currently active foreground tab.",
         },
         sessionId: {
           type: 'string',
@@ -2096,15 +2220,33 @@ export const TOOL_SCHEMAS: Tool[] = [
               },
               oneOf: [
                 { type: 'object', description: '{ x, y } coordinate object' },
-                { type: 'array', items: { type: 'number' }, description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]' },
+                {
+                  type: 'array',
+                  items: { type: 'number' },
+                  description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
+                },
               ],
               required: ['x', 'y'],
-              description: 'Center point for burst clicks: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box',
+              description:
+                'Center point for burst clicks: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box',
             },
-            count: { type: 'number', description: 'Number of clicks in the burst (1-100, default: 5)' },
-            radius: { type: 'number', description: 'Random dispersion radius in pixels around center (default: 0)' },
-            intervalMs: { type: 'number', description: 'Delay between consecutive clicks in ms (default: 10)' },
-            button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'Mouse button (default: left)' },
+            count: {
+              type: 'number',
+              description: 'Number of clicks in the burst (1-100, default: 5)',
+            },
+            radius: {
+              type: 'number',
+              description: 'Random dispersion radius in pixels around center (default: 0)',
+            },
+            intervalMs: {
+              type: 'number',
+              description: 'Delay between consecutive clicks in ms (default: 10)',
+            },
+            button: {
+              type: 'string',
+              enum: ['left', 'right', 'middle'],
+              description: 'Mouse button (default: left)',
+            },
           },
           required: ['center'],
           description: 'High-frequency burst clicking around a center point',
@@ -2116,7 +2258,10 @@ export const TOOL_SCHEMAS: Tool[] = [
             properties: {
               x: { type: 'number', description: 'X coordinate' },
               y: { type: 'number', description: 'Y coordinate' },
-              pauseMs: { type: 'number', description: 'Pause duration at this trajectory node in ms' },
+              pauseMs: {
+                type: 'number',
+                description: 'Pause duration at this trajectory node in ms',
+              },
               click: { type: 'boolean', description: 'Whether to dispatch a click at this node' },
               button: { type: 'string', enum: ['left', 'right', 'middle'] },
             },
@@ -2137,7 +2282,10 @@ export const TOOL_SCHEMAS: Tool[] = [
           },
           description: 'Rapid keyboard keypress sequence',
         },
-        waitForSettle: { type: 'boolean', description: 'Wait for DOM settle after sequence completes' },
+        waitForSettle: {
+          type: 'boolean',
+          description: 'Wait for DOM settle after sequence completes',
+        },
         settleTimeoutMs: { type: 'number', description: 'Settle timeout in ms' },
       },
       required: [],
@@ -2166,7 +2314,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         amount: {
           type: 'string',
-          description: 'Scroll amount: number in pixels, "page" (viewport height), or "half_page" (default: "page")',
+          description:
+            'Scroll amount: number in pixels, "page" (viewport height), or "half_page" (default: "page")',
         },
         selector: {
           type: 'string',
@@ -2184,7 +2333,11 @@ export const TOOL_SCHEMAS: Tool[] = [
           },
           oneOf: [
             { type: 'object', description: '{ x, y } coordinate object' },
-            { type: 'array', items: { type: 'number' }, description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]' },
+            {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
+            },
           ],
           required: ['x', 'y'],
           description:
@@ -2196,7 +2349,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         waitForSettle: {
           type: 'boolean',
-          description: 'Wait for DOM and network activity to settle after scroll completes (default: true)',
+          description:
+            'Wait for DOM and network activity to settle after scroll completes (default: true)',
         },
         settleTimeoutMs: {
           type: 'number',
@@ -2227,7 +2381,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         filter: {
           type: 'string',
-          description: 'Only return entries whose key or value contains this substring (case-insensitive)',
+          description:
+            'Only return entries whose key or value contains this substring (case-insensitive)',
         },
         limit: {
           type: 'number',
@@ -2235,7 +2390,8 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
         includeHttpOnly: {
           type: 'boolean',
-          description: 'Include HttpOnly cookies (default true). Their values are redacted (valueIncluded: false) regardless; set includeHttpOnly:false to drop the entries entirely',
+          description:
+            'Include HttpOnly cookies (default true). Their values are redacted (valueIncluded: false) regardless; set includeHttpOnly:false to drop the entries entirely',
         },
         tabId: { type: 'number', description: 'Target tab ID (optional)' },
         windowId: { type: 'number', description: 'Target window ID (optional)' },
@@ -2254,14 +2410,23 @@ export const TOOL_SCHEMAS: Tool[] = [
       openWorldHint: false,
     },
     description:
-      "Extract all links on the page for crawling: absolute URL, anchor text, internal/external classification, rel=nofollow flag. Supports an optional CSS selector to scope extraction, and a sameOriginOnly filter.",
+      'Extract all links on the page for crawling: absolute URL, anchor text, internal/external classification, rel=nofollow flag. Supports an optional CSS selector to scope extraction, and a sameOriginOnly filter.',
     inputSchema: {
       type: 'object',
       properties: {
         tabId: { type: 'number', description: 'Target tab ID (default: active tab)' },
-        selector: { type: 'string', description: 'Optional CSS selector to scope the link search (default: whole document)' },
-        sameOriginOnly: { type: 'boolean', description: 'Only return same-origin links (default: false)' },
-        includeEmptyHref: { type: 'boolean', description: 'Include anchors without href (default: false)' },
+        selector: {
+          type: 'string',
+          description: 'Optional CSS selector to scope the link search (default: whole document)',
+        },
+        sameOriginOnly: {
+          type: 'boolean',
+          description: 'Only return same-origin links (default: false)',
+        },
+        includeEmptyHref: {
+          type: 'boolean',
+          description: 'Include anchors without href (default: false)',
+        },
         sessionId: { type: 'string', description: 'Session ID for tab affinity (optional)' },
       },
       required: [],
@@ -2281,8 +2446,25 @@ export const TOOL_SCHEMAS: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        category: { type: 'string', enum: ['navigate', 'perceive', 'act', 'observe', 'manage', 'crawl', 'diagnose', 'network'], description: 'Tool category to document' },
-        activateForSession: { type: 'boolean', description: 'When true, dynamically exposes all tools in this category for the current MCP session without server restart. Default: false' },
+        category: {
+          type: 'string',
+          enum: [
+            'navigate',
+            'perceive',
+            'act',
+            'observe',
+            'manage',
+            'crawl',
+            'diagnose',
+            'network',
+          ],
+          description: 'Tool category to document',
+        },
+        activateForSession: {
+          type: 'boolean',
+          description:
+            'When true, dynamically exposes all tools in this category for the current MCP session without server restart. Default: false',
+        },
       },
       required: ['category'],
     },
@@ -2358,7 +2540,10 @@ export const TOOL_SCHEMAS: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        reason: { type: 'string', description: 'Clear instruction explaining what the human user needs to do' },
+        reason: {
+          type: 'string',
+          description: 'Clear instruction explaining what the human user needs to do',
+        },
         timeoutMs: { type: 'number', description: 'Timeout in milliseconds (default: 60000)' },
         tabId: { type: 'number', description: 'Target tab ID' },
       },
@@ -2398,7 +2583,12 @@ export const TOOL_SCHEMAS: Tool[] = [
       type: 'object',
       properties: {
         urlPattern: { type: 'string', description: 'Glob pattern to match API endpoint URL' },
-        triggerAction: { type: 'string', enum: ['inspect_recent', 'wait_next'], description: 'Wait for next response or inspect most recent match (default: inspect_recent)' },
+        triggerAction: {
+          type: 'string',
+          enum: ['inspect_recent', 'wait_next'],
+          description:
+            'Wait for next response or inspect most recent match (default: inspect_recent)',
+        },
         timeoutMs: { type: 'number', description: 'Timeout in milliseconds (default: 10000)' },
         tabId: { type: 'number', description: 'Target tab ID' },
       },
@@ -2420,16 +2610,25 @@ export const TOOL_SCHEMAS: Tool[] = [
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Search term or regex pattern' },
-        isRegex: { type: 'boolean', description: 'Whether to evaluate query as a regular expression (default: false)' },
+        isRegex: {
+          type: 'boolean',
+          description: 'Whether to evaluate query as a regular expression (default: false)',
+        },
         searchType: {
           type: 'string',
           enum: ['interactive_only', 'all_dom', 'page_text'],
           description:
             'Search target: "interactive_only" (default, matches clickable/fillable elements and returns indices), "all_dom" (matches all elements), "page_text" (scans visible text lines).',
         },
-        limit: { type: 'number', description: 'Maximum matching results to return (default: 20, max: 50)' },
+        limit: {
+          type: 'number',
+          description: 'Maximum matching results to return (default: 20, max: 50)',
+        },
         tabId: { type: 'number', description: 'Target tab ID (optional)' },
-        sessionId: { type: 'string', description: 'Session identifier for tab affinity (optional)' },
+        sessionId: {
+          type: 'string',
+          description: 'Session identifier for tab affinity (optional)',
+        },
       },
       required: ['query'],
     },

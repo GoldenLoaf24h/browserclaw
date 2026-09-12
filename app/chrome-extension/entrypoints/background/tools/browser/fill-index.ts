@@ -9,6 +9,7 @@ import { raceCdp, DialogOpenedError, createDialogInterruptResponse } from '@/uti
 import { sessionTabAffinity } from '@/utils/session-tab-affinity';
 import { animateAgentCursor } from './agent-cursor';
 import { captureDeltaIfRequested } from '@/utils/delta-helper';
+import { getSubframeViewportOffset } from './interact-index';
 
 export interface FillIndexParams {
   index: number;
@@ -64,12 +65,28 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
 
       // 1. Try CDP native mouse click + Input.insertText (isTrusted: true)
       try {
-        const coordRes = await executeInPage({ tabId: targetTabId }, 'inPageGetElementCoordinates', [args.index]);
+        const coordRes = await executeInPage(
+          { tabId: targetTabId },
+          'inPageGetElementCoordinates',
+          [args.index],
+        );
         let coords = coordRes?.[0]?.result;
         if (!coords?.success) {
-          const frameResults = await executeInPage({ tabId: targetTabId, allFrames: true }, 'inPageGetElementCoordinates', [args.index]);
+          const frameResults = await executeInPage(
+            { tabId: targetTabId, allFrames: true },
+            'inPageGetElementCoordinates',
+            [args.index],
+          );
           const match = frameResults.find((r) => r.result?.success);
-          if (match?.result) coords = match.result;
+          if (match?.result) {
+            coords = match.result;
+            const targetFrameId = match.frameId ?? 0;
+            if (targetFrameId !== 0 && !coords.frameOffsetX && !coords.frameOffsetY) {
+              const offset = await getSubframeViewportOffset(targetTabId, targetFrameId);
+              coords.x += offset.offsetX;
+              coords.y += offset.offsetY;
+            }
+          }
         }
 
         if (coords?.success && typeof coords.x === 'number' && typeof coords.y === 'number') {
@@ -77,21 +94,24 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           const targetY = coords.y;
 
           // Animate virtual agent cursor to target input before click and type
-          await animateAgentCursor(targetTabId, targetX, targetY, { waitForArrival: true, timeoutMs: 350 });
+          await animateAgentCursor(targetTabId, targetX, targetY, {
+            waitForArrival: true,
+            timeoutMs: 350,
+          });
 
           // Skip the Ctrl+A + Backspace clear sequence when the field is already
           // empty: a trusted Backspace on an empty box can trigger page-level
           // "backspace retreats focus" logic (e.g. OTP inputs) and steal the
           // subsequent insertText into the previous box.
           const isKnownEmpty = typeof coords.value === 'string' && coords.value === '';
-            if (typeof coords.value === 'string') {
-              actionHistoryManager.pushAction(targetTabId, {
-                type: 'fill',
-                index: args.index,
-                prevValue: coords.value,
-                timestamp: Date.now(),
-              });
-            }
+          if (typeof coords.value === 'string') {
+            actionHistoryManager.pushAction(targetTabId, {
+              type: 'fill',
+              index: args.index,
+              prevValue: coords.value,
+              timestamp: Date.now(),
+            });
+          }
 
           await cdpSessionManager.withSession(targetTabId, 'fill-index', async () => {
             await raceCdp(targetTabId, 'Input.dispatchMouseEvent', {
@@ -170,16 +190,27 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
         if (cdpErr instanceof DialogOpenedError) {
           throw cdpErr;
         }
-        console.warn(`CDP native fill failed on index [${args.index}], falling back to inPageFillIndex:`, cdpErr);
+        console.warn(
+          `CDP native fill failed on index [${args.index}], falling back to inPageFillIndex:`,
+          cdpErr,
+        );
       }
 
       // 2. Fallback to in-page synthetic fill
       if (!filledViaCdp) {
-        const results = await executeInPage({ tabId: targetTabId }, 'inPageFillIndex', [args.index, textToFill, args.clear !== false]);
+        const results = await executeInPage({ tabId: targetTabId }, 'inPageFillIndex', [
+          args.index,
+          textToFill,
+          args.clear !== false,
+        ]);
 
         outcome = results?.[0]?.result;
         if (!outcome || !outcome.success) {
-          const frameResults = await executeInPage({ tabId: targetTabId, allFrames: true }, 'inPageFillIndex', [args.index, textToFill, args.clear !== false]);
+          const frameResults = await executeInPage(
+            { tabId: targetTabId, allFrames: true },
+            'inPageFillIndex',
+            [args.index, textToFill, args.clear !== false],
+          );
           const match = frameResults.find((r) => r.result?.success);
           if (match?.result) {
             outcome = match.result;
@@ -188,11 +219,15 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
       }
 
       if (!outcome || !outcome.success) {
-        return createErrorResponse(outcome?.error || `Failed to fill element with index [${args.index}]`);
+        return createErrorResponse(
+          outcome?.error || `Failed to fill element with index [${args.index}]`,
+        );
       }
 
       if (args.waitForSettle) {
-        const settleResult = await waitForPageSettle(targetTabId, { timeoutMs: args.settleTimeoutMs });
+        const settleResult = await waitForPageSettle(targetTabId, {
+          timeoutMs: args.settleTimeoutMs,
+        });
         (outcome as any).settle = settleResult;
       }
 

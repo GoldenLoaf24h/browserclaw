@@ -28,6 +28,7 @@ export interface InteractIndexParams {
   points?: Array<{ x: number; y: number } | PolymorphicCoordinate>;
   intervalMs?: number;
   action?: 'click' | 'hover' | 'double_click' | 'right_click' | 'drag';
+  path?: Array<{ x: number; y: number }>;
   end?: { index?: number; coordinate?: { x: number; y: number } | PolymorphicCoordinate };
   steps?: number;
   holdMs?: number;
@@ -65,52 +66,79 @@ export async function getSubframeViewportOffset(
 ): Promise<{ offsetX: number; offsetY: number }> {
   if (!frameId || frameId === 0) return { offsetX: 0, offsetY: 0 };
   try {
-    let frameUrl: string | undefined;
-    if (typeof chrome !== 'undefined' && chrome.webNavigation?.getFrame) {
-      const details = await chrome.webNavigation.getFrame({ tabId, frameId }).catch(() => null);
-      frameUrl = details?.url;
-    }
+    if (typeof chrome !== 'undefined' && chrome.webNavigation?.getAllFrames) {
+      const allFrames = await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null);
+      if (allFrames && allFrames.length > 0) {
+        const frameMap = new Map<
+          number,
+          { frameId: number; parentFrameId: number; url?: string }
+        >();
+        for (const f of allFrames) {
+          frameMap.set(f.frameId, f);
+        }
 
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: (targetUrl?: string) => {
-        const iframes = Array.from(document.querySelectorAll('iframe'));
-        if (iframes.length === 0) return { offsetX: 0, offsetY: 0 };
-        let match = iframes.find((f) => {
-          try {
-            return (
-              targetUrl &&
-              f.src &&
-              (f.src === targetUrl || targetUrl.startsWith(f.src) || f.src.startsWith(targetUrl))
-            );
-          } catch {
-            return false;
+        const chain: Array<{ parentId: number; childId: number; childUrl?: string }> = [];
+        let curr = frameMap.get(frameId);
+        while (curr && curr.frameId !== 0) {
+          const parentId = curr.parentFrameId;
+          chain.unshift({ parentId, childId: curr.frameId, childUrl: curr.url });
+          curr = frameMap.get(parentId);
+        }
+
+        if (chain.length > 0) {
+          let totalX = 0;
+          let totalY = 0;
+          for (const link of chain) {
+            const results = await chrome.scripting
+              .executeScript({
+                target: { tabId, frameIds: [link.parentId] },
+                func: (targetUrl?: string) => {
+                  const iframes = Array.from(document.querySelectorAll('iframe'));
+                  if (iframes.length === 0) return { offsetX: 0, offsetY: 0 };
+                  let match = iframes.find((f) => {
+                    try {
+                      return (
+                        targetUrl &&
+                        f.src &&
+                        (f.src === targetUrl ||
+                          targetUrl.startsWith(f.src) ||
+                          f.src.startsWith(targetUrl))
+                      );
+                    } catch {
+                      return false;
+                    }
+                  });
+                  if (!match) {
+                    match = iframes[0];
+                  }
+                  if (match) {
+                    const rect = match.getBoundingClientRect();
+                    const style = window.getComputedStyle(match);
+                    const borderLeft = parseFloat(style?.borderLeftWidth || '0') || 0;
+                    const borderTop = parseFloat(style?.borderTopWidth || '0') || 0;
+                    return {
+                      offsetX: Math.round(rect.left + borderLeft),
+                      offsetY: Math.round(rect.top + borderTop),
+                    };
+                  }
+                  return { offsetX: 0, offsetY: 0 };
+                },
+                args: [link.childUrl],
+              })
+              .catch(() => null);
+
+            const res = results?.[0]?.result;
+            if (res) {
+              totalX += res.offsetX;
+              totalY += res.offsetY;
+            }
           }
-        });
-        if (!match) {
-          match = iframes[0];
+          return { offsetX: totalX, offsetY: totalY };
         }
-        if (match) {
-          const rect = match.getBoundingClientRect();
-          const style = window.getComputedStyle(match);
-          const borderLeft = parseFloat(style?.borderLeftWidth || '0') || 0;
-          const borderTop = parseFloat(style?.borderTopWidth || '0') || 0;
-          return {
-            offsetX: Math.round(rect.left + borderLeft),
-            offsetY: Math.round(rect.top + borderTop),
-          };
-        }
-        return { offsetX: 0, offsetY: 0 };
-      },
-      args: [frameUrl],
-    });
-
-    const res = results?.[0]?.result;
-    if (res && typeof res.offsetX === 'number' && typeof res.offsetY === 'number') {
-      return res;
+      }
     }
   } catch (err) {
-    console.warn(`Failed to resolve subframe ${frameId} viewport offset:`, err);
+    console.warn(`Failed to resolve subframe ${frameId} cumulative offset:`, err);
   }
   return { offsetX: 0, offsetY: 0 };
 }
@@ -511,10 +539,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
 
       const modifierMask = computeModifierMask(args.modifiers);
       let usedNativeCDP = false;
-      // 2. Perform event dispatch
-      // If element is in a cross-origin subframe (where frameOffsetX/Y couldn't be calculated),
-      // dispatch synthetic DOM event directly inside the isolated subframe.
-      let isCrossOriginSubframe = false;
+      // 2. Compensate cumulative frame offset if target is inside a nested or cross-origin subframe
       if (
         targetFrameId !== undefined &&
         targetFrameId !== 0 &&
@@ -522,31 +547,27 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         !coordResult?.frameOffsetX &&
         !coordResult?.frameOffsetY
       ) {
-        // Cumulative frame offset is unavailable both for cross-origin iframes AND for
-        // same-origin iframes positioned at (0,0) (e.g. srcdoc). Compare origins to decide:
-        // same-origin iframes must go through native CDP dispatch (isTrusted=true).
-        try {
-          const mainOrigin = (await executeInPage({ tabId }, 'inPageGetFrameOrigin', []))?.[0]
-            ?.result;
-          const frameOrigin = (
-            await executeInPage({ tabId, frameIds: [targetFrameId] }, 'inPageGetFrameOrigin', [])
-          )?.[0]?.result;
-          isCrossOriginSubframe = !mainOrigin || !frameOrigin || mainOrigin !== frameOrigin;
-        } catch {
-          isCrossOriginSubframe = true;
-        }
+        const offset = await getSubframeViewportOffset(tabId, targetFrameId);
+        x += offset.offsetX;
+        y += offset.offsetY;
       }
 
       let dragOutcome: any = undefined;
       if (action === 'drag') {
-        if (isCrossOriginSubframe && targetFrameId) {
-          const offset = await getSubframeViewportOffset(tabId, targetFrameId);
-          x += offset.offsetX;
-          y += offset.offsetY;
-        }
         dragOutcome = { dragIntercepted: false, dndDispatched: false };
-        const endPoint = await resolveDragEndPoint(tabId, args.end, args.coordinateSpace);
-        if (!endPoint) {
+        const hasPath = Array.isArray(args.path) && args.path.length > 0;
+        let endPoint: { x: number; y: number } | null = null;
+        if (!hasPath) {
+          endPoint = await resolveDragEndPoint(tabId, args.end, args.coordinateSpace);
+          if (!endPoint) {
+            return createErrorResponse('drag requires end.index, end.coordinate, or a path array');
+          }
+        } else {
+          const lastPt = args.path![args.path!.length - 1];
+          endPoint = { x: Math.round(lastPt.x), y: Math.round(lastPt.y) };
+        }
+
+        if (!endPoint && !hasPath) {
           return createErrorResponse(
             'drag requires end.index or end.coordinate that resolves to a valid viewport point',
           );
@@ -568,15 +589,12 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           };
           cdpSessionManager.addCdpEventObserver(observer);
           try {
-            // No pre-press hover move: for narrow right-anchored drag targets
-            // (resize handles) the hover move itself lands on the target and
-            // advances its drag state before mousePressed, shifting the
-            // element away from the press point. Pressing directly at the
-            // resolved point is exact; the move loop below provides motion.
+            const startX = hasPath ? Math.round(args.path![0].x) : x;
+            const startY = hasPath ? Math.round(args.path![0].y) : y;
             await raceCdp(tabId, 'Input.dispatchMouseEvent', {
               type: 'mousePressed',
-              x,
-              y,
+              x: startX,
+              y: startY,
               button: 'left',
               buttons: 1,
               clickCount: 1,
@@ -585,33 +603,47 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             if (holdMs > 0) {
               await new Promise((r) => setTimeout(r, holdMs));
             }
-            // D2 fix (TESTING-NOTES #43): after dragIntercepted fires, Chrome
-            // stops acking Input.dispatchMouseEvent entirely - the old loop
-            // kept blind-sending mouseMoved and hung 30s+. Bail out of the
-            // move loop the moment interception is observed; dispatchDragEvent
-            // below completes the HTML5 drag without any further input acks.
-            let dragIntercepted = false;
-            for (let i = 1; i <= dragSteps && !dragIntercepted; i++) {
-              const curX = Math.round(x + (endPoint.x - x) * (i / dragSteps));
-              const curY = Math.round(y + (endPoint.y - y) * (i / dragSteps));
-              await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-                type: 'mouseMoved',
-                x: curX,
-                y: curY,
-                button: 'left',
-                buttons: 1,
-                modifiers: modifierMask,
-              }).catch((err) => {
-                if (String(err?.message || '').startsWith('CDP_DISPATCH_TIMEOUT')) {
-                  dragIntercepted = true;
-                  return undefined;
-                }
-                throw err;
-              });
-              if (!dragIntercepted) {
-                dragIntercepted = Boolean(dragData);
+
+            if (hasPath) {
+              for (let pi = 1; pi < args.path!.length; pi++) {
+                const pt = args.path![pi];
+                await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                  type: 'mouseMoved',
+                  x: Math.round(pt.x),
+                  y: Math.round(pt.y),
+                  modifiers: modifierMask,
+                });
+                await new Promise((r) => setTimeout(r, 16));
               }
-              await new Promise((r) => setTimeout(r, 12));
+            } else {
+              // D2 fix (TESTING-NOTES #43): after dragIntercepted fires, Chrome
+              // stops acking Input.dispatchMouseEvent entirely - the old loop
+              // kept blind-sending mouseMoved and hung 30s+. Bail out of the
+              // move loop the moment interception is observed; dispatchDragEvent
+              // below completes the HTML5 drag without any further input acks.
+              let dragIntercepted = false;
+              for (let i = 1; i <= dragSteps && !dragIntercepted; i++) {
+                const curX = Math.round(x + (endPoint.x - x) * (i / dragSteps));
+                const curY = Math.round(y + (endPoint.y - y) * (i / dragSteps));
+                await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                  type: 'mouseMoved',
+                  x: curX,
+                  y: curY,
+                  button: 'left',
+                  buttons: 1,
+                  modifiers: modifierMask,
+                }).catch((err) => {
+                  if (String(err?.message || '').startsWith('CDP_DISPATCH_TIMEOUT')) {
+                    dragIntercepted = true;
+                    return undefined;
+                  }
+                  throw err;
+                });
+                if (!dragIntercepted) {
+                  dragIntercepted = Boolean(dragData);
+                }
+                await new Promise((r) => setTimeout(r, 12));
+              }
             }
             const deadline = Date.now() + 300;
             while (!dragData && Date.now() < deadline) {
@@ -687,22 +719,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           }
         });
         usedNativeCDP = true;
-      } else if (isCrossOriginSubframe) {
-        const frameResults = await executeInPage(
-          { tabId, frameIds: [targetFrameId!] },
-          'inPageInteractIndex',
-          [args.index!, action],
-        );
-        const frameOutcome = frameResults?.[0]?.result;
-        if (!frameOutcome?.success) {
-          return createErrorResponse(
-            frameOutcome?.error ||
-              `Failed to interact with index [${args.index}] in frame ${targetFrameId}`,
-          );
-        }
       } else {
-        // Main frame, visual coordinates, or same-origin subframe with compensated viewport coordinates:
-        // Perform native CDP Mouse Event Dispatch (isTrusted=true)
+        // Primary path: Native CDP Mouse Event Dispatch (isTrusted=true)
         try {
           await armProbe();
           await cdpSessionManager.withSession(tabId, 'interact-index', async () => {
@@ -823,7 +841,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           );
           // Fallback to inPageInteractIndex if CDP is unavailable and index is provided
           if (typeof args.index === 'number' && args.index > 0) {
-            const fallbackResults = await executeInPage({ tabId }, 'inPageInteractIndex', [
+            const frameTarget = targetFrameId ? { tabId, frameIds: [targetFrameId] } : { tabId };
+            const fallbackResults = await executeInPage(frameTarget, 'inPageInteractIndex', [
               args.index,
               action,
             ]);
