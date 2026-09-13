@@ -342,6 +342,47 @@ function initAgentCursor() {
   offsetWrapper.appendChild(assetImg);
   cursorContainer.appendChild(offsetWrapper);
   overlay.appendChild(cursorContainer);
+
+  // Click ripple element
+  const clickRipple = document.createElement('div');
+  clickRipple.style.position = 'absolute';
+  clickRipple.style.left = '0';
+  clickRipple.style.top = '0';
+  clickRipple.style.width = '32px';
+  clickRipple.style.height = '32px';
+  clickRipple.style.marginLeft = '-16px';
+  clickRipple.style.marginTop = '-16px';
+  clickRipple.style.borderRadius = '50%';
+  clickRipple.style.pointerEvents = 'none';
+  clickRipple.style.border = '2.5px solid #339cff';
+  clickRipple.style.boxShadow = '0 0 10px #339cff, inset 0 0 6px #339cff';
+  clickRipple.style.transform = 'scale(0)';
+  clickRipple.style.opacity = '0';
+  overlay.appendChild(clickRipple);
+
+  const triggerClickAnimation = (clickX?: number, clickY?: number) => {
+    const cx = typeof clickX === 'number' ? clickX : cursorState.positionXSpring.value;
+    const cy = typeof clickY === 'number' ? clickY : cursorState.positionYSpring.value;
+    clickRipple.style.transition = 'none';
+    clickRipple.style.transform = 'scale(0.2)';
+    clickRipple.style.opacity = '0.95';
+    clickRipple.style.left = `${cx}px`;
+    clickRipple.style.top = `${cy}px`;
+    void clickRipple.offsetWidth;
+    clickRipple.style.transition =
+      'transform 0.35s cubic-bezier(0, 0, 0.2, 1), opacity 0.35s ease-out';
+    clickRipple.style.transform = 'scale(1.8)';
+    clickRipple.style.opacity = '0';
+
+    // Natural physiological dip on click
+    assetImg.style.transition = 'transform 0.08s ease-out';
+    assetImg.style.transform = `rotate(${ASSET_ROTATION_DEG}deg) scale(0.82)`;
+    setTimeout(() => {
+      assetImg.style.transition = 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)';
+      assetImg.style.transform = `rotate(${ASSET_ROTATION_DEG}deg) scale(1)`;
+    }, 90);
+  };
+
   shadow.appendChild(overlay);
 
   const cursorState = initCursorState({
@@ -808,6 +849,12 @@ function initAgentCursor() {
     if (message.type === 'AGENT_CURSOR_MOVE') {
       const { x, y, moveSequence, immediate } = message;
       moveTo(x, y, typeof moveSequence === 'number' ? moveSequence : null, immediate === true);
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message.type === 'AGENT_CURSOR_CLICK') {
+      triggerClickAnimation(message.x, message.y);
       sendResponse({ ok: true });
       return true;
     }

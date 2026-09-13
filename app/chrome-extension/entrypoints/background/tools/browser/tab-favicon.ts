@@ -37,6 +37,8 @@ export class TabFaviconManager {
     return TabFaviconManager.instance;
   }
 
+  private idleTimers: Map<number, any> = new Map();
+
   constructor() {
     this.registerEventListeners();
     void this.loadFromStorage();
@@ -46,7 +48,11 @@ export class TabFaviconManager {
     try {
       if (typeof chrome !== 'undefined' && chrome.storage?.session?.get) {
         const data = await chrome.storage.session.get(TabFaviconManager.STORAGE_KEY);
-        if (data && data[TabFaviconManager.STORAGE_KEY] && typeof data[TabFaviconManager.STORAGE_KEY] === 'object') {
+        if (
+          data &&
+          data[TabFaviconManager.STORAGE_KEY] &&
+          typeof data[TabFaviconManager.STORAGE_KEY] === 'object'
+        ) {
           for (const [tidStr, val] of Object.entries(data[TabFaviconManager.STORAGE_KEY])) {
             const tid = parseInt(tidStr, 10);
             if (!isNaN(tid) && !this.originalFavicons.has(tid)) {
@@ -132,6 +138,11 @@ export class TabFaviconManager {
    * Restores the tab's original favicon
    */
   public async restoreFavicon(tabId: number): Promise<boolean> {
+    const timer = this.idleTimers.get(tabId);
+    if (timer) {
+      clearTimeout(timer);
+      this.idleTimers.delete(tabId);
+    }
     if (typeof chrome === 'undefined' || !chrome.scripting?.executeScript) {
       this.originalFavicons.delete(tabId);
       return false;
@@ -168,7 +179,27 @@ export class TabFaviconManager {
     return this.originalFavicons.get(tabId);
   }
 
+  /**
+   * Marks a tab active under Agent automation:
+   * Replaces favicon with the glowing agent indicator and resets the idle auto-restore timer.
+   */
+  public markTabActive(tabId: number, idleRestoreMs = 8000): void {
+    if (typeof tabId !== 'number' || tabId <= 0) return;
+    void this.setAgentFavicon(tabId);
+    const existing = this.idleTimers.get(tabId);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this.idleTimers.delete(tabId);
+      void this.restoreFavicon(tabId);
+    }, idleRestoreMs);
+    this.idleTimers.set(tabId, timer);
+  }
+
   public resetForTest(): void {
+    for (const timer of this.idleTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.idleTimers.clear();
     this.originalFavicons.clear();
   }
 }

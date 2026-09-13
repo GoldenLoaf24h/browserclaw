@@ -79,3 +79,18 @@ export async function hideAgentCursor(tabId: number): Promise<void> {
     await chrome.tabs.sendMessage(tabId, { type: 'AGENT_CURSOR_HIDE' });
   } catch {}
 }
+
+export async function animateAgentCursorClick(
+  tabId: number,
+  x?: number,
+  y?: number,
+): Promise<void> {
+  if (typeof tabId !== 'number' || tabId <= 0) return;
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      type: 'AGENT_CURSOR_CLICK',
+      x: typeof x === 'number' ? Math.round(x) : undefined,
+      y: typeof y === 'number' ? Math.round(y) : undefined,
+    });
+  } catch {}
+}

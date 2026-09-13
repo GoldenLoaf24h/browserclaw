@@ -7,9 +7,10 @@ import { waitForPageSettle } from '@/utils/action-watchdog';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { raceCdp, DialogOpenedError, createDialogInterruptResponse } from '@/utils/race-cdp';
 import { sessionTabAffinity } from '@/utils/session-tab-affinity';
-import { animateAgentCursor } from './agent-cursor';
+import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
 import { captureDeltaIfRequested } from '@/utils/delta-helper';
 import { getSubframeViewportOffset } from './interact-index';
+import { tabFaviconManager } from './tab-favicon';
 
 export interface FillIndexParams {
   index: number;
@@ -53,6 +54,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
       }
       const targetTabId: number = tab.id;
       const previousUrl = tab.url || '';
+      tabFaviconManager.markTabActive(targetTabId);
 
       // D3 (TESTING-NOTES #19): surface active-tab fallback in the response.
       const fillIdxAffinityWarning =
@@ -113,6 +115,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
             waitForArrival: true,
             timeoutMs: 350,
           });
+          void animateAgentCursorClick(targetTabId, targetX, targetY);
 
           // Skip the Ctrl+A + Backspace clear sequence when the field is already
           // empty: a trusted Backspace on an empty box can trigger page-level

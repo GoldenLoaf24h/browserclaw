@@ -1624,6 +1624,7 @@ export function extractElementLocationDetails(el: Element): {
   width: number;
   height: number;
   tagName: string;
+  inputType?: string;
   text?: string;
   value?: string;
   frameOffsetX: number;

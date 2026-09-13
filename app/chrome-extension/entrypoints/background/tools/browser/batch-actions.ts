@@ -13,6 +13,7 @@ import {
 import { resolveTargetLocation } from './unified-locator';
 import { captureDeltaIfRequested } from '@/utils/delta-helper';
 import { getSubframeViewportOffset } from './interact-index';
+import { tabFaviconManager } from './tab-favicon';
 
 export interface BatchActionsParams {
   actions: BatchActionItem[];
@@ -156,6 +157,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
         return createErrorResponse('No active tab found for chrome_batch_actions');
       }
       const tabId = tab.id;
+      tabFaviconManager.markTabActive(tabId);
 
       const initialUrl = tab.url || '';
       const actionResults: Array<{

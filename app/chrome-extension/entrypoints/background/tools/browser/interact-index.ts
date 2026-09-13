@@ -18,8 +18,9 @@ import {
   type PolymorphicCoordinate,
 } from '../../../../utils/coordinate-parser';
 import { sessionTabAffinity } from '../../../../utils/session-tab-affinity';
-import { animateAgentCursor } from './agent-cursor';
+import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
 import { captureDeltaIfRequested } from '../../../../utils/delta-helper';
+import { tabFaviconManager } from './tab-favicon';
 
 export interface InteractIndexParams {
   index?: number;
@@ -338,6 +339,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         return createErrorResponse('No active tab found for chrome_interact_index');
       }
       const previousUrl = tab.url || '';
+      tabFaviconManager.markTabActive(tabId);
 
       // D3 (TESTING-NOTES #19): when no explicit tabId/session bound the
       // target, resolveAffinityTab fell through to the user's ACTIVE tab -
@@ -756,6 +758,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 Math.min(300, (args as any).prePressDelayMs ?? 110),
               );
               await new Promise((r) => setTimeout(r, prePressPauseMs));
+              void animateAgentCursorClick(tabId, x, y);
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mousePressed',
                 x,
@@ -777,6 +780,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 modifiers: modifierMask,
               });
             } else if (action === 'double_click') {
+              void animateAgentCursorClick(tabId, x, y);
               // First click
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mousePressed',
@@ -818,6 +822,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 modifiers: modifierMask,
               });
             } else if (action === 'right_click') {
+              void animateAgentCursorClick(tabId, x, y);
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mouseMoved',
                 x,
