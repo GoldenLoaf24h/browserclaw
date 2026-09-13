@@ -293,6 +293,32 @@ export class Server {
         }
       },
     );
+
+    // POST /reload-extension: Hot reload extension from disk
+    this.fastify.post(
+      '/reload-extension',
+      async (_request: FastifyRequest, reply: FastifyReply) => {
+        if (!this.nativeHost) {
+          return reply
+            .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+            .send({ error: ERROR_MESSAGES.NATIVE_HOST_NOT_AVAILABLE });
+        }
+        try {
+          const response = await this.nativeHost.sendRequestToExtensionAndWait(
+            {},
+            'reload_extension',
+            TIMEOUTS.EXTENSION_REQUEST_TIMEOUT,
+          );
+          return reply.status(HTTP_STATUS.OK).send(response);
+        } catch (error: unknown) {
+          const err = error as Error;
+          return reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
+            status: 'error',
+            message: `Failed to reload extension: ${err.message}`,
+          });
+        }
+      },
+    );
   }
 
   // ============================================================

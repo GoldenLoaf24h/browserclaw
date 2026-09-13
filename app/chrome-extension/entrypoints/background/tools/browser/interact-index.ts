@@ -352,6 +352,15 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       // Helper to project screenshot-space or polymorphic coordinates to viewport space
       const isScreenshotSpace = args.coordinateSpace === 'screenshot';
       const projectCoord = (c: any): { x: number; y: number } => {
+        if (
+          !isScreenshotSpace &&
+          typeof c?.x === 'number' &&
+          typeof c?.y === 'number' &&
+          !c.box_2d &&
+          !c.point
+        ) {
+          return { x: Math.round(c.x), y: Math.round(c.y) };
+        }
         const parsed = parseUnifiedCoordinate(c, { tabId });
         if (parsed) return parsed;
         if (!isScreenshotSpace) return { x: Math.round(c.x), y: Math.round(c.y) };
