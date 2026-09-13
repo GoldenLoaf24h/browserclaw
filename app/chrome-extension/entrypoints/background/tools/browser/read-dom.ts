@@ -86,6 +86,8 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         pages_up: mainData.pages_up,
         pages_down: mainData.pages_down,
         scrollInfo: mainData.scrollInfo,
+        activeModal: mainData.activeModal,
+        focusTrapped: mainData.focusTrapped,
       };
 
       let currentIndex = (mergedData.indexedElements?.length || 0) + 1;
@@ -121,8 +123,9 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
                 .map(([k, v]) => `${k}="${v}"`)
                 .join(' ');
               const textPart = el.text ? ` "${el.text}"` : '';
+              const shadowPart = el.inShadowDom ? ' [shadow]' : '';
               subframeLines.push(
-                `[${remappedIndex}] <${el.tagName}${attrStr ? ' ' + attrStr : ''} frame="${r.frameId}">${textPart}</${el.tagName}>`,
+                `[${remappedIndex}]${shadowPart} <${el.tagName}${attrStr ? ' ' + attrStr : ''} frame="${r.frameId}">${textPart}</${el.tagName}>`,
               );
             } else {
               subframeLines.push(renderCompactElementLine(remappedEl, r.frameId));

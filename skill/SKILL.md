@@ -366,20 +366,28 @@ For complete client configuration files and self-repair diagnostics:
 
 ---
 
-## 3. The Escalation Ladder (Anti-Confusion & Decision Protocol)
+## 3. The Escalation Ladder (Anti-Confusion & Self-Healing Protocol)
 
-To eliminate agent decision confusion between high-level semantic tools and low-level CDP commands, adhere strictly to the **3-Tier Escalation Protocol**:
+To eliminate agent decision confusion and guarantee self-healing across complex web apps, adhere strictly to the **5-Tier Escalation Protocol**:
 
-1. **Tier 1 (High-Level Semantic Engine - Default 95%)**:
+1. **Tier 1 (High-Level Semantic Engine - Default 90%)**:
    - chrome_interact_index / chrome_fill_index / chrome_batch_actions
    - chrome_read_dom / chrome_get_markdown / chrome_smart_scroll / chrome_navigate
-   - Always default to Tier 1. It is 10x more token-efficient, prunes 85% DOM noise, and automatically drives the 1:1 agent cursor.
+   - Always default to Tier 1. It is 10x more token-efficient, prunes 85% DOM noise, supports `[shadow]` pierced elements, and automatically drives the 1:1 agent cursor.
+   - Check `urlChanged` in interaction responses to immediately confirm form/post submissions without extra rounds.
 
-2. **Tier 2 (Visual Fallback Engine - 4%)**:
+2. **Tier 2 (In-Page Script & Network Bypass - 5%)**:
+   - `chrome_javascript` (dynamic unlock): Use `mcp.click()`, `mcp.fill()`, or native `composedPath()` when closed ShadowRoots or custom rich-text editors block standard DOM interaction.
+   - `chrome_network_request`: Directly fetch backend JSON APIs using the active session's cookies/credentials to bypass anti-scraping DOM defenses.
+
+3. **Tier 3 (Visual Fallback Engine - 3%)**:
    - chrome_screenshot (1:1 viewport coordinate grid) -> chrome_computer
    - Used for headless Canvas games, WebGL visualizations, or unlabeled SVG elements without DOM nodes.
 
-3. **Tier 3 (Raw CDP Escape Hatch - 1%)**:
+4. **Tier 4 (Human-in-the-Loop Handoff - 1%)**:
+   - `chrome_request_human_intervention`: When encountering anti-bot verification (slider puzzles, Geetest, reCAPTCHA, SMS 2FA, payment approval) where CDP events are blocked or ack times out, call this tool to pop an overlay asking the user to solve it, then resume cleanly.
+
+5. **Tier 5 (Raw CDP Escape Hatch - <1%)**:
    - chrome_cdp_execute (Target polymorphic, auto-detach timeout guard)
    - Never call for standard clicks, text inputs, or basic reading.
    - Use ONLY when high-level tools repeatedly fail twice, or when low-level browser primitives are required (e.g. Network.getCookies, Emulation.setDeviceMetricsOverride, Page.printToPDF, or out-of-process iframe arget: { targetId }).

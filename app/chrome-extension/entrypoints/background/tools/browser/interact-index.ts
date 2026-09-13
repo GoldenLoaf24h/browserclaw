@@ -337,6 +337,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       if (!tabId) {
         return createErrorResponse('No active tab found for chrome_interact_index');
       }
+      const previousUrl = tab.url || '';
 
       // D3 (TESTING-NOTES #19): when no explicit tabId/session bound the
       // target, resolveAffinityTab fell through to the user's ACTIVE tab -
@@ -504,8 +505,9 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             isFallback = true;
           } else {
             return createErrorResponse(
-              coordResult?.error ||
-                `Element with index [${args.index}] not found in active DOM index map`,
+              (coordResult?.error ||
+                `Element with index [${args.index}] not found in active DOM index map`) +
+                `. Hint: Element may reside inside a dynamic or closed ShadowRoot. Try calling chrome_javascript to inspect or dispatch, or re-scan with chrome_read_dom.`,
             );
           }
         } else {
@@ -531,7 +533,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           )?.[0]?.result;
           if (interceptRes?.intercepted && interceptRes?.description) {
             return createErrorResponse(
-              `Element [${args.index}] click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first.`,
+              `Element [${args.index}] click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first. Hint: If this is an open modal, interact with its buttons to dismiss. If it is a captcha or human verification, call chrome_request_human_intervention.`,
             );
           }
         } catch {
@@ -849,8 +851,20 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             throw cdpErr;
           }
           if (String((cdpErr as Error)?.message || '').startsWith('CDP_DISPATCH_TIMEOUT')) {
-            // A modal dialog opened during dispatch; synthetic fallback would hang the same way.
-            return createErrorResponse(cdpErr instanceof Error ? cdpErr.message : String(cdpErr));
+            let isCaptcha = false;
+            try {
+              const checkRes = (await executeInPage({ tabId }, 'inPageCheckCaptcha', []))?.[0]
+                ?.result;
+              isCaptcha = Boolean(checkRes?.detected);
+            } catch {}
+            if (isCaptcha) {
+              return createErrorResponse(
+                `[CAPTCHA_BLOCKED: Slider / human verification detected] The page is blocked by anti-bot verification. Call chrome_request_human_intervention to let the user solve it.`,
+              );
+            }
+            return createErrorResponse(
+              `${cdpErr instanceof Error ? cdpErr.message : String(cdpErr)}. Hint: If a native dialog is open, call chrome_handle_dialog. If this is a slider or captcha verification, call chrome_request_human_intervention.`,
+            );
           }
           console.warn(
             `CDP native mouse event dispatch failed for tab ${tabId}, falling back to synthetic event:`,
@@ -932,6 +946,13 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
 
       const delta = await captureDeltaIfRequested(tabId, args.includeDelta);
 
+      let currentUrl = previousUrl;
+      try {
+        const updatedTab = await chrome.tabs.get(tabId);
+        currentUrl = updatedTab.url || previousUrl;
+      } catch {}
+      const urlChanged = Boolean(previousUrl && currentUrl && previousUrl !== currentUrl);
+
       return {
         content: [
           {
@@ -939,6 +960,9 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             text: JSON.stringify(
               {
                 success: true,
+                urlChanged,
+                previousUrl,
+                currentUrl,
                 index: args.index ?? null,
                 action,
                 tagName,

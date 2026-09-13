@@ -919,11 +919,21 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
       const delta = await captureDeltaIfRequested(tabId, args.includeDelta);
 
+      let currentUrl = initialUrl;
+      try {
+        const updatedTab = await chrome.tabs.get(tabId);
+        currentUrl = updatedTab.url || initialUrl;
+      } catch {}
+      const urlChanged = Boolean(initialUrl && currentUrl && initialUrl !== currentUrl);
+
       const totalCompleted = actionResults.filter((r) => r.success).length;
       const batchResult: BatchActionResult & { spaDriftNotice?: string } = {
         success: totalCompleted === actions.length,
         completedActions: totalCompleted,
         totalActions: actions.length,
+        urlChanged,
+        previousUrl: initialUrl,
+        currentUrl,
         results: actionResults,
         interruptedReason,
         settle: batchSettle,

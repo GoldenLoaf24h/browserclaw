@@ -43,6 +43,8 @@ export interface IndexedElement {
   backendNodeId?: number;
   isOccluded?: boolean;
   occludedBy?: string;
+  /** True when the element was reached by piercing one or more shadow roots */
+  inShadowDom?: boolean;
   safeClickPoint?: { x: number; y: number };
 }
 
@@ -57,7 +59,7 @@ export interface ScrollInfo {
 export interface PageAsset {
   /** 1-based, stable within one read_dom snapshot */
   index: number;
-  kind: "img" | "canvas" | "video" | "bg-image";
+  kind: 'img' | 'canvas' | 'video' | 'bg-image';
   /** CSS-space viewport bbox (x,y relative to current scroll) */
   rect: { x: number; y: number; width: number; height: number };
   /** Resource URL when the asset has one (img src / bg-image url). Empty for canvas/video */
@@ -70,13 +72,20 @@ export interface PrunedDOMTreeResult {
   elementCount: number;
   interactiveCount: number;
   compressionRatio: number;
-  indexMap: Record<number, { selector?: string; backendNodeId?: number; frameId?: string; tagName?: string }>;
+  indexMap: Record<
+    number,
+    { selector?: string; backendNodeId?: number; frameId?: string; tagName?: string }
+  >;
   indexedElements?: IndexedElement[];
   /** Visual assets on the page (img/canvas/video/CSS background images) with viewport geometry */
   assets?: PageAsset[];
   pages_up?: number;
   pages_down?: number;
   scrollInfo?: ScrollInfo;
+  /** Selector-ish description of the top-most open modal dialog, if any */
+  activeModal?: string;
+  /** True when an open modal is trapping focus on the page */
+  focusTrapped?: boolean;
 }
 
 export interface PageSettleResult {
@@ -91,7 +100,17 @@ export interface SessionTabAffinityContext {
 }
 
 export interface BatchActionItem {
-  type: 'click' | 'fill' | 'hover' | 'scroll' | 'press_key' | 'wait' | 'key' | 'fill_form' | 'assert' | 'extract';
+  type:
+    | 'click'
+    | 'fill'
+    | 'hover'
+    | 'scroll'
+    | 'press_key'
+    | 'wait'
+    | 'key'
+    | 'fill_form'
+    | 'assert'
+    | 'extract';
   index?: number;
   ref?: string | number;
   selector?: string;
@@ -130,6 +149,9 @@ export interface BatchActionResult {
   results: Array<{ actionIndex: number; success: boolean; error?: string; output?: any }>;
   interruptedReason?: string;
   settle?: PageSettleResult;
+  urlChanged?: boolean;
+  previousUrl?: string;
+  currentUrl?: string;
 }
 
 export interface AttachTabParams {

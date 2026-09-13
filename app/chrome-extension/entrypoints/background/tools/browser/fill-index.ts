@@ -52,6 +52,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
         return createErrorResponse('No active tab found for chrome_fill_index');
       }
       const targetTabId: number = tab.id;
+      const previousUrl = tab.url || '';
 
       // D3 (TESTING-NOTES #19): surface active-tab fallback in the response.
       const fillIdxAffinityWarning =
@@ -240,7 +241,8 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
 
       if (!outcome || !outcome.success) {
         return createErrorResponse(
-          outcome?.error || `Failed to fill element with index [${args.index}]`,
+          (outcome?.error || `Failed to fill element with index [${args.index}]`) +
+            `. Hint: If the element is within a ShadowRoot, try calling chrome_javascript or verifying the index with chrome_read_dom.`,
         );
       }
 
@@ -259,6 +261,16 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
       if (delta) {
         (outcome as any).delta = delta;
       }
+
+      let currentUrl = previousUrl;
+      try {
+        const updatedTab = await chrome.tabs.get(targetTabId);
+        currentUrl = updatedTab.url || previousUrl;
+      } catch {}
+      const urlChanged = Boolean(previousUrl && currentUrl && previousUrl !== currentUrl);
+      (outcome as any).urlChanged = urlChanged;
+      (outcome as any).previousUrl = previousUrl;
+      (outcome as any).currentUrl = currentUrl;
 
       return {
         content: [

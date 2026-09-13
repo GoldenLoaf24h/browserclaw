@@ -979,6 +979,7 @@ export function inPageDOMPruner(options?: {
     node: Element,
     propagatingParentRect?: DOMRect | null,
     parentHasPointer = false,
+    insideShadow = false,
   ) {
     totalOriginalNodes++;
 
@@ -992,7 +993,7 @@ export function inPageDOMPruner(options?: {
       const nextPointer = currentHasPointer || parentHasPointer;
       const children = node.children ? Array.from(node.children) : [];
       for (const child of children) {
-        traverse(child, propagatingParentRect, nextPointer);
+        traverse(child, propagatingParentRect, nextPointer, insideShadow);
       }
       return;
     }
@@ -1044,12 +1045,12 @@ export function inPageDOMPruner(options?: {
       if (childArea > 0 && overlapArea / childArea >= 0.99) {
         const nextPointer = currentHasPointer || parentHasPointer;
         for (const child of Array.from(node.children)) {
-          traverse(child, propagatingParentRect, nextPointer);
+          traverse(child, propagatingParentRect, nextPointer, insideShadow);
         }
         const shadow = getShadowRoot(node);
         if (shadow) {
           for (const shadowChild of Array.from(shadow.children)) {
-            traverse(shadowChild, propagatingParentRect, nextPointer);
+            traverse(shadowChild, propagatingParentRect, nextPointer, true);
           }
         }
         return;
@@ -1059,7 +1060,14 @@ export function inPageDOMPruner(options?: {
     const hasInfoText =
       informational && Boolean(((node as HTMLElement).innerText || node.textContent || '').trim());
     if (interactive || isFile || (informational && hasInfoText)) {
-      candidates.push({ node, tag, rect, isFile, isInteractive: interactive || isFile });
+      candidates.push({
+        node,
+        tag,
+        rect,
+        isFile,
+        isInteractive: interactive || isFile,
+        inShadowDom: insideShadow || undefined,
+      });
     }
 
     const nextPropagatingRect =
@@ -1068,14 +1076,14 @@ export function inPageDOMPruner(options?: {
 
     // Traverse standard children
     for (const child of Array.from(node.children)) {
-      traverse(child, nextPropagatingRect, nextPointer);
+      traverse(child, nextPropagatingRect, nextPointer, insideShadow);
     }
 
     // Traverse Shadow DOM children (penetration for open and closed shadow roots)
     const shadow = getShadowRoot(node);
     if (shadow) {
       for (const shadowChild of Array.from(shadow.children)) {
-        traverse(shadowChild, nextPropagatingRect, nextPointer);
+        traverse(shadowChild, nextPropagatingRect, nextPointer, true);
       }
     }
   }
@@ -1086,10 +1094,11 @@ export function inPageDOMPruner(options?: {
     rect: DOMRect;
     isFile: boolean;
     isInteractive: boolean;
+    inShadowDom?: boolean;
   }> = [];
 
   if (document.body) {
-    traverse(document.body, null, false);
+    traverse(document.body, null, false, false);
   }
 
   // Phase 2: Deterministic visual reading-order sort (top-to-bottom, left-to-right)
@@ -1284,6 +1293,7 @@ export function inPageDOMPruner(options?: {
       isInteractive: cand.isInteractive,
       isOccluded: occlusion.isOccluded,
       occludedBy: occlusion.occludedBy,
+      inShadowDom: cand.inShadowDom,
       safeClickPoint: {
         x: occlusion.safeClickPoint.x,
         y: occlusion.safeClickPoint.y,
@@ -1392,12 +1402,52 @@ export function inPageDOMPruner(options?: {
       const occludedPart = el.isOccluded
         ? ` [occluded: partially by ${el.occludedBy || 'overlay'}]`
         : '';
-      return `[${el.index}] <${el.tagName}${attrStr ? ' ' + attrStr : ''}${valPart}>${textPart}</${el.tagName}>${occludedPart}`;
+      const shadowPart = el.inShadowDom ? ' [shadow]' : '';
+      return `[${el.index}]${shadowPart} <${el.tagName}${attrStr ? ' ' + attrStr : ''}${valPart}>${textPart}</${el.tagName}>${occludedPart}`;
     }
     return renderCompactElementLine(el);
   });
 
   let treeString = treeLines.join('\n');
+
+  let activeModal: string | undefined = undefined;
+  let focusTrapped = false;
+  try {
+    const dialogs = Array.from(
+      document.querySelectorAll(
+        'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]',
+      ),
+    ) as HTMLElement[];
+    for (const d of dialogs) {
+      const isAriaHidden = d.getAttribute('aria-hidden') === 'true';
+      const isOpenAttr =
+        d.tagName.toLowerCase() === 'dialog' ? (d as HTMLDialogElement).open : true;
+      if (!isAriaHidden && isOpenAttr) {
+        let isVis = false;
+        try {
+          const style = window.getComputedStyle(d);
+          isVis = style.display !== 'none' && style.visibility !== 'hidden' && d.offsetWidth > 0;
+        } catch {}
+        if (isVis) {
+          focusTrapped = true;
+          const tag = d.tagName.toLowerCase();
+          const id = d.id ? `#${d.id}` : '';
+          const name =
+            d.getAttribute('aria-label') ||
+            d.querySelector('h1, h2, h3, [role="heading"]')?.textContent?.trim()?.slice(0, 40);
+          activeModal = name ? `${tag}${id} "${name}"` : `${tag}${id || '.modal'}`;
+          break;
+        }
+      }
+    }
+  } catch {}
+
+  if (activeModal) {
+    treeString =
+      `[Modal Guidance: Active modal focus trap (${activeModal}). Prioritize interacting with modal elements or dismissing it.]\n` +
+      treeString;
+  }
+
   if (pages_down > 0 || pages_up > 0) {
     treeString =
       `[Scroll Guidance: ${pages_up} pages above, ${pages_down} pages below. Use chrome_interact_index / scroll to reveal more content.]\n` +
@@ -1425,6 +1475,8 @@ export function inPageDOMPruner(options?: {
     pages_up,
     pages_down,
     scrollInfo,
+    activeModal,
+    focusTrapped: focusTrapped || undefined,
   };
 }
 
@@ -3190,7 +3242,11 @@ export function renderCompactElementLine(el: IndexedElement, frameId?: string | 
     text = `"${el.attributes.title}"`;
   }
 
-  const parts: string[] = [`[${el.index}]`, role];
+  const parts: string[] = [`[${el.index}]`];
+  if (el.inShadowDom) {
+    parts.push('[shadow]');
+  }
+  parts.push(role);
   if (text) parts.push(text);
 
   if (el.attributes?.id) parts.push(`#${el.attributes.id}`);
@@ -3219,4 +3275,37 @@ export function renderCompactElementLine(el: IndexedElement, frameId?: string | 
   }
 
   return parts.join(' ');
+}
+
+/**
+ * In-page inspection to detect active slider verification or bot challenges.
+ */
+export function inPageCheckCaptcha(): { detected: boolean; type?: string } {
+  try {
+    const captchaSelectors = [
+      '#captcha_modal',
+      '.geetest_holder',
+      '.nc_wrapper',
+      '#nc_1_wrapper',
+      '.yidun_modal',
+      '.tcaptcha-transform',
+      'iframe[src*="captcha"]',
+      'iframe[src*="recaptcha"]',
+      'div[class*="captcha" i]',
+      'div[id*="captcha" i]',
+      '.slider-verify',
+      '.slide-verify',
+      '[data-testid*="captcha" i]',
+    ];
+    for (const sel of captchaSelectors) {
+      const el = document.querySelector(sel);
+      if (el && el instanceof HTMLElement) {
+        const style = window.getComputedStyle(el);
+        if (style.display !== 'none' && style.visibility !== 'hidden' && el.offsetWidth > 0) {
+          return { detected: true, type: sel };
+        }
+      }
+    }
+  } catch {}
+  return { detected: false };
 }
