@@ -91,7 +91,20 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           }
         }
 
-        if (coords?.success && typeof coords.x === 'number' && typeof coords.y === 'number') {
+        const isSpecialWidget =
+          (coords as any)?.inputType === 'color' ||
+          (coords as any)?.inputType === 'date' ||
+          (coords as any)?.inputType === 'range' ||
+          (coords as any)?.inputType === 'time' ||
+          (coords as any)?.inputType === 'datetime-local' ||
+          coords?.tagName === 'select';
+
+        if (
+          coords?.success &&
+          typeof coords.x === 'number' &&
+          typeof coords.y === 'number' &&
+          !isSpecialWidget
+        ) {
           const targetX = coords.x;
           const targetY = coords.y;
 

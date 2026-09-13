@@ -740,7 +740,9 @@ export function inPageDOMPruner(options?: {
       typeof (el as HTMLElement).className === 'string' ? (el as HTMLElement).className : '';
     if (
       cls.includes('group/') ||
-      cls.includes('hover:') ||
+      cls.includes('hover') ||
+      cls.includes('dropdown') ||
+      cls.includes('menu-item') ||
       el.hasAttribute('aria-haspopup') ||
       el.hasAttribute('aria-expanded')
     ) {
@@ -972,6 +974,17 @@ export function inPageDOMPruner(options?: {
     const role = (el.getAttribute('role') || '').toLowerCase();
     if (role === 'alert' || role === 'status' || role === 'heading') return true;
     if (el.hasAttribute('aria-live')) return true;
+    // Leaf elements with concise visible text (labels, cards, badges, tiles, ritual plates)
+    // are semantic informational nodes that agents need to perceive and target
+    if (
+      el.children.length === 0 &&
+      el.textContent &&
+      el.textContent.trim().length > 0 &&
+      el.textContent.trim().length <= 80 &&
+      !['script', 'style', 'noscript', 'meta', 'link'].includes(tag)
+    ) {
+      return true;
+    }
     return false;
   }
 
@@ -1736,6 +1749,10 @@ export function extractElementLocationDetails(el: Element): {
     width: Math.round(rect.width),
     height: Math.round(rect.height),
     tagName: el.tagName.toLowerCase(),
+    inputType:
+      typeof (el as HTMLInputElement).type === 'string'
+        ? (el as HTMLInputElement).type.toLowerCase()
+        : undefined,
     text,
     value:
       typeof (globalThis as any).HTMLInputElement !== 'undefined' &&
@@ -2345,6 +2362,20 @@ export function inPageFillIndex(
   } else if (el instanceof HTMLTextAreaElement && nativeTextAreaValueSetter) {
     if (clear) nativeTextAreaValueSetter.call(el, '');
     nativeTextAreaValueSetter.call(el, textToFill);
+  } else if (el instanceof HTMLSelectElement) {
+    let matched = false;
+    for (const opt of Array.from(el.options)) {
+      if (
+        opt.value === textToFill ||
+        opt.text === textToFill ||
+        opt.text.trim() === textToFill.trim()
+      ) {
+        el.value = opt.value;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) el.value = textToFill;
   } else if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
     if (clear) {
       el.value = '';
