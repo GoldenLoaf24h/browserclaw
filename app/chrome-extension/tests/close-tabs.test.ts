@@ -52,4 +52,48 @@ describe('CloseTabsTool (chrome_close_tabs)', () => {
     // Affinity should be cleaned up
     expect(sessionTabAffinity.getAffinity('session-agent-1')).toBeUndefined();
   });
+
+  it('matches exact URLs without trailing slash properly', async () => {
+    const mockTabsQuery = vi.fn().mockImplementation(async (queryInfo: any) => {
+      if (queryInfo.url === 'https://example.com/login*') {
+        return [{ id: 303, url: 'https://example.com/login', active: false }];
+      }
+      return [];
+    });
+    const mockTabsRemove = vi.fn().mockResolvedValue(undefined);
+    (chrome.tabs as any).query = mockTabsQuery;
+    (chrome.tabs as any).remove = mockTabsRemove;
+
+    const res = await closeTabsTool.execute({ url: 'https://example.com/login' });
+    expect(res.isError).toBe(false);
+    const parsed = JSON.parse(res.content[0].text);
+    expect(parsed.success).toBe(true);
+    expect(parsed.closedTabIds).toEqual([303]);
+    expect(mockTabsRemove).toHaveBeenCalledWith([303]);
+  });
+
+  it('safely handles fallback tab filtering without matching unrelated tabs containing URL in query string', async () => {
+    const mockTabsQuery = vi.fn().mockImplementation(async (queryInfo: any) => {
+      if (queryInfo.url) {
+        // Simulate query returning empty (e.g. strict pattern mismatch)
+        return [];
+      }
+      // Return all tabs for fallback
+      return [
+        { id: 401, url: 'https://example.com/login', active: false },
+        { id: 402, url: 'https://google.com/search?q=https://example.com/login', active: false },
+      ];
+    });
+    const mockTabsRemove = vi.fn().mockResolvedValue(undefined);
+    (chrome.tabs as any).query = mockTabsQuery;
+    (chrome.tabs as any).remove = mockTabsRemove;
+
+    const res = await closeTabsTool.execute({ url: 'https://example.com/login' });
+    expect(res.isError).toBe(false);
+    const parsed = JSON.parse(res.content[0].text);
+    expect(parsed.success).toBe(true);
+    // Should ONLY close 401, NOT 402 which merely has it in query string
+    expect(parsed.closedTabIds).toEqual([401]);
+    expect(mockTabsRemove).toHaveBeenCalledWith([401]);
+  });
 });

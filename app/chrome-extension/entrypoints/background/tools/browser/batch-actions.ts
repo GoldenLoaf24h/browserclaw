@@ -15,6 +15,7 @@ import { captureDeltaIfRequested } from '@/utils/delta-helper';
 import { getSubframeViewportOffset } from './interact-index';
 import { tabFaviconManager } from './tab-favicon';
 import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
+import { parseUnifiedCoordinate } from '@/utils/coordinate-parser';
 
 export interface BatchActionsParams {
   actions: BatchActionItem[];
@@ -223,65 +224,36 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
           switch (item.type) {
             case 'click':
             case 'hover': {
-              let x: number | undefined;
-              let y: number | undefined;
-              let coords: any;
+              const rawCoord =
+                item.coordinate ??
+                (item as any).coordinates ??
+                (typeof item.x === 'number' && typeof item.y === 'number'
+                  ? { x: item.x, y: item.y }
+                  : undefined);
 
-              let targetFrameId = 0;
-              const directCoord = item.coordinate ?? (item as any).coordinates;
-              if (
-                directCoord &&
-                typeof directCoord.x === 'number' &&
-                typeof directCoord.y === 'number'
-              ) {
-                x = directCoord.x;
-                y = directCoord.y;
-              } else if (typeof item.index === 'number') {
-                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [
-                  item.index,
-                ]);
-                coords = res?.[0]?.result;
-                if (!coords?.success) {
-                  const frameResults = await executeInPage(
-                    { tabId, allFrames: true },
-                    'inPageGetElementCoordinates',
-                    [item.index],
-                  );
-                  const match = frameResults.find((r) => r.result?.success);
-                  if (match?.result) {
-                    coords = match.result;
-                    targetFrameId = match.frameId ?? 0;
-                  }
-                }
-                if (
-                  !coords?.success ||
-                  typeof coords.x !== 'number' ||
-                  typeof coords.y !== 'number'
-                ) {
-                  throw new Error(
-                    coords?.error ||
-                      `Element with index [${item.index}] not found in active DOM index map. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
-                  );
-                }
-                x = coords.x;
-                y = coords.y;
-              } else {
+              const loc = await resolveTargetLocation(tabId, {
+                ref: item.ref ?? item.index,
+                selector: item.selector,
+                text: item.text,
+                coordinate: rawCoord,
+              });
+
+              if (!loc.success) {
                 throw new Error(
-                  `Action ${i} of type '${item.type}' requires 'index' or 'coordinate' parameter`,
+                  loc.error ||
+                    `Action ${i} of type '${item.type}' target not found. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
                 );
               }
 
-              if (typeof x !== 'number' || typeof y !== 'number') {
-                throw new Error(`Failed to resolve coordinates for action ${i}`);
-              }
+              let targetX = loc.x;
+              let targetY = loc.y;
+              const targetFrameId = loc.frameId ?? 0;
 
-              if (targetFrameId !== 0 && !coords?.frameOffsetX && !coords?.frameOffsetY) {
+              if (targetFrameId !== 0) {
                 const offset = await getSubframeViewportOffset(tabId, targetFrameId);
-                x += offset.offsetX;
-                y += offset.offsetY;
+                targetX += offset.offsetX;
+                targetY += offset.offsetY;
               }
-              const targetX = x;
-              const targetY = y;
 
               await animateAgentCursor(tabId, targetX, targetY, {
                 waitForArrival: true,
@@ -320,43 +292,51 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 x: targetX,
                 y: targetY,
                 [item.type === 'click' ? 'clicked' : 'hovered']: true,
-                tagName: coords?.tagName,
-                text: coords?.text,
+                tagName: loc.tagName,
+                text: loc.text,
                 isTrusted: true,
               };
               break;
             }
 
             case 'fill': {
-              if (typeof item.index !== 'number') {
-                throw new Error(`Action ${i} of type 'fill' requires 'index' parameter`);
+              if (
+                typeof item.index !== 'number' &&
+                typeof item.ref === 'undefined' &&
+                !item.selector
+              ) {
+                throw new Error(
+                  `Action ${i} of type 'fill' requires 'ref', 'index', or 'selector' parameter`,
+                );
               }
               const text = item.text ?? item.value ?? '';
               let filledViaCdp = false;
               let coords: any;
-              // Skip Ctrl+A + Backspace clear when the field is already empty:
-              // a trusted Backspace on an empty box can trigger page-level
-              // "backspace retreats focus" logic (e.g. OTP inputs) and steal the
-              // subsequent insertText into the previous box.
               let isKnownEmpty = false;
+
+              const targetRef = item.ref ?? item.index;
+              const targetIndex =
+                typeof targetRef === 'number'
+                  ? targetRef
+                  : typeof targetRef === 'string' && /^\d+$/.test(targetRef)
+                    ? parseInt(targetRef, 10)
+                    : undefined;
 
               let targetFrameId = 0;
               try {
-                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [
-                  item.index,
-                ]);
-                coords = res?.[0]?.result;
-                if (!coords?.success) {
-                  const frameResults = await executeInPage(
-                    { tabId, allFrames: true },
-                    'inPageGetElementCoordinates',
-                    [item.index],
-                  );
-                  const match = frameResults.find((r) => r.result?.success);
-                  if (match?.result) {
-                    coords = match.result;
-                    targetFrameId = match.frameId ?? 0;
-                  }
+                const loc = await resolveTargetLocation(tabId, {
+                  ref: targetRef,
+                  selector: item.selector,
+                });
+                if (loc.success) {
+                  coords = {
+                    success: true,
+                    x: loc.x,
+                    y: loc.y,
+                    value: loc.value,
+                    tagName: loc.tagName,
+                  };
+                  targetFrameId = loc.frameId ?? 0;
                 }
 
                 let isCrossOriginSubframe = false;
@@ -452,7 +432,8 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
                   stepOutput = {
                     success: true,
-                    index: item.index,
+                    index: typeof targetIndex === 'number' ? targetIndex : undefined,
+                    ref: targetRef,
                     filledText: text,
                     isTrusted: true,
                     method: 'cdp_native',
@@ -465,31 +446,58 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                   throw cdpErr;
                 }
                 console.warn(
-                  `CDP native fill failed on index [${item.index}], falling back to inPageFillIndex:`,
+                  `CDP native fill failed on [${targetRef ?? item.selector}], falling back:`,
                   cdpErr,
                 );
               }
 
               if (!filledViaCdp) {
-                const res = await executeInPage({ tabId }, 'inPageFillIndex', [
-                  item.index,
-                  text,
-                  item.clear !== false,
-                ]);
-                let outcome = res?.[0]?.result;
-                if (!outcome?.success) {
-                  const frameResults = await executeInPage(
-                    { tabId, allFrames: true },
-                    'inPageFillIndex',
-                    [item.index, text, item.clear !== false],
-                  );
-                  const match = frameResults.find((r) => r.result?.success);
-                  if (match?.result) outcome = match.result;
+                let outcome: any;
+                if (typeof targetIndex === 'number' && targetIndex > 0) {
+                  const frameTarget = targetFrameId
+                    ? { tabId, frameIds: [targetFrameId] }
+                    : { tabId };
+                  const res = await executeInPage(frameTarget, 'inPageFillIndex', [
+                    targetIndex,
+                    text,
+                    item.clear !== false,
+                  ]);
+                  outcome = res?.[0]?.result;
+                  if (!outcome?.success && !targetFrameId) {
+                    const frameResults = await executeInPage(
+                      { tabId, allFrames: true },
+                      'inPageFillIndex',
+                      [targetIndex, text, item.clear !== false],
+                    );
+                    const match = frameResults.find((r) => r.result?.success);
+                    if (match?.result) outcome = match.result;
+                  }
+                } else if (item.selector) {
+                  const selRes = await this.safeExecuteScript(tabId, {
+                    target: targetFrameId ? { tabId, frameIds: [targetFrameId] } : { tabId },
+                    func: (sel: string, val: string, shouldClear: boolean) => {
+                      const el = document.querySelector(sel);
+                      if (!el) return { success: false, error: `Selector "${sel}" not found` };
+                      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+                        if (shouldClear) el.value = '';
+                        el.value = val;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        return { success: true, filledText: val };
+                      }
+                      return {
+                        success: false,
+                        error: `Element matching "${sel}" is not an input or textarea`,
+                      };
+                    },
+                    args: [item.selector, text, item.clear !== false],
+                  });
+                  outcome = selRes?.[0]?.result;
                 }
                 if (!outcome?.success) {
                   throw new Error(
                     outcome?.error ||
-                      `Fill failed on index [${item.index}]. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
+                      `Fill failed on [${targetRef ?? item.selector}]. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
                   );
                 }
                 stepOutput = outcome;
@@ -595,25 +603,33 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
             }
 
             case 'scroll': {
-              if (typeof item.index === 'number') {
+              const targetRef = item.ref ?? item.index;
+              const targetIndex =
+                typeof targetRef === 'number'
+                  ? targetRef
+                  : typeof targetRef === 'string' && /^\d+$/.test(targetRef)
+                    ? parseInt(targetRef, 10)
+                    : undefined;
+
+              if (typeof targetIndex === 'number' && targetIndex > 0) {
                 const scrollRes = await executeInPage({ tabId }, 'inPageScrollToIndex', [
-                  item.index,
+                  targetIndex,
                 ]);
                 let scrolled = Boolean(scrollRes?.[0]?.result);
                 if (!scrolled) {
                   const frameResults = await executeInPage(
                     { tabId, allFrames: true },
                     'inPageScrollToIndex',
-                    [item.index],
+                    [targetIndex],
                   );
                   scrolled = Boolean(frameResults.some((r) => r.result));
                 }
                 if (!scrolled) {
                   throw new Error(
-                    `Element with index [${item.index}] not found for scroll. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
+                    `Element with index [${targetIndex}] not found for scroll. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
                   );
                 }
-                stepOutput = { scrolledIndex: item.index };
+                stepOutput = { scrolledIndex: targetIndex };
                 break;
               }
 
@@ -628,9 +644,15 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               const deltaY = isHorizontal ? 0 : amount;
               let cdpScrolled = false;
               try {
-                const coord = item.coordinate ?? (item as any).coordinates;
-                const scrollX = coord?.x ?? 500;
-                const scrollY = coord?.y ?? 400;
+                const rawCoord =
+                  item.coordinate ??
+                  (item as any).coordinates ??
+                  (typeof item.x === 'number' && typeof item.y === 'number'
+                    ? { x: item.x, y: item.y }
+                    : undefined);
+                const parsedCoord = rawCoord ? parseUnifiedCoordinate(rawCoord, { tabId }) : null;
+                const scrollX = parsedCoord?.x ?? 500;
+                const scrollY = parsedCoord?.y ?? 400;
                 await cdpSessionManager.withSession(tabId, 'batch-actions-scroll', async () => {
                   await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
                     type: 'mouseWheel',
@@ -761,16 +783,24 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
             case 'assert': {
               let actualText = '';
               let isVisible = false;
-              if (typeof item.index === 'number') {
+              const targetRef = item.ref ?? item.index;
+              const targetIndex =
+                typeof targetRef === 'number'
+                  ? targetRef
+                  : typeof targetRef === 'string' && /^\d+$/.test(targetRef)
+                    ? parseInt(targetRef, 10)
+                    : undefined;
+
+              if (typeof targetIndex === 'number' && targetIndex > 0) {
                 const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [
-                  item.index,
+                  targetIndex,
                 ]);
                 let coords = res?.[0]?.result;
                 if (!coords?.success) {
                   const frameResults = await executeInPage(
                     { tabId, allFrames: true },
                     'inPageGetElementCoordinates',
-                    [item.index],
+                    [targetIndex],
                   );
                   const match = frameResults.find((r) => r.result?.success);
                   if (match?.result) coords = match.result;
@@ -848,16 +878,24 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
             case 'extract': {
               let extractedValue = '';
               const prop = item.property || 'text';
-              if (typeof item.index === 'number') {
+              const targetRef = item.ref ?? item.index;
+              const targetIndex =
+                typeof targetRef === 'number'
+                  ? targetRef
+                  : typeof targetRef === 'string' && /^\d+$/.test(targetRef)
+                    ? parseInt(targetRef, 10)
+                    : undefined;
+
+              if (typeof targetIndex === 'number' && targetIndex > 0) {
                 const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [
-                  item.index,
+                  targetIndex,
                 ]);
                 let coords = res?.[0]?.result;
                 if (!coords?.success) {
                   const frameResults = await executeInPage(
                     { tabId, allFrames: true },
                     'inPageGetElementCoordinates',
-                    [item.index],
+                    [targetIndex],
                   );
                   const match = frameResults.find((r) => r.result?.success);
                   if (match?.result) coords = match.result;

@@ -85,6 +85,7 @@ class NavigateTool extends BaseBrowserToolExecutor {
     }
 
     await waitForPageSettle(tabId, { timeoutMs: 1500, quietPeriodMs: 100 }).catch(() => {});
+    void tabFaviconManager.markTabActive(tabId);
   }
 
   private async waitForTabNavigationComplete(tabId: number, timeoutMs = 15000): Promise<void> {
@@ -117,6 +118,7 @@ class NavigateTool extends BaseBrowserToolExecutor {
       }
 
       await waitForPageSettle(tabId, { timeoutMs: 1500, quietPeriodMs: 100 }).catch(() => {});
+      void tabFaviconManager.markTabActive(tabId);
     } catch {
       // Non-blocking fallback
     }
@@ -652,27 +654,42 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
               try {
                 const u = new URL(urlPattern);
                 const basePath = u.pathname || '/';
-                const pathWithWildcard = basePath.endsWith('/') ? `${basePath}*` : `${basePath}/*`;
-                urlPattern = `${u.protocol}//${u.host}${pathWithWildcard}`;
+                urlPattern = `${u.protocol}//${u.host}${basePath}*`;
               } catch {
-                urlPattern = urlPattern.endsWith('/') ? `${urlPattern}*` : `${urlPattern}/*`;
+                urlPattern = urlPattern.endsWith('*') ? urlPattern : `${urlPattern}*`;
               }
             }
           } catch {
             if (!urlPattern.startsWith('file://')) {
-              urlPattern = urlPattern.endsWith('*')
-                ? urlPattern
-                : urlPattern.endsWith('/')
-                  ? `${urlPattern}*`
-                  : `${urlPattern}/*`;
+              urlPattern = urlPattern.endsWith('*') ? urlPattern : `${urlPattern}*`;
             }
           }
 
           try {
             tabs = await chrome.tabs.query({ url: urlPattern });
           } catch {
+            tabs = [];
+          }
+
+          if (!tabs || tabs.length === 0) {
             const allTabs = await chrome.tabs.query({});
-            tabs = allTabs.filter((t) => t.url && t.url.includes(urlPattern!));
+            const cleanPattern = urlPattern.replace(/\*+$/, '');
+            tabs = allTabs.filter((t) => {
+              if (!t.url) return false;
+              if (t.url === cleanPattern || t.url.startsWith(cleanPattern)) {
+                return true;
+              }
+              try {
+                const tu = new URL(t.url);
+                const pu = new URL(cleanPattern);
+                return (
+                  tu.origin === pu.origin &&
+                  (tu.pathname === pu.pathname || tu.pathname.startsWith(pu.pathname))
+                );
+              } catch {
+                return false;
+              }
+            });
           }
         }
 

@@ -106,6 +106,19 @@ describe('chrome_storage', () => {
     expect(payload.cookies.entries.map((c: any) => c.name)).toEqual([]);
   });
 
+  it('returns HttpOnly cookie value when includeHttpOnly is explicitly true', async () => {
+    (storageTool as any).safeExecuteScript = async () => [{ result: {} }];
+
+    const payload = readPayload(
+      await storageTool.execute({ types: ['cookies'], includeHttpOnly: true }),
+    );
+
+    const sid = payload.cookies.entries.find((c: any) => c.name === 'sid');
+    expect(sid).toBeDefined();
+    expect(sid.value).toBe('abc');
+    expect(sid.valueIncluded).toBeUndefined();
+  });
+
   it('only reads the stores requested', async () => {
     const spy = vi
       .fn()

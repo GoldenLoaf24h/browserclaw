@@ -506,6 +506,12 @@ export class Server {
 
     try {
       await mcpSessionManager.closeAllSessions();
+      if (
+        this.fastify.server &&
+        typeof (this.fastify.server as any).closeAllConnections === 'function'
+      ) {
+        (this.fastify.server as any).closeAllConnections();
+      }
       await this.fastify.close();
       this.isRunning = false;
     } catch (err) {

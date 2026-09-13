@@ -102,22 +102,26 @@ export class StorageTool extends BaseBrowserToolExecutor {
         // flags) is what tooling usually needs. valueIncluded: false marks the
         // redaction; explicit includeHttpOnly: true opts back in.
         const includeHttpOnly = args.includeHttpOnly !== false;
+        const revealHttpOnlyValues = args.includeHttpOnly === true;
         const filtered = cookies.filter((c) => {
           if (!includeHttpOnly && c.httpOnly) return false;
           if (!filter) return true;
           const matchesName = c.name.toLowerCase().includes(filter);
           const matchesDomain = (c.domain || '').toLowerCase().includes(filter);
-          const matchesValue = !c.httpOnly && c.value.toLowerCase().includes(filter);
+          const matchesValue =
+            (revealHttpOnlyValues || !c.httpOnly) && (c.value || '').toLowerCase().includes(filter);
           return matchesName || matchesDomain || matchesValue;
         });
         const entries = filtered.slice(0, limit).map((c) => ({
           name: c.name,
-          ...(c.httpOnly
+          ...(c.httpOnly && !revealHttpOnlyValues
             ? { valueIncluded: false }
             : {
                 value:
-                  c.value.length > MAX_VALUE_CHARS ? c.value.slice(0, MAX_VALUE_CHARS) : c.value,
-                ...(c.value.length > MAX_VALUE_CHARS ? { truncated: true } : {}),
+                  (c.value || '').length > MAX_VALUE_CHARS
+                    ? (c.value || '').slice(0, MAX_VALUE_CHARS)
+                    : c.value || '',
+                ...((c.value || '').length > MAX_VALUE_CHARS ? { truncated: true } : {}),
               }),
           domain: c.domain,
           path: c.path,

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { BatchActionItem, BatchActionResult } from 'chrome-mcp-shared';
+import { batchActionsTool } from '../entrypoints/background/tools/browser/batch-actions';
 
 describe('Batch Actions Assert & Extract Pipeline', () => {
   it('supports declaring assert and extract actions in BatchActionItem', () => {
@@ -39,5 +40,48 @@ describe('Batch Actions Assert & Extract Pipeline', () => {
 
     expect(res.extractedData?.orderId).toBe('ORD-12345');
     expect(res.assertions?.[0].passed).toBe(true);
+  });
+
+  it('executes assert and extract pipeline on batchActionsTool', async () => {
+    (batchActionsTool as any).resolveAffinityTab = vi.fn().mockResolvedValue({
+      id: 1,
+      url: 'https://example.com/app',
+    });
+    (globalThis as any).chrome = {
+      tabs: {
+        get: vi.fn().mockResolvedValue({ id: 1, url: 'https://example.com/app' }),
+      },
+    };
+    (batchActionsTool as any).safeExecuteScript = vi
+      .fn()
+      .mockResolvedValueOnce([
+        { result: { found: true, visible: true, text: 'Order #999', value: '' } },
+      ])
+      .mockResolvedValueOnce([{ result: 'Order #999' }]);
+
+    const res = await batchActionsTool.execute({
+      tabId: 1,
+      actions: [
+        {
+          type: 'assert',
+          selector: '#order-status',
+          expectedText: 'Order #999',
+          condition: 'equals',
+        },
+        {
+          type: 'extract',
+          selector: '#order-status',
+          property: 'text',
+          variableName: 'confirmedOrder',
+        },
+      ],
+    });
+
+    expect(res.isError).toBe(false);
+    const parsed = JSON.parse(res.content[0].text);
+    expect(parsed.success).toBe(true);
+    expect(parsed.completedActions).toBe(2);
+    expect(parsed.extractedData?.confirmedOrder).toBe('Order #999');
+    expect(parsed.assertions?.[0].passed).toBe(true);
   });
 });

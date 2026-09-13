@@ -685,9 +685,11 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 await new Promise((r) => setTimeout(r, 12));
               }
             }
-            const deadline = Date.now() + 300;
-            while (!dragData && Date.now() < deadline) {
-              await new Promise((r) => setTimeout(r, 25));
+            if (enableDnd) {
+              const deadline = Date.now() + 300;
+              while (!dragData && Date.now() < deadline) {
+                await new Promise((r) => setTimeout(r, 25));
+              }
             }
             if (dragData) {
               await cdpSessionManager.sendCommand(tabId, 'Input.dispatchDragEvent', {
@@ -857,7 +859,12 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                     'right_click',
                   ]);
                 } else {
-                  await executeInPage({ tabId }, 'inPageDispatchSyntheticClick', [null, x, y]);
+                  await executeInPage({ tabId }, 'inPageDispatchSyntheticClick', [
+                    null,
+                    x,
+                    y,
+                    'right_click',
+                  ]);
                 }
               } catch {}
             } else if (action === 'hover') {

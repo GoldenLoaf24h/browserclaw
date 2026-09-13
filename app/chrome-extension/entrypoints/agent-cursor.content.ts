@@ -66,13 +66,13 @@ const DISTANCE_THRESHOLD_SCOOT = 196;
 const VELOCITY_THRESHOLD_ARRIVED = 12;
 const POSITION_THRESHOLD_ARRIVED = 0.85;
 
-const SPRING_POS: SpringConfig = { dampingFraction: 0.9, response: 0.19 };
-const SPRING_ROT: SpringConfig = { dampingFraction: 0.9, response: 0.12 };
+const SPRING_POS: SpringConfig = { dampingFraction: 0.92, response: 0.11 };
+const SPRING_ROT: SpringConfig = { dampingFraction: 0.9, response: 0.08 };
 const SPRING_STRETCH: SpringConfig = { dampingFraction: 0.85, response: 0.2 };
 const SPRING_VISIBILITY: SpringConfig = { dampingFraction: 0.86, response: 0.42 };
-const SPRING_SCOOT_AXIS: SpringConfig = { dampingFraction: 0.9, response: 0.12 };
-const SPRING_SCOOT_ROT: SpringConfig = { dampingFraction: 0.82, response: 0.055 };
-const SPRING_SCOOT_STRETCH: SpringConfig = { dampingFraction: 0.86, response: 0.12 };
+const SPRING_SCOOT_AXIS: SpringConfig = { dampingFraction: 0.9, response: 0.09 };
+const SPRING_SCOOT_ROT: SpringConfig = { dampingFraction: 0.82, response: 0.045 };
+const SPRING_SCOOT_STRETCH: SpringConfig = { dampingFraction: 0.86, response: 0.09 };
 
 function createSpring(val: number, target: number, cfg: SpringConfig): SpringState {
   return {
@@ -669,7 +669,7 @@ function initAgentCursor() {
         end: target,
         axisRotation: axis,
         rotationTarget: clamp((dx * 0.75 - dy * 0.62) / distance, -1, 1) * 70,
-        progressSpring: createSpring(0, 1, { dampingFraction: 0.94, response: 0.19 }),
+        progressSpring: createSpring(0, 1, { dampingFraction: 0.94, response: 0.1 }),
       };
     } else {
       const path = buildArcCandidates(cursorState.point, target, {
@@ -679,7 +679,7 @@ function initAgentCursor() {
       cursorState.motion = {
         mode: 'bezier',
         path,
-        progressSpring: createSpring(0, 1, { dampingFraction: 0.88, response: 0.28 }),
+        progressSpring: createSpring(0, 1, { dampingFraction: 0.88, response: 0.14 }),
       };
     }
 

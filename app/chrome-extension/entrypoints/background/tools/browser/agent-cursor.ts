@@ -39,8 +39,9 @@ export async function animateAgentCursor(
   }
 
   const seq = ++globalMoveSequence;
-  const timeoutMs = options.timeoutMs ?? 1200;
+  const timeoutMs = options.timeoutMs ?? 180;
   const shouldWait = options.waitForArrival !== false;
+  const sendImmediate = options.immediate === true;
 
   let isBackground = false;
   try {
@@ -50,7 +51,7 @@ export async function animateAgentCursor(
     }
   } catch {}
 
-  if (!shouldWait || options.immediate || isBackground) {
+  if (!shouldWait || sendImmediate || isBackground) {
     try {
       void chrome.tabs
         .sendMessage(tabId, {
@@ -58,7 +59,7 @@ export async function animateAgentCursor(
           x: Math.round(x),
           y: Math.round(y),
           moveSequence: seq,
-          immediate: true,
+          immediate: sendImmediate,
         })
         .catch(() => {});
     } catch {}

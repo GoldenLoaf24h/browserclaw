@@ -73,4 +73,44 @@ describe('tool schema contract', () => {
       expect(action.enum).toEqual(['accept', 'dismiss']);
     });
   });
+
+  describe('polymorphic coordinate schemas', () => {
+    it('allows array coordinates and does not restrict outer type to object', () => {
+      const tools = [
+        { tool: 'chrome_computer', prop: 'coordinates' },
+        { tool: 'chrome_computer', prop: 'startCoordinates' },
+        { tool: 'chrome_click_element', prop: 'coordinate' },
+        { tool: 'chrome_click_element', prop: 'coordinates' },
+        { tool: 'chrome_interact_index', prop: 'coordinate' },
+        { tool: 'chrome_scroll', prop: 'coordinate' },
+        { tool: 'chrome_smart_scroll', prop: 'coordinate' },
+      ];
+
+      for (const { tool, prop } of tools) {
+        const schema = propsOf(tool)[prop];
+        expect(schema.type, `${tool}.${prop} should not have outer type object`).toBeUndefined();
+        expect(schema.oneOf, `${tool}.${prop} must specify oneOf`).toBeDefined();
+        const hasArrayBranch = schema.oneOf.some((b: any) => b.type === 'array');
+        expect(hasArrayBranch, `${tool}.${prop} must support array in oneOf`).toBe(true);
+      }
+
+      const burstCenter = propsOf('chrome_burst_interact').burstClicks.properties.center;
+      expect(burstCenter.type).toBeUndefined();
+      expect(burstCenter.oneOf.some((b: any) => b.type === 'array')).toBe(true);
+    });
+  });
+
+  describe('chrome_batch_actions schema parity', () => {
+    it('exposes fields, selector, ref, clear in batch action items', () => {
+      const itemProps = propsOf('chrome_batch_actions').actions.items.properties;
+      expect(itemProps.ref).toBeDefined();
+      expect(itemProps.selector).toBeDefined();
+      expect(itemProps.clear).toBeDefined();
+      expect(itemProps.fields).toBeDefined();
+
+      const batchItemCoordinate = itemProps.coordinate;
+      expect(batchItemCoordinate.type).toBeUndefined();
+      expect(batchItemCoordinate.oneOf.some((b: any) => b.type === 'array')).toBe(true);
+    });
+  });
 });

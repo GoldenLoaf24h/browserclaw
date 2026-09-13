@@ -8,6 +8,7 @@ BrowserClaw 由本地构建的三部分组成：扩展（MV3）、原生宿主�
 2. 确认端口监听：`netstat -ano | findstr 12306`。
 3. 确认 token：请求头 `Authorization: Bearer <token>`，token 在 `~/.chrome-mcp/bridge-token`（宿主首次启动自动生成）。401/403 检查该文件。
 4. `CHROME_MCP_HOST` / `CHROME_MCP_PORT` 可覆盖默认 127.0.0.1:12306（见 app/native-server/src/constant/index.ts）。
+5. **Windows 僵尸进程防死锁说明（v2.3.8+）**：旧版本在 Chrome 关闭时可能因 HTTP Keep-Alive 未断开导致 Node 进程残留占用端口；当前版本已内置 `closeAllConnections()` 与 1000ms unref 硬看门狗强制退出。若遇历史残留，可执行 `taskkill /F /IM node.exe` 彻底清理。
 
 ## 2. 扩展 SW 未连接宿主
 
@@ -24,7 +25,7 @@ BrowserClaw 由本地构建的三部分组成：扩展（MV3）、原生宿主�
 | CDP_DISPATCH_TIMEOUT                                                               | 目标 tab 在后台且批量竞速超时，激活 tab 或重试                                                                                                               |
 | Security check failed: Domain changed                                              | 上次截图域名与当前 tab 不一致，重新截图                                                                                                                      |
 | Tool X is not exposed under the ... profile                                        | 当前 profile 隐藏了该工具，可调用 `chrome_tool_docs({ category: "<category>", activateForSession: true })` 免重启动态激活，或设置环境变量改回 full           |
-| Tool X is not a BrowserClaw tool                                                   | 工具名不存在，tools/list 查看当前 52 个（或 core 24 / crawl 15 / full 52）                                                                                   |
+| Tool X is not a BrowserClaw tool                                                   | 工具名不存在，tools/list 查看当前 52 个（或 core 14 / crawl 15 / full 52）                                                                                   |
 | No tabIds or url specified. To close the current active tab, pass confirm: true... | 安全防误关机制：调用 `chrome_close_tabs` 未指定 `tabIds` 且无会话亲缘时触发。若确需关闭前台活跃 Tab，请显式传 `confirm: true`，或传入 `tabIds` / `sessionId` |
 | Target closed / not attached / timeout-guard detached                              | 页面崩溃或 CDP 响应超时，底层 `timeout-guard` 触发物理解挂防挂死。刷新页面或重新尝试调用工具                                                                 |
 | captureScreenshot returned empty data for background tab                           | 后台 Tab 离屏截图失败，检查目标 Tab 是否已关闭或被系统内存冻结 (Discarded)                                                                                   |

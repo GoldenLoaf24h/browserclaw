@@ -28,6 +28,7 @@ class CDPSessionManager {
   private dialogStates = new Map<number, PendingDialogInfo>();
   private inFlightRequests = new Map<number, Set<string>>();
   private domainRefCounts = new Map<number, Map<string, number>>();
+  private activeCommands = new Map<number, number>();
 
   constructor() {
     if (typeof chrome !== 'undefined') {
@@ -140,6 +141,8 @@ class CDPSessionManager {
     params?: object,
     timeoutMs = 20000,
   ): Promise<T> {
+    const activeCount = (this.activeCommands.get(tabId) || 0) + 1;
+    this.activeCommands.set(tabId, activeCount);
     let timer: any;
     try {
       return await Promise.race([
@@ -158,6 +161,12 @@ class CDPSessionManager {
       ]);
     } finally {
       clearTimeout(timer);
+      const remaining = (this.activeCommands.get(tabId) || 1) - 1;
+      if (remaining <= 0) {
+        this.activeCommands.delete(tabId);
+      } else {
+        this.activeCommands.set(tabId, remaining);
+      }
     }
   }
 
@@ -169,6 +178,7 @@ class CDPSessionManager {
     this.dialogStates.delete(tabId);
     this.inFlightRequests.delete(tabId);
     this.domainRefCounts.delete(tabId);
+    this.activeCommands.delete(tabId);
     if (this.sessions.has(tabId)) {
       console.warn(
         `[CDPSessionManager] Tab ${tabId} disconnected/closed via ${reason}. Cleaning up session.`,
@@ -373,9 +383,10 @@ class CDPSessionManager {
         await this.serializeTabOp(tabId, async () => {
           const curState = this.getState(tabId);
           if (curState && curState.refCount === 0 && curState.attachedByUs) {
-            if (this.dialogStates.has(tabId)) {
-              // Renderer is blocked by a pending JS dialog: re-arm the idle
-              // timer instead of detaching out from under chrome_handle_dialog.
+            const activeCmdCount = this.activeCommands.get(tabId) || 0;
+            if (this.dialogStates.has(tabId) || activeCmdCount > 0) {
+              // Renderer is blocked by a pending JS dialog or active commands are running:
+              // re-arm the idle timer instead of detaching out from under the caller.
               const rearm = setTimeout(() => {
                 this.idleTimers.delete(tabId);
                 void idleDetach();
@@ -478,6 +489,8 @@ class CDPSessionManager {
                   owners: originalState?.owners || new Set(['reconnected']),
                   attachedByUs: true,
                 });
+                await this.enablePageDomain(tabId);
+                await this.enableNetworkDomain(tabId);
                 return true;
               }
               return false; // attached by another client

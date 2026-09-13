@@ -24,7 +24,7 @@ describe('ego-lite industrial parity mechanisms', () => {
       const shadowRoot = host.attachShadow({ mode: 'open' });
       const slot = document.createElement('slot');
       shadowRoot.appendChild(slot);
-      
+
       const slotted = document.createElement('span');
       host.appendChild(slotted);
       document.body.appendChild(host);
@@ -38,7 +38,7 @@ describe('ego-lite industrial parity mechanisms', () => {
       const dialog = document.createElement('div');
       dialog.setAttribute('role', 'dialog');
       dialog.setAttribute('aria-label', 'User License Agreement');
-      
+
       const closeBtn = document.createElement('button');
       closeBtn.textContent = 'Close';
       dialog.appendChild(closeBtn);
@@ -54,7 +54,7 @@ describe('ego-lite industrial parity mechanisms', () => {
       const btn = document.createElement('button');
       btn.textContent = 'Click Me';
       document.body.appendChild(btn);
-      
+
       // Mock getClientRects
       vi.spyOn(btn, 'getClientRects').mockReturnValue([
         {
@@ -105,7 +105,7 @@ describe('ego-lite industrial parity mechanisms', () => {
     it('dispatches synthetic mouse sequence successfully to indexed target', () => {
       const target = document.createElement('button');
       document.body.appendChild(target);
-      
+
       // Index it in the isolated map
       getIsolatedIndexMap().set(1, target);
 
@@ -115,6 +115,22 @@ describe('ego-lite industrial parity mechanisms', () => {
       const dispatched = inPageDispatchSyntheticClick(1, 120, 150);
       expect(dispatched).toBe(true);
       expect(clickSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('dispatches synthetic right_click with contextmenu event and button: 2', () => {
+      const target = document.createElement('div');
+      document.body.appendChild(target);
+      getIsolatedIndexMap().set(2, target);
+
+      let contextMenuEvent: MouseEvent | null = null;
+      target.addEventListener('contextmenu', (e) => {
+        contextMenuEvent = e as MouseEvent;
+      });
+
+      const dispatched = inPageDispatchSyntheticClick(2, 200, 250, 'right_click');
+      expect(dispatched).toBe(true);
+      expect(contextMenuEvent).not.toBeNull();
+      expect(contextMenuEvent?.button).toBe(2);
     });
   });
 });

@@ -19,6 +19,8 @@ export const AGENT_FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width=
 
 export const AGENT_FAVICON_DATA_URL = 'data:image/svg+xml,' + encodeURIComponent(AGENT_FAVICON_SVG);
 
+import { isRestrictedChromeUrl } from '@/utils/restricted-url';
+
 export class TabFaviconManager {
   private static instance: TabFaviconManager | null = null;
   // Map of tabId -> original favicon URL (or null if the page had no favicon)
@@ -81,6 +83,14 @@ export class TabFaviconManager {
         this.originalFavicons.delete(tabId);
         void this.saveToStorage();
       });
+
+      chrome.tabs?.onUpdated?.addListener?.((tabId, changeInfo) => {
+        if (this.originalFavicons.has(tabId)) {
+          if (changeInfo.status === 'complete' || changeInfo.favIconUrl) {
+            void this.setAgentFavicon(tabId);
+          }
+        }
+      });
     }
   }
 
@@ -94,7 +104,7 @@ export class TabFaviconManager {
 
     try {
       const tab = await chrome.tabs.get(tabId);
-      if (!tab || !tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) {
+      if (!tab || !tab.url || isRestrictedChromeUrl(tab.url)) {
         return false;
       }
 
@@ -113,7 +123,7 @@ export class TabFaviconManager {
             const head = document.head || document.documentElement;
             const links = Array.from(
               document.querySelectorAll<HTMLLinkElement>(
-                "link[rel~='icon'], link[rel='shortcut icon'], link[rel='alternate icon']",
+                "link[rel~='icon'], link[rel='shortcut icon'], link[rel='alternate icon'], link[rel='apple-touch-icon']",
               ),
             );
             for (const link of links) {
@@ -132,7 +142,11 @@ export class TabFaviconManager {
             link.type = 'image/svg+xml';
             link.setAttribute('data-browserclaw-injected', 'true');
             link.href = dataUrl;
-            head.appendChild(link);
+            if (head.firstChild) {
+              head.insertBefore(link, head.firstChild);
+            } else {
+              head.appendChild(link);
+            }
           } catch {}
         },
         args: [agentDataUrl],
@@ -172,7 +186,7 @@ export class TabFaviconManager {
             injected.forEach((el) => el.remove());
             const links = Array.from(
               document.querySelectorAll<HTMLLinkElement>(
-                "link[rel~='icon'], link[rel='shortcut icon'], link[rel='alternate icon']",
+                "link[rel~='icon'], link[rel='shortcut icon'], link[rel='alternate icon'], link[rel='apple-touch-icon']",
               ),
             );
             for (const link of links) {
@@ -205,7 +219,7 @@ export class TabFaviconManager {
    * Marks a tab active under Agent automation:
    * Replaces favicon with the glowing agent indicator and resets the idle auto-restore timer.
    */
-  public markTabActive(tabId: number, idleRestoreMs = 8000): void {
+  public markTabActive(tabId: number, idleRestoreMs = 600000): void {
     if (typeof tabId !== 'number' || tabId <= 0) return;
     void this.setAgentFavicon(tabId);
     const existing = this.idleTimers.get(tabId);

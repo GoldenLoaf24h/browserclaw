@@ -96,11 +96,12 @@ BrowserClaw 支持 **Profile 动态分层**，平衡初阶模型的 Token 负担
 ┌────────────────────────────────────────────────────────────────────────┐
 │                              52 MCP TOOLS                              │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 🟢 CORE (24 Tools) - High-Frequency Semantic & Visual Interaction     │
-│   • Navigation: navigate, get_active_tab, create_tab, close_tab...     │
-│   • Content: read_dom, get_markdown, grep, inspect_media...            │
-│   • Actions: interact_index, fill_index, batch_actions, smart_scroll...│
-│   • Vision: screenshot, get_mouse_position                             │
+│ 🟢 CORE (14 Tools) - High-Frequency Semantic & Visual Interaction     │
+│   • Navigate (4): navigate, switch_tab, close_tabs, get_windows_and_tabs
+│   • Perceive (4): read_dom, get_markdown, inspect_media, grep          │
+│   • Act (3): interact_index, fill_index, batch_actions                 │
+│   • Observe (2): screenshot, smart_scroll                              │
+│   • Discovery (1): chrome_tool_docs                                    │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 🟡 CRAWL (15 Tools) - Lightweight High-Throughput Web Extraction       │
 │   • Content: get_markdown, read_dom, grep, get_links, get_html...       │
@@ -178,6 +179,10 @@ AI Agent                            BrowserClaw Extension                     Us
 | **平台按键位掩码**          | macOS Cmd 键位掩码严格对齐 `mod = 4` (Meta)                                                              | 修复 macOS 环境下全选、剪切等组合快捷键位掩码偏差                                          |
 | **单表达式自动 return**     | `chrome_javascript` 智能语法检测，无 return 单表达式自动包装 `return (...)`                              | 提升 Agent 即席计算、DOM 属性查询的体验与容错率                                            |
 | **事件驱动加载等待**        | `chrome_get_web_content` 监听 `chrome.tabs.onUpdated` / `onRemoved` 事件驱动完成                         | 替代盲等休眠，大幅降低等待延迟并增强鲁棒性                                                 |
+| **Windows 宿主进程看门狗**  | Fastify `closeAllConnections()` + 1000ms unref 硬退出看门狗                                              | 彻底根治 Windows 平台 Keep-Alive 长连接导致的 12306 端口占用与僵尸进程                     |
+| **多态坐标 Ajv 严格合规**   | 统一重构 `oneOf` 坐标定义，移除外层 `type: 'object'` 与顶层 `required: ['x', 'y']`                       | 确保大模型输出的 `[x, y]` 数组坐标 100% 通过 Ajv / Claude Desktop / Cursor 严格校验        |
+| **后台标签页滚轮防假死**    | `scroll` 与 `smart_scroll` 识别后台 Tab 自动熔断走 JS 滚动 + Tab 激活/刷新即刻重置 60s 冷却缓存          | 消除 Chromium 挂起后台合成器帧导致的 3000ms 强制超时假死                                   |
+| **脚本跨 Frame 隔离注入**   | `base-browser.ts` 缓存键升级为 `${files.join(',')}\|${world}\|${frameKey}`                               | 彻底防止主子 Frame 间脚本伪命中导致子 Frame 漏注                                           |
 
 ---
 

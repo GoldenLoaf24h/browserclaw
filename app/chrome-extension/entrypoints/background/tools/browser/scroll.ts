@@ -23,6 +23,20 @@ export interface ScrollToolParams {
 // briefly so consecutive scrolls don't each burn the 3s race before falling back.
 const wheelSkipUntil = new Map<number, number>();
 
+if (typeof chrome !== 'undefined' && chrome.tabs) {
+  chrome.tabs.onActivated?.addListener?.(({ tabId }) => {
+    wheelSkipUntil.delete(tabId);
+  });
+  chrome.tabs.onUpdated?.addListener?.((tabId, changeInfo) => {
+    if (changeInfo.status === 'loading' || changeInfo.url) {
+      wheelSkipUntil.delete(tabId);
+    }
+  });
+  chrome.tabs.onRemoved?.addListener?.((tabId) => {
+    wheelSkipUntil.delete(tabId);
+  });
+}
+
 /**
  * Physical Page Scrolling Tool
  * Dispatches CDP mouseWheel events to faithfully replicate human wheel scrolling,
@@ -86,15 +100,24 @@ export class ScrollTool extends BaseBrowserToolExecutor {
         if (parsed) {
           wheelX = parsed.x;
           wheelY = parsed.y;
-        } else if (typeof (args.coordinate as any).x === 'number' && typeof (args.coordinate as any).y === 'number') {
+        } else if (
+          typeof (args.coordinate as any).x === 'number' &&
+          typeof (args.coordinate as any).y === 'number'
+        ) {
           wheelX = (args.coordinate as any).x;
           wheelY = (args.coordinate as any).y;
         }
       } else if (typeof args.index === 'number' && args.index > 0) {
-        const coordRes = await executeInPage({ tabId: tab.id }, 'inPageGetElementCoordinates', [args.index]);
+        const coordRes = await executeInPage({ tabId: tab.id }, 'inPageGetElementCoordinates', [
+          args.index,
+        ]);
         let coords = coordRes?.[0]?.result;
         if (!coords?.success) {
-          const frameResults = await executeInPage({ tabId: tab.id, allFrames: true }, 'inPageGetElementCoordinates', [args.index]);
+          const frameResults = await executeInPage(
+            { tabId: tab.id, allFrames: true },
+            'inPageGetElementCoordinates',
+            [args.index],
+          );
           const match = frameResults.find((r) => r.result?.success);
           if (match?.result) coords = match.result;
         }
@@ -106,7 +129,10 @@ export class ScrollTool extends BaseBrowserToolExecutor {
         try {
           const vp = await this.safeExecuteScript(tab.id, {
             target: { tabId: tab.id },
-            func: () => ({ cx: Math.round(window.innerWidth / 2), cy: Math.round(window.innerHeight / 2) }),
+            func: () => ({
+              cx: Math.round(window.innerWidth / 2),
+              cy: Math.round(window.innerHeight / 2),
+            }),
           });
           if (vp?.[0]?.result?.cx && vp?.[0]?.result?.cy) {
             wheelX = vp[0].result.cx;
@@ -118,8 +144,9 @@ export class ScrollTool extends BaseBrowserToolExecutor {
       let cdpSuccess = false;
       let method = 'window_scroll_by';
       const skipUntil = wheelSkipUntil.get(tab.id) || 0;
+      const isBackground = Boolean(tab && !tab.active);
       // Primary: Dispatch physical mouse wheel events via CDP
-      if (skipUntil < Date.now()) {
+      if (!isBackground && skipUntil < Date.now()) {
         try {
           await cdpSessionManager.withSession(tab.id, 'scroll', async () => {
             await raceCdp(tab.id!, 'Input.dispatchMouseEvent', {
@@ -137,7 +164,10 @@ export class ScrollTool extends BaseBrowserToolExecutor {
             throw cdpErr;
           }
           wheelSkipUntil.set(tab.id!, Date.now() + 60_000);
-          console.warn('[ScrollTool] CDP wheel dispatch failed, falling back to script injection:', cdpErr);
+          console.warn(
+            '[ScrollTool] CDP wheel dispatch failed, falling back to script injection:',
+            cdpErr,
+          );
         }
       }
 
@@ -147,23 +177,41 @@ export class ScrollTool extends BaseBrowserToolExecutor {
       if (!cdpSuccess) {
         if (typeof args.index === 'number' && args.index > 0) {
           try {
-            await executeInPage({ tabId: tab.id }, 'inPageScrollByIndex', [args.index, deltaX, deltaY]);
+            await executeInPage({ tabId: tab.id }, 'inPageScrollByIndex', [
+              args.index,
+              deltaX,
+              deltaY,
+            ]);
             method = 'element_scroll_by';
           } catch {}
-        } else if (args.coordinate && typeof args.coordinate.x === 'number' && typeof args.coordinate.y === 'number') {
+        } else if (
+          args.coordinate &&
+          typeof args.coordinate.x === 'number' &&
+          typeof args.coordinate.y === 'number'
+        ) {
           try {
             const coordRes = await this.safeExecuteScript(tab.id, {
               target: { tabId: tab.id },
               func: (x: number, y: number, dx: number, dy: number) => {
-                let el = document.elementFromPoint(x, y);
+                const el = document.elementFromPoint(x, y);
                 let node: Element | null = el;
                 while (node && node !== document.body && node !== document.documentElement) {
                   const cs = getComputedStyle(node);
-                  const canY = dy !== 0 && /(auto|scroll|overlay)/.test(cs.overflowY) && node.scrollHeight > node.clientHeight + 10;
-                  const canX = dx !== 0 && /(auto|scroll|overlay)/.test(cs.overflowX) && node.scrollWidth > node.clientWidth + 10;
+                  const canY =
+                    dy !== 0 &&
+                    /(auto|scroll|overlay)/.test(cs.overflowY) &&
+                    node.scrollHeight > node.clientHeight + 10;
+                  const canX =
+                    dx !== 0 &&
+                    /(auto|scroll|overlay)/.test(cs.overflowX) &&
+                    node.scrollWidth > node.clientWidth + 10;
                   if (canY || canX) {
                     node.scrollBy({ left: dx, top: dy, behavior: 'instant' as ScrollBehavior });
-                    return { scrolled: true, scrollTop: node.scrollTop, scrollLeft: node.scrollLeft };
+                    return {
+                      scrolled: true,
+                      scrollTop: node.scrollTop,
+                      scrollLeft: node.scrollLeft,
+                    };
                   }
                   node = node.parentElement;
                 }

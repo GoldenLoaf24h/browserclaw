@@ -2482,7 +2482,7 @@ export function inPageExtractMarkdown(includeLinks = true, fit = false): string 
     const fitNoise = (window as any).__mcpFitNoise__ as Set<Element> | undefined;
     if (fitNoise && fitNoise.size > 0) {
       for (const n of fitNoise) {
-        if (el === n || n.contains(el) || el.contains(n)) return '';
+        if (el === n || n.contains(el)) return '';
       }
     }
     if (!isVisible(el)) return '';
@@ -2629,6 +2629,10 @@ export function inPageExtractMarkdown(includeLinks = true, fit = false): string 
     }
     filteredLines.push(line.trimEnd());
   }
+
+  try {
+    delete (window as any).__mcpFitNoise__;
+  } catch {}
 
   return filteredLines
     .join('\n')
@@ -3228,6 +3232,7 @@ export function inPageDispatchSyntheticClick(
   index: number | null | undefined,
   x: number,
   y: number,
+  action: 'click' | 'right_click' | 'double_click' = 'click',
 ): boolean {
   let el = typeof index === 'number' && index > 0 ? findIndexedElement(index) : null;
   if (!el && typeof document !== 'undefined' && typeof document.elementFromPoint === 'function') {
@@ -3235,18 +3240,46 @@ export function inPageDispatchSyntheticClick(
   }
   if (!el || !(el instanceof Element)) return false;
 
+  const isRight = action === 'right_click';
+  const button = isRight ? 2 : 0;
+  const buttons = isRight ? 2 : 1;
+
   const init: MouseEventInit = {
     bubbles: true,
     cancelable: true,
     clientX: x,
     clientY: y,
-    button: 0,
+    button,
   };
 
-  el.dispatchEvent(new MouseEvent('mousemove', { ...init, buttons: 0 }));
-  el.dispatchEvent(new MouseEvent('mousedown', { ...init, buttons: 1 }));
+  try {
+    el.dispatchEvent(new PointerEvent('pointerdown', { ...init, buttons, pointerType: 'mouse' }));
+  } catch {}
+  el.dispatchEvent(new MouseEvent('mousedown', { ...init, buttons }));
+  try {
+    el.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0, pointerType: 'mouse' }));
+  } catch {}
   el.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0 }));
-  el.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
+
+  if (isRight) {
+    el.dispatchEvent(new MouseEvent('contextmenu', { ...init, buttons: 0 }));
+  } else if (action === 'double_click') {
+    el.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
+    try {
+      el.dispatchEvent(new PointerEvent('pointerdown', { ...init, buttons, pointerType: 'mouse' }));
+    } catch {}
+    el.dispatchEvent(new MouseEvent('mousedown', { ...init, buttons }));
+    try {
+      el.dispatchEvent(
+        new PointerEvent('pointerup', { ...init, buttons: 0, pointerType: 'mouse' }),
+      );
+    } catch {}
+    el.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0 }));
+    el.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
+    el.dispatchEvent(new MouseEvent('dblclick', { ...init, buttons: 0 }));
+  } else {
+    el.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
+  }
 
   return true;
 }

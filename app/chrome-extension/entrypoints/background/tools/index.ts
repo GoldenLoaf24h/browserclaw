@@ -2,6 +2,7 @@ import { createErrorResponse } from '@/common/tool-handler';
 import { ERROR_MESSAGES } from '@/common/constants';
 import { formatErrorForAgent, TOOL_SCHEMAS } from 'chrome-mcp-shared';
 import * as browserTools from './browser';
+import { tabFaviconManager } from './browser/tab-favicon';
 
 const tools = { ...browserTools } as any;
 // Only schemas declared in TOOL_SCHEMAS are callable. Some modules export
@@ -53,7 +54,11 @@ export const handleCallTool = async (param: ToolCallParam) => {
     if (param.sessionId && !args.sessionId) {
       args.sessionId = param.sessionId;
     }
-    return await tool.execute(args);
+    const result = await tool.execute(args);
+    if (typeof args.tabId === 'number' && args.tabId > 0) {
+      tabFaviconManager.markTabActive(args.tabId);
+    }
+    return result;
   } catch (error) {
     console.error(`Tool execution failed for ${param.name}:`, error);
     // Keep a bounded stack so an unexpected failure can be located without

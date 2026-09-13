@@ -22,6 +22,24 @@ export interface SmartScrollParams {
   settleTimeoutMs?: number;
 }
 
+// Background/occluded tabs never ack CDP wheel dispatches; remember the failure
+// briefly so consecutive scrolls don't each burn the 3s race before falling back.
+const smartScrollWheelSkipUntil = new Map<number, number>();
+
+if (typeof chrome !== 'undefined' && chrome.tabs) {
+  chrome.tabs.onActivated?.addListener?.(({ tabId }) => {
+    smartScrollWheelSkipUntil.delete(tabId);
+  });
+  chrome.tabs.onUpdated?.addListener?.((tabId, changeInfo) => {
+    if (changeInfo.status === 'loading' || changeInfo.url) {
+      smartScrollWheelSkipUntil.delete(tabId);
+    }
+  });
+  chrome.tabs.onRemoved?.addListener?.((tabId) => {
+    smartScrollWheelSkipUntil.delete(tabId);
+  });
+}
+
 /**
  * Intelligent Container Scrolling Tool
  * Automatically discovers the most prominent scrollable container or targets
@@ -88,9 +106,13 @@ export class SmartScrollTool extends BaseBrowserToolExecutor {
       const refWidth = target.isWindow ? target.width : target.clientWidth;
 
       if (args.amount === 'half_page') {
-        pixelDistance = Math.round((direction === 'left' || direction === 'right' ? refWidth : refHeight) * 0.5);
+        pixelDistance = Math.round(
+          (direction === 'left' || direction === 'right' ? refWidth : refHeight) * 0.5,
+        );
       } else if (args.amount === 'page' || args.amount === undefined) {
-        pixelDistance = Math.round((direction === 'left' || direction === 'right' ? refWidth : refHeight) * 0.85);
+        pixelDistance = Math.round(
+          (direction === 'left' || direction === 'right' ? refWidth : refHeight) * 0.85,
+        );
       } else {
         const parsed = Number(args.amount);
         pixelDistance = !isNaN(parsed) && parsed > 0 ? parsed : Math.round(refHeight * 0.85);
@@ -103,24 +125,39 @@ export class SmartScrollTool extends BaseBrowserToolExecutor {
       else if (direction === 'right') deltaX = pixelDistance;
       else if (direction === 'left') deltaX = -pixelDistance;
 
+      let isBackground = false;
+      try {
+        const fullTab = await chrome.tabs.get(tabId).catch(() => null);
+        isBackground = Boolean(fullTab && !fullTab.active);
+      } catch {}
+
       // 3. Attempt physical CDP mouseWheel scroll
       let cdpSuccess = false;
-      try {
-        await cdpSessionManager.withSession(tabId, 'smart_scroll', async () => {
-          await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-            type: 'mouseWheel',
-            x: target.x,
-            y: target.y,
-            deltaX,
-            deltaY,
+      const skipUntil = smartScrollWheelSkipUntil.get(tabId) || 0;
+      if (!isBackground && skipUntil < Date.now()) {
+        try {
+          await cdpSessionManager.withSession(tabId, 'smart_scroll', async () => {
+            await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+              type: 'mouseWheel',
+              x: target.x,
+              y: target.y,
+              deltaX,
+              deltaY,
+            });
           });
-        });
-        cdpSuccess = true;
-      } catch (wheelErr) {
-        if (wheelErr instanceof DialogOpenedError) {
-          return createDialogInterruptResponse(wheelErr);
+          cdpSuccess = true;
+          smartScrollWheelSkipUntil.delete(tabId);
+        } catch (wheelErr) {
+          if (wheelErr instanceof DialogOpenedError) {
+            return createDialogInterruptResponse(wheelErr);
+          }
+          smartScrollWheelSkipUntil.set(tabId, Date.now() + 60_000);
+          console.warn(
+            '[SmartScrollTool] CDP wheel dispatch failed, falling back to in-page scroll:',
+            wheelErr,
+          );
+          // Fall back to in-page scroll
         }
-        // Fall back to in-page scroll
       }
 
       // 4. In-page scroll fallback if CDP wheel failed
@@ -144,15 +181,27 @@ export class SmartScrollTool extends BaseBrowserToolExecutor {
       let updatedStatus: SmartScrollTargetInfo | null = null;
       try {
         const updateCheck = await executeInPage({ tabId }, 'inPageFindSmartScrollTarget', [
-          { selector: target.isWindow ? undefined : target.selector, ref: args.ref, isWindow: target.isWindow },
+          {
+            selector: target.isWindow ? undefined : target.selector,
+            ref: args.ref,
+            isWindow: target.isWindow,
+          },
         ]);
         updatedStatus = updateCheck?.[0]?.result as SmartScrollTargetInfo;
       } catch {}
 
       const currentScrollTop = updatedStatus ? updatedStatus.scrollTop : target.scrollTop + deltaY;
-      const currentScrollLeft = updatedStatus ? updatedStatus.scrollLeft : target.scrollLeft + deltaX;
-      const maxScrollY = Math.max(1, (updatedStatus?.scrollHeight || target.scrollHeight) - (updatedStatus?.clientHeight || target.clientHeight));
-      const scrollProgress = Math.round(Math.min(100, Math.max(0, (currentScrollTop / maxScrollY) * 100)));
+      const currentScrollLeft = updatedStatus
+        ? updatedStatus.scrollLeft
+        : target.scrollLeft + deltaX;
+      const maxScrollY = Math.max(
+        1,
+        (updatedStatus?.scrollHeight || target.scrollHeight) -
+          (updatedStatus?.clientHeight || target.clientHeight),
+      );
+      const scrollProgress = Math.round(
+        Math.min(100, Math.max(0, (currentScrollTop / maxScrollY) * 100)),
+      );
 
       return {
         content: [
@@ -176,7 +225,9 @@ export class SmartScrollTool extends BaseBrowserToolExecutor {
                   scrollHeight: updatedStatus?.scrollHeight ?? target.scrollHeight,
                   clientHeight: updatedStatus?.clientHeight ?? target.clientHeight,
                 },
-                canScrollDown: updatedStatus ? updatedStatus.canScrollDown : currentScrollTop < maxScrollY,
+                canScrollDown: updatedStatus
+                  ? updatedStatus.canScrollDown
+                  : currentScrollTop < maxScrollY,
                 canScrollUp: updatedStatus ? updatedStatus.canScrollUp : currentScrollTop > 0,
                 settle: settleResult,
               },

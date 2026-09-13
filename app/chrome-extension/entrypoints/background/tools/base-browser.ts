@@ -15,6 +15,19 @@ const PING_TIMEOUT_MS = 300;
 // native-host 120s kill, which the agent cannot interpret.
 const INJECTION_TIMEOUT_MS = 15_000;
 
+const injectedScriptsCache = new Map<number, Set<string>>();
+
+if (typeof chrome !== 'undefined' && chrome.tabs) {
+  chrome.tabs.onUpdated?.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === 'loading' || changeInfo.url) {
+      injectedScriptsCache.delete(tabId);
+    }
+  });
+  chrome.tabs.onRemoved?.addListener((tabId) => {
+    injectedScriptsCache.delete(tabId);
+  });
+}
+
 async function raceInjection<T>(p: Promise<T>, ms = INJECTION_TIMEOUT_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -84,6 +97,18 @@ export abstract class BaseBrowserToolExecutor implements ToolExecutor {
       throw new Error(restrictedUrlErrorMessage(tab?.url));
     }
 
+    const frameKey =
+      frameIds && frameIds.length > 0
+        ? frameIds.slice().sort().join(':')
+        : allFrames
+          ? 'all'
+          : 'main';
+    const cacheKey = `${files.join(',')}|${world}|${frameKey}`;
+    const cachedSet = injectedScriptsCache.get(tabId);
+    if (!injectImmediately && cachedSet?.has(cacheKey)) {
+      return;
+    }
+
     // check if script is already injected
     try {
       const pingAction = pingActionForFiles(files);
@@ -114,6 +139,12 @@ export abstract class BaseBrowserToolExecutor implements ToolExecutor {
         console.log(
           `pong received for action '${pingAction}' in tab ${tabId}. Assuming script is active.`,
         );
+        let set = injectedScriptsCache.get(tabId);
+        if (!set) {
+          set = new Set();
+          injectedScriptsCache.set(tabId, set);
+        }
+        set.add(cacheKey);
         return;
       } else {
         console.warn(`Unexpected ping response in tab ${tabId}:`, response);
@@ -140,6 +171,12 @@ export abstract class BaseBrowserToolExecutor implements ToolExecutor {
         } as any),
       );
       console.log(`'${files.join(', ')}' injection successful for tab ${tabId}`);
+      let set = injectedScriptsCache.get(tabId);
+      if (!set) {
+        set = new Set();
+        injectedScriptsCache.set(tabId, set);
+      }
+      set.add(cacheKey);
     } catch (injectionError) {
       const errorMessage =
         injectionError instanceof Error ? injectionError.message : String(injectionError);

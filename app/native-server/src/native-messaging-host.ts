@@ -404,6 +404,9 @@ export class NativeMessagingHost {
     });
     this.pendingRequests.clear();
 
+    // 1000ms unref'd watchdog exit timer to prevent orphaned processes from holding port 12306 on Windows
+    setTimeout(() => process.exit(0), 1000).unref();
+
     if (this.associatedServer && this.associatedServer.isRunning) {
       this.associatedServer
         .stop()

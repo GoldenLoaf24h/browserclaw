@@ -231,13 +231,16 @@ export const TOOL_SCHEMAS: Tool[] = [
             'Element ref/index from chrome_read_dom. For click/scroll/scroll_to/key/type and drag end when provided; takes precedence over coordinates.',
         },
         coordinates: {
-          type: 'object',
-          properties: {
-            x: { type: 'number', description: 'X coordinate' },
-            y: { type: 'number', description: 'Y coordinate' },
-          },
           oneOf: [
-            { type: 'object', description: '{ x, y } coordinate object' },
+            {
+              type: 'object',
+              properties: {
+                x: { type: 'number', description: 'X coordinate' },
+                y: { type: 'number', description: 'Y coordinate' },
+              },
+              required: ['x', 'y'],
+              description: '{ x, y } coordinate object',
+            },
             {
               type: 'array',
               items: { type: 'number' },
@@ -254,13 +257,16 @@ export const TOOL_SCHEMAS: Tool[] = [
             'Space of coordinates: viewport (default, absolute CSS pixels) or screenshot (mapped through the most recent screenshot context for this tab).',
         },
         startCoordinates: {
-          type: 'object',
-          properties: {
-            x: { type: 'number' },
-            y: { type: 'number' },
-          },
           oneOf: [
-            { type: 'object', description: '{ x, y } coordinate object' },
+            {
+              type: 'object',
+              properties: {
+                x: { type: 'number' },
+                y: { type: 'number' },
+              },
+              required: ['x', 'y'],
+              description: '{ x, y } coordinate object',
+            },
             {
               type: 'array',
               items: { type: 'number' },
@@ -966,39 +972,43 @@ export const TOOL_SCHEMAS: Tool[] = [
           description: 'Target element by ARIA role attribute (e.g. "button", "tab", "link").',
         },
         coordinate: {
-          type: 'object',
           description:
             'Coordinates to click at: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (preferred unified parameter). Interpreted in the space set by coordinateSpace (default: viewport).',
-          properties: {
-            x: { type: 'number', description: 'X coordinate in viewport/CSS pixels' },
-            y: { type: 'number', description: 'Y coordinate in viewport/CSS pixels' },
-          },
           oneOf: [
-            { type: 'object', description: '{ x, y } coordinate object' },
+            {
+              type: 'object',
+              properties: {
+                x: { type: 'number', description: 'X coordinate in viewport/CSS pixels' },
+                y: { type: 'number', description: 'Y coordinate in viewport/CSS pixels' },
+              },
+              required: ['x', 'y'],
+              description: '{ x, y } coordinate object',
+            },
             {
               type: 'array',
               items: { type: 'number' },
               description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
             },
           ],
-          required: ['x', 'y'],
         },
         coordinates: {
-          type: 'object',
           description: 'Deprecated alias for coordinate. Prefer coordinate.',
-          properties: {
-            x: { type: 'number' },
-            y: { type: 'number' },
-          },
           oneOf: [
-            { type: 'object', description: '{ x, y } coordinate object' },
+            {
+              type: 'object',
+              properties: {
+                x: { type: 'number' },
+                y: { type: 'number' },
+              },
+              required: ['x', 'y'],
+              description: '{ x, y } coordinate object',
+            },
             {
               type: 'array',
               items: { type: 'number' },
               description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
             },
           ],
-          required: ['x', 'y'],
         },
         double: {
           type: 'boolean',
@@ -1454,20 +1464,22 @@ export const TOOL_SCHEMAS: Tool[] = [
           description: 'Compact 1-based numeric index of the target element',
         },
         coordinate: {
-          type: 'object',
-          properties: {
-            x: { type: 'number', description: 'X coordinate in viewport/CSS pixels' },
-            y: { type: 'number', description: 'Y coordinate in viewport/CSS pixels' },
-          },
           oneOf: [
-            { type: 'object', description: '{ x, y } coordinate object' },
+            {
+              type: 'object',
+              properties: {
+                x: { type: 'number', description: 'X coordinate in viewport/CSS pixels' },
+                y: { type: 'number', description: 'Y coordinate in viewport/CSS pixels' },
+              },
+              required: ['x', 'y'],
+              description: '{ x, y } coordinate object',
+            },
             {
               type: 'array',
               items: { type: 'number' },
               description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
             },
           ],
-          required: ['x', 'y'],
           description:
             'Visual fallback coordinates in viewport/CSS pixels: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized, 0~1000 per-mille, or absolute viewport pixels across modern vision agents).',
         },
@@ -1666,17 +1678,73 @@ export const TOOL_SCHEMAS: Tool[] = [
                 description: 'Action type to perform',
               },
               index: { type: 'number', description: 'Element index (for click, fill, hover)' },
+              ref: {
+                type: ['string', 'number'],
+                description: 'Target element numeric index or ref from chrome_read_dom',
+              },
+              selector: {
+                type: 'string',
+                description: 'CSS selector or XPath for target element',
+              },
+              clear: {
+                type: 'boolean',
+                description: 'Clear field before typing (default: true)',
+              },
+              fields: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    ref: {
+                      type: ['string', 'number'],
+                      description: 'Target element numeric index or ref from chrome_read_dom',
+                    },
+                    index: {
+                      type: 'number',
+                      description: 'Alias for ref',
+                    },
+                    selector: {
+                      type: 'string',
+                      description: 'CSS selector or XPath for target field',
+                    },
+                    value: {
+                      type: ['string', 'number', 'boolean'],
+                      description: 'Value to fill or select',
+                    },
+                    text: {
+                      type: 'string',
+                      description: 'Alias for value',
+                    },
+                    clear: {
+                      type: 'boolean',
+                      description: 'Clear field before typing (default: true)',
+                    },
+                  },
+                  required: [],
+                },
+                description: 'Array of field descriptors to fill sequentially (for fill_form)',
+              },
               text: { type: 'string', description: 'Text to type/fill' },
               value: { type: 'string', description: 'Alias for text' },
               key: { type: 'string', description: 'Key name (for press_key)' },
               coordinate: {
-                type: 'object',
-                properties: {
-                  x: { type: 'number', description: 'X coordinate in viewport/CSS pixels' },
-                  y: { type: 'number', description: 'Y coordinate in viewport/CSS pixels' },
-                },
-                required: ['x', 'y'],
-                description: 'Unified coordinate object for click or scroll',
+                oneOf: [
+                  {
+                    type: 'object',
+                    properties: {
+                      x: { type: 'number', description: 'X coordinate in viewport/CSS pixels' },
+                      y: { type: 'number', description: 'Y coordinate in viewport/CSS pixels' },
+                    },
+                    required: ['x', 'y'],
+                    description: '{ x, y } coordinate object',
+                  },
+                  {
+                    type: 'array',
+                    items: { type: 'number' },
+                    description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
+                  },
+                ],
+                description: 'Unified coordinate object or array for click or scroll',
               },
               x: { type: 'number', description: 'Coordinate X (for scroll/click, alias)' },
               y: { type: 'number', description: 'Coordinate Y (for scroll/click, alias)' },
@@ -2030,20 +2098,22 @@ export const TOOL_SCHEMAS: Tool[] = [
             'Target element index (from chrome_read_dom) to scroll. When provided, moves cursor to element and scrolls its container.',
         },
         coordinate: {
-          type: 'object',
-          properties: {
-            x: { type: 'number', description: 'X coordinate' },
-            y: { type: 'number', description: 'Y coordinate' },
-          },
           oneOf: [
-            { type: 'object', description: '{ x, y } coordinate object' },
+            {
+              type: 'object',
+              properties: {
+                x: { type: 'number', description: 'X coordinate' },
+                y: { type: 'number', description: 'Y coordinate' },
+              },
+              required: ['x', 'y'],
+              description: '{ x, y } coordinate object',
+            },
             {
               type: 'array',
               items: { type: 'number' },
               description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
             },
           ],
-          required: ['x', 'y'],
           description:
             'Target coordinates to dispatch wheel event at: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (defaults to center of viewport).',
         },
@@ -2213,20 +2283,28 @@ export const TOOL_SCHEMAS: Tool[] = [
           type: 'object',
           properties: {
             center: {
-              type: 'object',
-              properties: {
-                x: { type: 'number', description: 'Center X coordinate in viewport CSS pixels' },
-                y: { type: 'number', description: 'Center Y coordinate in viewport CSS pixels' },
-              },
               oneOf: [
-                { type: 'object', description: '{ x, y } coordinate object' },
+                {
+                  type: 'object',
+                  properties: {
+                    x: {
+                      type: 'number',
+                      description: 'Center X coordinate in viewport CSS pixels',
+                    },
+                    y: {
+                      type: 'number',
+                      description: 'Center Y coordinate in viewport CSS pixels',
+                    },
+                  },
+                  required: ['x', 'y'],
+                  description: '{ x, y } coordinate object',
+                },
                 {
                   type: 'array',
                   items: { type: 'number' },
                   description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
                 },
               ],
-              required: ['x', 'y'],
               description:
                 'Center point for burst clicks: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box',
             },
@@ -2326,20 +2404,22 @@ export const TOOL_SCHEMAS: Tool[] = [
           description: 'Optional 1-based numeric index of the scroll container to target',
         },
         coordinate: {
-          type: 'object',
-          properties: {
-            x: { type: 'number', description: 'X coordinate' },
-            y: { type: 'number', description: 'Y coordinate' },
-          },
           oneOf: [
-            { type: 'object', description: '{ x, y } coordinate object' },
+            {
+              type: 'object',
+              properties: {
+                x: { type: 'number', description: 'X coordinate' },
+                y: { type: 'number', description: 'Y coordinate' },
+              },
+              required: ['x', 'y'],
+              description: '{ x, y } coordinate object',
+            },
             {
               type: 'array',
               items: { type: 'number' },
               description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
             },
           ],
-          required: ['x', 'y'],
           description:
             'Optional coordinate to locate the scrollable container under pointer: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box',
         },
