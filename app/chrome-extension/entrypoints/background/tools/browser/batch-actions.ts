@@ -14,6 +14,7 @@ import { resolveTargetLocation } from './unified-locator';
 import { captureDeltaIfRequested } from '@/utils/delta-helper';
 import { getSubframeViewportOffset } from './interact-index';
 import { tabFaviconManager } from './tab-favicon';
+import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
 
 export interface BatchActionsParams {
   actions: BatchActionItem[];
@@ -282,6 +283,13 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               const targetX = x;
               const targetY = y;
 
+              await animateAgentCursor(tabId, targetX, targetY, {
+                waitForArrival: true,
+                timeoutMs: 1200,
+              });
+              if (item.type === 'click') {
+                void animateAgentCursorClick(tabId, targetX, targetY);
+              }
               await cdpSessionManager.withSession(tabId, 'batch-actions-mouse', async () => {
                 await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
                   type: 'mouseMoved',

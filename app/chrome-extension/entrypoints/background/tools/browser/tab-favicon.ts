@@ -7,17 +7,14 @@
  * - When automation ends or tab is released/closed, restores the original favicon cleanly.
  */
 
-export const AGENT_FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+export const AGENT_FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
   <defs>
-    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#339cff" stop-opacity="1"/>
-      <stop offset="60%" stop-color="#339cff" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#0066ff" stop-opacity="0"/>
-    </radialGradient>
+    <filter id="cursor-halo" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="0" stdDeviation="1.8" flood-color="#339cff" flood-opacity="0.95"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="3.5" flood-color="#0066ff" flood-opacity="0.6"/>
+    </filter>
   </defs>
-  <circle cx="16" cy="16" r="14" fill="url(#halo)"/>
-  <circle cx="16" cy="16" r="8" fill="#339cff"/>
-  <circle cx="16" cy="16" r="4" fill="#ffffff"/>
+  <path d="M3.04536 4.45259C2.7582 3.60299 3.60299 2.7582 4.45259 3.04536L14.1828 6.33403C15.1637 6.66558 15.0872 8.08006 14.0715 8.39045L10.2994 9.54319C9.93919 9.65327 9.65327 9.93919 9.54319 10.2994L8.39046 14.0715C8.08007 15.0872 6.66558 15.1637 6.33404 14.1828L3.04536 4.45259Z" fill="#000000" stroke="#ffffff" stroke-width="1.8" stroke-linejoin="round" paint-order="stroke fill" transform="translate(1, 1) scale(1.9)" filter="url(#cursor-halo)"/>
 </svg>`;
 
 export const AGENT_FAVICON_DATA_URL =
@@ -114,14 +111,25 @@ export class TabFaviconManager {
         target: { tabId },
         func: (dataUrl: string) => {
           try {
-            let link = document.querySelector("link[rel*='icon']") as HTMLLinkElement | null;
-            if (!link) {
-              link = document.createElement('link');
+            const links = Array.from(
+              document.querySelectorAll<HTMLLinkElement>(
+                "link[rel~='icon'], link[rel='shortcut icon']",
+              ),
+            );
+            if (links.length > 0) {
+              for (const link of links) {
+                if (!link.dataset.browserclawOriginalFavicon) {
+                  link.dataset.browserclawOriginalFavicon = link.href;
+                }
+                link.href = dataUrl;
+              }
+            } else {
+              const link = document.createElement('link');
               link.rel = 'icon';
               link.setAttribute('data-browserclaw-injected', 'true');
-              document.head.appendChild(link);
+              link.href = dataUrl;
+              (document.head || document.documentElement).appendChild(link);
             }
-            link.href = dataUrl;
           } catch {}
         },
         args: [agentDataUrl],
@@ -157,10 +165,17 @@ export class TabFaviconManager {
         target: { tabId },
         func: (originalHref: string | null) => {
           try {
-            const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement | null;
-            if (link) {
-              if (link.getAttribute('data-browserclaw-injected') === 'true' && !originalHref) {
+            const links = Array.from(
+              document.querySelectorAll<HTMLLinkElement>(
+                "link[rel~='icon'], link[rel='shortcut icon']",
+              ),
+            );
+            for (const link of links) {
+              if (link.getAttribute('data-browserclaw-injected') === 'true') {
                 link.remove();
+              } else if (link.dataset.browserclawOriginalFavicon) {
+                link.href = link.dataset.browserclawOriginalFavicon;
+                delete link.dataset.browserclawOriginalFavicon;
               } else if (originalHref) {
                 link.href = originalHref;
               }

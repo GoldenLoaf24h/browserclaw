@@ -39,29 +39,25 @@ export async function animateAgentCursor(
   }
 
   const seq = ++globalMoveSequence;
-  const timeoutMs = options.timeoutMs ?? 350;
+  const timeoutMs = options.timeoutMs ?? 1200;
   const shouldWait = options.waitForArrival !== false;
 
-  try {
-    // Fire move message to content script
-    await chrome.tabs.sendMessage(tabId, {
-      type: 'AGENT_CURSOR_MOVE',
-      x: Math.round(x),
-      y: Math.round(y),
-      moveSequence: seq,
-      immediate: options.immediate === true,
-    });
-  } catch {
-    // Content script not loaded yet or tab unavailable: continue without blocking
-    return;
-  }
-
   if (!shouldWait || options.immediate) {
+    try {
+      void chrome.tabs
+        .sendMessage(tabId, {
+          type: 'AGENT_CURSOR_MOVE',
+          x: Math.round(x),
+          y: Math.round(y),
+          moveSequence: seq,
+          immediate: true,
+        })
+        .catch(() => {});
+    } catch {}
     return;
   }
 
-  // Await arrival or timeout fallback (prevents hangs in background/throttled tabs)
-  await new Promise<void>((resolve) => {
+  return new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
       pendingArrivals.delete(seq);
       resolve();
@@ -71,6 +67,26 @@ export async function animateAgentCursor(
       clearTimeout(timer);
       resolve();
     });
+
+    try {
+      void chrome.tabs
+        .sendMessage(tabId, {
+          type: 'AGENT_CURSOR_MOVE',
+          x: Math.round(x),
+          y: Math.round(y),
+          moveSequence: seq,
+          immediate: false,
+        })
+        .catch(() => {
+          clearTimeout(timer);
+          pendingArrivals.delete(seq);
+          resolve();
+        });
+    } catch {
+      clearTimeout(timer);
+      pendingArrivals.delete(seq);
+      resolve();
+    }
   });
 }
 

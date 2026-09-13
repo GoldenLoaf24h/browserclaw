@@ -1,5 +1,6 @@
 export default defineContentScript({
   matches: ['<all_urls>'],
+  allFrames: false,
   runAt: 'document_start',
   main() {
     initAgentCursor();
@@ -530,7 +531,7 @@ function initAgentCursor() {
       cursorState.rotation = cursorState.rotationSpring.value;
       cursorState.scootAxisRotation = cursorState.scootAxisSpring.value;
 
-      if (prg >= 0.99 && dist(cursorState.point, motion.end) <= POSITION_THRESHOLD_ARRIVED) {
+      if (prg >= 0.98 || (prg >= 0.92 && dist(cursorState.point, motion.end) <= 4)) {
         cursorState.point = motion.end;
         resetSpring(cursorState.positionXSpring, motion.end.x);
         resetSpring(cursorState.positionYSpring, motion.end.y);
@@ -568,7 +569,7 @@ function initAgentCursor() {
       const speed = dist(prevPt, cursorState.point) / dt;
       cursorState.stretchSpring.target = clamp(1 - speed / 5500, 0.65, 1);
 
-      if (prg >= 0.99 && dist(cursorState.point, motion.path.end) <= POSITION_THRESHOLD_ARRIVED) {
+      if (prg >= 0.98 || (prg >= 0.94 && dist(cursorState.point, motion.path.end) <= 8)) {
         cursorState.point = motion.path.end;
         resetSpring(cursorState.positionXSpring, motion.path.end.x);
         resetSpring(cursorState.positionYSpring, motion.path.end.y);
@@ -850,13 +851,13 @@ function initAgentCursor() {
       const { x, y, moveSequence, immediate } = message;
       moveTo(x, y, typeof moveSequence === 'number' ? moveSequence : null, immediate === true);
       sendResponse({ ok: true });
-      return true;
+      return false;
     }
 
     if (message.type === 'AGENT_CURSOR_CLICK') {
       triggerClickAnimation(message.x, message.y);
       sendResponse({ ok: true });
-      return true;
+      return false;
     }
 
     if (message.type === 'AGENT_CURSOR_HIDE') {
@@ -864,7 +865,7 @@ function initAgentCursor() {
         hideCursor();
       }
       sendResponse({ ok: true });
-      return true;
+      return false;
     }
 
     if (message.type === 'AGENT_CURSOR_STATE') {

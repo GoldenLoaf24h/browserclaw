@@ -90,43 +90,46 @@ export async function getSubframeViewportOffset(
           let totalX = 0;
           let totalY = 0;
           for (const link of chain) {
-            const results = await chrome.scripting
-              .executeScript({
-                target: { tabId, frameIds: [link.parentId] },
-                func: (targetUrl?: string) => {
-                  const iframes = Array.from(document.querySelectorAll('iframe'));
-                  if (iframes.length === 0) return { offsetX: 0, offsetY: 0 };
-                  let match = iframes.find((f) => {
-                    try {
-                      return (
-                        targetUrl &&
-                        f.src &&
-                        (f.src === targetUrl ||
-                          targetUrl.startsWith(f.src) ||
-                          f.src.startsWith(targetUrl))
-                      );
-                    } catch {
-                      return false;
+            const results = await Promise.race([
+              chrome.scripting
+                .executeScript({
+                  target: { tabId, frameIds: [link.parentId] },
+                  func: (targetUrl?: string) => {
+                    const iframes = Array.from(document.querySelectorAll('iframe'));
+                    if (iframes.length === 0) return { offsetX: 0, offsetY: 0 };
+                    let match = iframes.find((f) => {
+                      try {
+                        return (
+                          targetUrl &&
+                          f.src &&
+                          (f.src === targetUrl ||
+                            targetUrl.startsWith(f.src) ||
+                            f.src.startsWith(targetUrl))
+                        );
+                      } catch {
+                        return false;
+                      }
+                    });
+                    if (!match) {
+                      match = iframes[0];
                     }
-                  });
-                  if (!match) {
-                    match = iframes[0];
-                  }
-                  if (match) {
-                    const rect = match.getBoundingClientRect();
-                    const style = window.getComputedStyle(match);
-                    const borderLeft = parseFloat(style?.borderLeftWidth || '0') || 0;
-                    const borderTop = parseFloat(style?.borderTopWidth || '0') || 0;
-                    return {
-                      offsetX: Math.round(rect.left + borderLeft),
-                      offsetY: Math.round(rect.top + borderTop),
-                    };
-                  }
-                  return { offsetX: 0, offsetY: 0 };
-                },
-                args: [link.childUrl],
-              })
-              .catch(() => null);
+                    if (match) {
+                      const rect = match.getBoundingClientRect();
+                      const style = window.getComputedStyle(match);
+                      const borderLeft = parseFloat(style?.borderLeftWidth || '0') || 0;
+                      const borderTop = parseFloat(style?.borderTopWidth || '0') || 0;
+                      return {
+                        offsetX: Math.round(rect.left + borderLeft),
+                        offsetY: Math.round(rect.top + borderTop),
+                      };
+                    }
+                    return { offsetX: 0, offsetY: 0 };
+                  },
+                  args: [link.childUrl],
+                })
+                .catch(() => null),
+              new Promise<any>((r) => setTimeout(() => r(null), 400)),
+            ]);
 
             const res = results?.[0]?.result;
             if (res) {
@@ -534,7 +537,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       }
 
       // Animate virtual agent cursor to target position before physical interaction
-      await animateAgentCursor(tabId, x, y, { waitForArrival: true, timeoutMs: 350 });
+      await animateAgentCursor(tabId, x, y, { waitForArrival: true, timeoutMs: 1200 });
 
       // Shadow DOM penetrating interception check (self-healing feedback)
       if (args.index !== undefined && !isFallback && action === 'click') {
@@ -698,6 +701,10 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
               });
               dragOutcome.dndDispatched = true;
             }
+            void animateAgentCursor(tabId, endPoint.x, endPoint.y, {
+              immediate: false,
+              waitForArrival: false,
+            });
             dragOutcome.dragIntercepted = Boolean(dragData);
             dragOutcome.dragSteps = dragSteps;
             // CDP-synthetic pointer drags: deliver one final pointermove to
@@ -829,32 +836,18 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 y,
                 modifiers: modifierMask,
               });
-              await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-                type: 'mousePressed',
-                x,
-                y,
-                button: 'right',
-                buttons: 2,
-                clickCount: 1,
-                modifiers: modifierMask,
-              });
-              await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-                type: 'mouseReleased',
-                x,
-                y,
-                button: 'right',
-                buttons: 0,
-                clickCount: 1,
-                modifiers: modifierMask,
-              });
-              if (typeof args.index === 'number' && args.index > 0) {
-                try {
+              // Dispatch contextmenu directly in page to trigger web app onContextMenu handlers
+              // without popping up OS-level native context menus that freeze the Chromium renderer
+              try {
+                if (typeof args.index === 'number' && args.index > 0) {
                   await executeInPage({ tabId }, 'inPageInteractIndex', [
                     args.index,
                     'right_click',
                   ]);
-                } catch {}
-              }
+                } else {
+                  await executeInPage({ tabId }, 'inPageDispatchSyntheticClick', [null, x, y]);
+                }
+              } catch {}
             } else if (action === 'hover') {
               // Mouse movement already dispatched above
             }
