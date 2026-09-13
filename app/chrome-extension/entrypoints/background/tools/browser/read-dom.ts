@@ -1,3 +1,4 @@
+import { tabFaviconManager } from './tab-favicon';
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES, type PrunedDOMTreeResult, type IndexedElement } from 'chrome-mcp-shared';
@@ -40,6 +41,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
       if (!tab.id) {
         return createErrorResponse('No active tab found for chrome_read_dom');
       }
+      tabFaviconManager.markTabActive(tab.id);
 
       let results: chrome.scripting.InjectionResult<PrunedDOMTreeResult>[] = [];
       try {

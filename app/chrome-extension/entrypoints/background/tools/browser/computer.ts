@@ -1,3 +1,4 @@
+import { tabFaviconManager } from './tab-favicon';
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
@@ -235,6 +236,7 @@ class ComputerTool extends BaseBrowserToolExecutor {
       });
       if (!tab.id)
         return createErrorResponse(ERROR_MESSAGES.TAB_NOT_FOUND + ': Active tab has no ID');
+      tabFaviconManager.markTabActive(tab.id);
 
       // D3 (TESTING-NOTES #19): warn when the target fell back to the active
       // tab so agent input landing on the user's current page is visible.
@@ -373,7 +375,10 @@ class ComputerTool extends BaseBrowserToolExecutor {
                   ref: resolvedRef,
                 });
                 if (reResolved && reResolved.success) {
-                  coord = { x: Math.round(reResolved.center.x), y: Math.round(reResolved.center.y) };
+                  coord = {
+                    x: Math.round(reResolved.center.x),
+                    y: Math.round(reResolved.center.y),
+                  };
                 } else {
                   coord = { x: Math.round(ensured.center.x), y: Math.round(ensured.center.y) };
                 }
@@ -403,7 +408,10 @@ class ComputerTool extends BaseBrowserToolExecutor {
 
         try {
           // Animate virtual agent cursor before physical hover
-          await animateAgentCursor(tabId, coord.x, coord.y, { waitForArrival: true, timeoutMs: 350 });
+          await animateAgentCursor(tabId, coord.x, coord.y, {
+            waitForArrival: true,
+            timeoutMs: 350,
+          });
           await cdpSessionManager.withSession(tabId, 'computer', async () => {
             // Move pointer to target. We can dispatch a single mouseMoved; browsers will generate mouseover/mouseenter as needed.
             await CDPHelper.dispatchMouseEvent(tabId, {
@@ -1082,7 +1090,9 @@ class ComputerTool extends BaseBrowserToolExecutor {
         if (Array.isArray(region) && region.length === 4) {
           const [a, b, c, d] = region.map(Number);
           if (isNaN(a) || isNaN(b) || isNaN(c) || isNaN(d)) {
-            return createErrorResponse('Invalid region: all 4 bounding box coordinates must be numbers');
+            return createErrorResponse(
+              'Invalid region: all 4 bounding box coordinates must be numbers',
+            );
           }
 
           const ctx = screenshotContextManager.getContext(tabId);
@@ -1098,9 +1108,9 @@ class ComputerTool extends BaseBrowserToolExecutor {
 
           // Determine orientation: Row-first [ymin, xmin, ymax, xmax] vs Cartesian [xmin, ymin, xmax, ymax]
           let isYminFirst = true;
-          if ((a > vh || c > vh) && (a <= vw && c <= vw)) {
+          if ((a > vh || c > vh) && a <= vw && c <= vw) {
             isYminFirst = false; // [xmin, ymin, xmax, ymax]
-          } else if ((b > vh || d > vh) && (b <= vw && d <= vw)) {
+          } else if ((b > vh || d > vh) && b <= vw && d <= vw) {
             isYminFirst = true; // [ymin, xmin, ymax, xmax]
           }
 
@@ -1120,12 +1130,14 @@ class ComputerTool extends BaseBrowserToolExecutor {
             x1 = rawXmax * vw;
             y0 = rawYmin * vh;
             y1 = rawYmax * vh;
-          } else if (maxVal <= 1000 && (rawYmax > vh || rawXmax > vw || (region as any).scale === '1000')) {
+          } else if (
+            maxVal <= 1000 &&
+            (rawYmax > vh || rawXmax > vw || (region as any).scale === '1000')
+          ) {
             x0 = (rawXmin / 1000) * vw;
             x1 = (rawXmax / 1000) * vw;
             y0 = (rawYmin / 1000) * vh;
             y1 = (rawYmax / 1000) * vh;
-          } else {
           }
 
           p0 = { x: Math.round(x0 + ox), y: Math.round(y0 + oy) };
@@ -1133,16 +1145,44 @@ class ComputerTool extends BaseBrowserToolExecutor {
         } else if (typeof region === 'object' && region !== null) {
           const rawX0 = (region as any).x0 ?? (region as any).xmin ?? (region as any).left;
           const rawY0 = (region as any).y0 ?? (region as any).ymin ?? (region as any).top;
-          const rawX1 = (region as any).x1 ?? (region as any).xmax ?? (typeof (region as any).width === 'number' ? rawX0 + (region as any).width : undefined);
-          const rawY1 = (region as any).y1 ?? (region as any).ymax ?? (typeof (region as any).height === 'number' ? rawY0 + (region as any).height : undefined);
-          if (rawX0 !== undefined && rawY0 !== undefined && rawX1 !== undefined && rawY1 !== undefined) {
-            p0 = project({ x: Number(rawX0), y: Number(rawY0) }) || { x: Number(rawX0), y: Number(rawY0) };
-            p1 = project({ x: Number(rawX1), y: Number(rawY1) }) || { x: Number(rawX1), y: Number(rawY1) };
+          const rawX1 =
+            (region as any).x1 ??
+            (region as any).xmax ??
+            (typeof (region as any).width === 'number' ? rawX0 + (region as any).width : undefined);
+          const rawY1 =
+            (region as any).y1 ??
+            (region as any).ymax ??
+            (typeof (region as any).height === 'number'
+              ? rawY0 + (region as any).height
+              : undefined);
+          if (
+            rawX0 !== undefined &&
+            rawY0 !== undefined &&
+            rawX1 !== undefined &&
+            rawY1 !== undefined
+          ) {
+            p0 = project({ x: Number(rawX0), y: Number(rawY0) }) || {
+              x: Number(rawX0),
+              y: Number(rawY0),
+            };
+            p1 = project({ x: Number(rawX1), y: Number(rawY1) }) || {
+              x: Number(rawX1),
+              y: Number(rawY1),
+            };
           }
         }
 
-        if (!p0 || !p1 || !Number.isFinite(p0.x) || !Number.isFinite(p0.y) || !Number.isFinite(p1.x) || !Number.isFinite(p1.y)) {
-          return createErrorResponse('Invalid region: require finite coordinates (x0/y0/x1/y1 or [ymin,xmin,ymax,xmax])');
+        if (
+          !p0 ||
+          !p1 ||
+          !Number.isFinite(p0.x) ||
+          !Number.isFinite(p0.y) ||
+          !Number.isFinite(p1.x) ||
+          !Number.isFinite(p1.y)
+        ) {
+          return createErrorResponse(
+            'Invalid region: require finite coordinates (x0/y0/x1/y1 or [ymin,xmin,ymax,xmax])',
+          );
         }
 
         const rx0 = Math.min(p0.x, p1.x);
@@ -1152,7 +1192,9 @@ class ComputerTool extends BaseBrowserToolExecutor {
         const w = rx1 - rx0;
         const h = ry1 - ry0;
         if (w <= 0 || h <= 0) {
-          return createErrorResponse('Invalid region after projection: width and height must be positive');
+          return createErrorResponse(
+            'Invalid region after projection: width and height must be positive',
+          );
         }
 
         const stale = screenshotOriginViolation(tabId, tab.url, 'zoom');
@@ -1236,7 +1278,10 @@ class ComputerTool extends BaseBrowserToolExecutor {
             // the user Downloads folder. Inline thumbnail only.
 
             try {
-              const scaleRatio = Math.min(0.75, Math.max(0.2, Math.sqrt((350 * 1024) / base64Data.length)));
+              const scaleRatio = Math.min(
+                0.75,
+                Math.max(0.2, Math.sqrt((350 * 1024) / base64Data.length)),
+              );
               const thumb = await compressImage(`data:image/png;base64,${base64Data}`, {
                 scale: scaleRatio,
                 quality: 0.75,

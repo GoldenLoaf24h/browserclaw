@@ -42,7 +42,15 @@ export async function animateAgentCursor(
   const timeoutMs = options.timeoutMs ?? 1200;
   const shouldWait = options.waitForArrival !== false;
 
-  if (!shouldWait || options.immediate) {
+  let isBackground = false;
+  try {
+    if (typeof chrome !== 'undefined' && chrome.tabs?.get) {
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      isBackground = Boolean(tab && !tab.active);
+    }
+  } catch {}
+
+  if (!shouldWait || options.immediate || isBackground) {
     try {
       void chrome.tabs
         .sendMessage(tabId, {

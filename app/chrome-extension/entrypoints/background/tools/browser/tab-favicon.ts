@@ -17,8 +17,7 @@ export const AGENT_FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width=
   <path d="M3.04536 4.45259C2.7582 3.60299 3.60299 2.7582 4.45259 3.04536L14.1828 6.33403C15.1637 6.66558 15.0872 8.08006 14.0715 8.39045L10.2994 9.54319C9.93919 9.65327 9.65327 9.93919 9.54319 10.2994L8.39046 14.0715C8.08007 15.0872 6.66558 15.1637 6.33404 14.1828L3.04536 4.45259Z" fill="#000000" stroke="#ffffff" stroke-width="1.8" stroke-linejoin="round" paint-order="stroke fill" transform="translate(1, 1) scale(1.9)" filter="url(#cursor-halo)"/>
 </svg>`;
 
-export const AGENT_FAVICON_DATA_URL =
-  'data:image/svg+xml;utf8,' + encodeURIComponent(AGENT_FAVICON_SVG);
+export const AGENT_FAVICON_DATA_URL = 'data:image/svg+xml,' + encodeURIComponent(AGENT_FAVICON_SVG);
 
 export class TabFaviconManager {
   private static instance: TabFaviconManager | null = null;
@@ -111,25 +110,29 @@ export class TabFaviconManager {
         target: { tabId },
         func: (dataUrl: string) => {
           try {
+            const head = document.head || document.documentElement;
             const links = Array.from(
               document.querySelectorAll<HTMLLinkElement>(
-                "link[rel~='icon'], link[rel='shortcut icon']",
+                "link[rel~='icon'], link[rel='shortcut icon'], link[rel='alternate icon']",
               ),
             );
-            if (links.length > 0) {
-              for (const link of links) {
-                if (!link.dataset.browserclawOriginalFavicon) {
-                  link.dataset.browserclawOriginalFavicon = link.href;
-                }
-                link.href = dataUrl;
+            for (const link of links) {
+              if (link.getAttribute('data-browserclaw-injected') === 'true') {
+                link.remove();
+                continue;
               }
-            } else {
-              const link = document.createElement('link');
-              link.rel = 'icon';
-              link.setAttribute('data-browserclaw-injected', 'true');
-              link.href = dataUrl;
-              (document.head || document.documentElement).appendChild(link);
+              if (!link.dataset.browserclawOriginalFavicon) {
+                link.dataset.browserclawOriginalFavicon = link.href;
+                link.dataset.browserclawOriginalRel = link.rel;
+              }
+              link.rel = 'alternate icon';
             }
+            const link = document.createElement('link');
+            link.rel = 'icon';
+            link.type = 'image/svg+xml';
+            link.setAttribute('data-browserclaw-injected', 'true');
+            link.href = dataUrl;
+            head.appendChild(link);
           } catch {}
         },
         args: [agentDataUrl],
@@ -165,15 +168,19 @@ export class TabFaviconManager {
         target: { tabId },
         func: (originalHref: string | null) => {
           try {
+            const injected = document.querySelectorAll('link[data-browserclaw-injected="true"]');
+            injected.forEach((el) => el.remove());
             const links = Array.from(
               document.querySelectorAll<HTMLLinkElement>(
-                "link[rel~='icon'], link[rel='shortcut icon']",
+                "link[rel~='icon'], link[rel='shortcut icon'], link[rel='alternate icon']",
               ),
             );
             for (const link of links) {
-              if (link.getAttribute('data-browserclaw-injected') === 'true') {
-                link.remove();
-              } else if (link.dataset.browserclawOriginalFavicon) {
+              if (link.dataset.browserclawOriginalRel) {
+                link.rel = link.dataset.browserclawOriginalRel;
+                delete link.dataset.browserclawOriginalRel;
+              }
+              if (link.dataset.browserclawOriginalFavicon) {
                 link.href = link.dataset.browserclawOriginalFavicon;
                 delete link.dataset.browserclawOriginalFavicon;
               } else if (originalHref) {

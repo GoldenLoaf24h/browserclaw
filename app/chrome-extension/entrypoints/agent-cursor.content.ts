@@ -364,6 +364,15 @@ function initAgentCursor() {
   const triggerClickAnimation = (clickX?: number, clickY?: number) => {
     const cx = typeof clickX === 'number' ? clickX : cursorState.positionXSpring.value;
     const cy = typeof clickY === 'number' ? clickY : cursorState.positionYSpring.value;
+    if (cursorMode !== 'off') {
+      cursorState.visibilitySpring.value = 1;
+      cursorState.visibilitySpring.target = 1;
+      cursorState.point = { x: cx, y: cy };
+      resetSpring(cursorState.positionXSpring, cx);
+      resetSpring(cursorState.positionYSpring, cy);
+      renderCursor();
+      startAnimationLoop();
+    }
     clickRipple.style.transition = 'none';
     clickRipple.style.transform = 'scale(0.2)';
     clickRipple.style.opacity = '0.95';

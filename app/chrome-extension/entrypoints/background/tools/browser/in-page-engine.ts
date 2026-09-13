@@ -19,7 +19,7 @@
 import { isRestrictedChromeUrl, restrictedUrlErrorMessage } from '../../../../utils/restricted-url';
 
 const INPAGE_NAMESPACE = '__MCP_INPAGE__';
-const EXECUTE_TIMEOUT_MS = 15_000;
+const EXECUTE_TIMEOUT_MS = 4_000;
 let callSequence = 0;
 
 /**
@@ -138,24 +138,42 @@ export async function executeInPage<R = any>(
     promiseType: string;
   }>[];
 
-  for (const r of startResults ?? []) {
-    const info = r?.result;
-    if (!info || info.engineType !== 'object' || info.fnType !== 'function') {
+  const validFrames = (startResults ?? [])
+    .filter((r) => r?.result?.engineType === 'object' && r?.result?.fnType === 'function')
+    .map((r) => r.frameId);
+
+  if (target.allFrames) {
+    if (validFrames.length === 0) {
       if (typeof target.tabId === 'number') {
         injectedTabs.delete(target.tabId);
       }
-      throw new Error(
-        `In-page engine ${fnName} unavailable: ${info ? `engine=${info.engineType} fn=${info.fnType}` : 'no injection result'}`,
-      );
+      throw new Error(`In-page engine ${fnName} unavailable in any frame`);
+    }
+  } else {
+    for (const r of startResults ?? []) {
+      const info = r?.result;
+      if (!info || info.engineType !== 'object' || info.fnType !== 'function') {
+        if (typeof target.tabId === 'number') {
+          injectedTabs.delete(target.tabId);
+        }
+        throw new Error(
+          `In-page engine ${fnName} unavailable: ${info ? `engine=${info.engineType} fn=${info.fnType}` : 'no injection result'}`,
+        );
+      }
     }
   }
+
+  const effectiveTarget: chrome.scripting.InjectionTarget =
+    target.allFrames && typeof target.tabId === 'number' && validFrames.length > 0
+      ? { tabId: target.tabId, frameIds: validFrames }
+      : target;
 
   // 2) Poll: attach settle callbacks; every dispatcher stays synchronous.
   const deadline = Date.now() + EXECUTE_TIMEOUT_MS;
   while (Date.now() < deadline) {
     const pollResults = (await raceInjection(
       chrome.scripting.executeScript({
-        target,
+        target: effectiveTarget,
         func: (slotKey: string) => {
           const box = (globalThis as any)[slotKey];
           if (!box) return { done: true, missing: true };
@@ -194,7 +212,7 @@ export async function executeInPage<R = any>(
   // 3) Retrieve: collect settled values and clean the box up.
   const results = (await raceInjection(
     chrome.scripting.executeScript({
-      target,
+      target: effectiveTarget,
       func: (slotKey: string) => {
         const g = globalThis as any;
         const box = g[slotKey];

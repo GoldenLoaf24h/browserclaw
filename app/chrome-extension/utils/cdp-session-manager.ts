@@ -197,7 +197,8 @@ class CDPSessionManager {
     this.tabQueues.set(tabId, current);
 
     try {
-      await prev.catch(() => {});
+      // Anti-hang queue guard: prevent previous stalled operations from deadlocking the queue
+      await Promise.race([prev.catch(() => {}), new Promise<void>((r) => setTimeout(r, 4000))]);
       return await op();
     } finally {
       resolveCurrent();

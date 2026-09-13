@@ -878,7 +878,15 @@ class SwitchTabTool extends BaseBrowserToolExecutor {
           const resolvedWindowId = windowId ?? (await chrome.tabs.get(tabId)).windowId;
           if (resolvedWindowId !== undefined) {
             try {
-              await chrome.windows.update(resolvedWindowId, { focused: true });
+              const win = await chrome.windows.get(resolvedWindowId);
+              if (win.state === 'minimized') {
+                await chrome.windows.update(resolvedWindowId, {
+                  state: 'maximized',
+                  focused: true,
+                });
+              } else {
+                await chrome.windows.update(resolvedWindowId, { focused: true });
+              }
             } catch (focusErr) {
               console.warn('switch_tab: window focus failed (tab still activated):', focusErr);
             }

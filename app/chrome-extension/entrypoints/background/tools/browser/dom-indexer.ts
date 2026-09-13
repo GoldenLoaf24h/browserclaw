@@ -2292,15 +2292,25 @@ export function inPageInteractIndex(
     const rawRect = el.getBoundingClientRect();
     const cx = Math.round(rawRect.left + rawRect.width / 2);
     const cy = Math.round(rawRect.top + rawRect.height / 2);
-    el.dispatchEvent(
-      new MouseEvent('contextmenu', {
-        bubbles: true,
-        cancelable: true,
-        button: 2,
-        clientX: cx,
-        clientY: cy,
-      }),
-    );
+    const mouseOpts: MouseEventInit = {
+      bubbles: true,
+      cancelable: true,
+      button: 2,
+      buttons: 2,
+      clientX: cx,
+      clientY: cy,
+    };
+    try {
+      el.dispatchEvent(new PointerEvent('pointerdown', { ...mouseOpts, pointerType: 'mouse' }));
+    } catch {}
+    el.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
+    try {
+      el.dispatchEvent(
+        new PointerEvent('pointerup', { ...mouseOpts, buttons: 0, pointerType: 'mouse' }),
+      );
+    } catch {}
+    el.dispatchEvent(new MouseEvent('mouseup', { ...mouseOpts, buttons: 0 }));
+    el.dispatchEvent(new MouseEvent('contextmenu', mouseOpts));
   } else if (action === 'hover') {
     el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
     el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }));

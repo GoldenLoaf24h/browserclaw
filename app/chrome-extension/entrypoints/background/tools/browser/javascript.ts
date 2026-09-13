@@ -240,32 +240,45 @@ export function detectSingleExpression(code: string): string | null {
 
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
+  const isEvalBlocked = (err: any) =>
+    err instanceof EvalError ||
+    /eval|unsafe-eval|CSP|call to Function/i.test(String(err?.message || ''));
+  const isStatement = (s: string) =>
+    /^(?:const|let|var|function|class|if|for|while|do|switch|try|throw|return|break|continue|debugger|import|export)\b/.test(
+      s,
+    );
+
   // 1. Direct check after stripping trailing semicolons
   const direct = rawTrimmed.replace(/;+$/, '').trim();
   try {
-    new AsyncFunction(`return (\n${direct}\n);`);
+    new AsyncFunction('return (\n' + direct + '\n);');
     return direct;
-  } catch {}
-
-  // 2. Iteratively strip trailing comments (// ... and /* ... */) and semicolons
-  let cleaned = direct;
-  let changed = true;
-  while (changed) {
-    const prev = cleaned;
-    cleaned = cleaned
-      .replace(/\/\/[^\r\n]*$/, '')
-      .replace(/\/\*[\s\S]*?\*\/\s*$/, '')
-      .trim()
-      .replace(/;+$/, '')
-      .trim();
-    changed = cleaned !== prev;
+  } catch (err: any) {
+    if (isEvalBlocked(err) && !isStatement(direct) && !direct.includes(';')) {
+      return direct;
+    }
   }
+
+  // 2. Clean comments and semicolons
+  const cleaned = direct
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .map((line) => line.replace(/\/\/.*$/, '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .trim()
+    .replace(/;+$/, '')
+    .trim();
 
   if (cleaned && cleaned !== direct) {
     try {
-      new AsyncFunction(`return (\n${cleaned}\n);`);
+      new AsyncFunction('return (\n' + cleaned + '\n);');
       return cleaned;
-    } catch {}
+    } catch (err: any) {
+      if (isEvalBlocked(err) && !isStatement(cleaned) && !cleaned.includes(';')) {
+        return cleaned;
+      }
+    }
   }
 
   return null;

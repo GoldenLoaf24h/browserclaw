@@ -1,3 +1,4 @@
+import { tabFaviconManager } from './tab-favicon';
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
@@ -11,11 +12,35 @@ import { cdpSessionManager } from '@/utils/cdp-session-manager';
  * Kept in sync with inject-scripts/keyboard-helper.js SPECIAL_KEY_MAP.
  */
 const NAMED_KEYS = new Set([
-  'enter', 'return', 'tab', 'esc', 'escape', 'space', 'backspace', 'delete', 'del',
-  'up', 'arrowup', 'down', 'arrowdown', 'left', 'arrowleft', 'right', 'arrowright',
-  'home', 'end', 'pageup', 'pagedown', 'insert',
+  'enter',
+  'return',
+  'tab',
+  'esc',
+  'escape',
+  'space',
+  'backspace',
+  'delete',
+  'del',
+  'up',
+  'arrowup',
+  'down',
+  'arrowdown',
+  'left',
+  'arrowleft',
+  'right',
+  'arrowright',
+  'home',
+  'end',
+  'pageup',
+  'pagedown',
+  'insert',
   // Two-word spellings ("Page Down", "Arrow Up") are keys, not prose.
-  'page up', 'page down', 'arrow up', 'arrow down', 'arrow left', 'arrow right',
+  'page up',
+  'page down',
+  'arrow up',
+  'arrow down',
+  'arrow left',
+  'arrow right',
   ...Array.from({ length: 12 }, (_, i) => `f${i + 1}`),
 ]);
 
@@ -111,6 +136,7 @@ class KeyboardTool extends BaseBrowserToolExecutor {
       if (!tab.id) {
         return createErrorResponse(ERROR_MESSAGES.TAB_NOT_FOUND + ': Active tab has no ID');
       }
+      tabFaviconManager.markTabActive(tab.id);
 
       // If 1-based index is specified, scroll element into view and focus before typing.
       // Uses the dedicated focus entrypoint: the old path routed through
@@ -120,7 +146,11 @@ class KeyboardTool extends BaseBrowserToolExecutor {
         const focusRes = await executeInPage({ tabId: tab.id }, 'inPageFocusIndex', [args.index]);
         let focusTarget = focusRes?.[0]?.result;
         if (!focusTarget?.success) {
-          const frameResults = await executeInPage({ tabId: tab.id, allFrames: true }, 'inPageFocusIndex', [args.index]);
+          const frameResults = await executeInPage(
+            { tabId: tab.id, allFrames: true },
+            'inPageFocusIndex',
+            [args.index],
+          );
           const match = frameResults.find((r) => r.result?.success);
           if (match) {
             focusTarget = match.result;
