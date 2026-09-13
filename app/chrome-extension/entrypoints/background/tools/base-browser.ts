@@ -25,7 +25,7 @@ async function raceInjection<T>(p: Promise<T>, ms = INJECTION_TIMEOUT_MS): Promi
           () =>
             reject(
               new Error(
-                "executeScript timeout: renderer not acking - a native dialog may be open, call chrome_handle_dialog first",
+                'executeScript timeout: renderer not acking - a native dialog may be open, call chrome_handle_dialog first',
               ),
             ),
           ms,
@@ -54,6 +54,11 @@ export abstract class BaseBrowserToolExecutor implements ToolExecutor {
     injection: chrome.scripting.ScriptInjection<Args, Result>,
   ) {
     await assertTabInjectable(tabId);
+    if ('args' in injection && Array.isArray((injection as any).args)) {
+      (injection as any).args = (injection as any).args.map((a: any) =>
+        a === undefined ? null : a,
+      );
+    }
     return chrome.scripting.executeScript(injection);
   }
 
@@ -88,11 +93,7 @@ export abstract class BaseBrowserToolExecutor implements ToolExecutor {
       try {
         const pingPromise =
           typeof pingFrameId === 'number'
-            ? chrome.tabs.sendMessage(
-                tabId,
-                { action: pingAction },
-                { frameId: pingFrameId },
-              )
+            ? chrome.tabs.sendMessage(tabId, { action: pingAction }, { frameId: pingFrameId })
             : chrome.tabs.sendMessage(tabId, { action: pingAction });
 
         const timeoutPromise = new Promise((_, reject) => {

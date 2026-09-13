@@ -263,18 +263,30 @@ async function dispatchMouseMovement(
   const points = computeHumanizedPoints(startPos.x, startPos.y, targetX, targetY, steps);
   for (let i = 0; i < points.length; i++) {
     const pt = points[i];
-    const isFinal = i === points.length - 1;
-
     await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
       type: 'mouseMoved',
       x: pt.x,
       y: pt.y,
       modifiers: modifierMask,
     });
+    await new Promise((r) => setTimeout(r, 12 + Math.floor(Math.random() * 15)));
+  }
 
-    if (!isFinal) {
-      await new Promise((r) => setTimeout(r, 12 + Math.floor(Math.random() * 15)));
-    }
+  // Micro-approach steps within target's direct neighborhood (< 25px radius) to guarantee realistic pointer tracking (avoids NO_POINTER_PATH)
+  const localDeltas = [
+    { dx: -20, dy: -12 },
+    { dx: -10, dy: -6 },
+    { dx: -3, dy: -2 },
+    { dx: 0, dy: 0 },
+  ];
+  for (const d of localDeltas) {
+    await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: Math.round(targetX + d.dx),
+      y: Math.round(targetY + d.dy),
+      modifiers: modifierMask,
+    });
+    await new Promise((r) => setTimeout(r, 15));
   }
 
   lastMousePosMap.set(tabId, { x: targetX, y: targetY });

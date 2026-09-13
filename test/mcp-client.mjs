@@ -59,7 +59,7 @@ export async function listTools() {
 export async function callTool(name, args = {}) {
   await ensureSession();
   const r = await rpc('tools/call', { name, arguments: args });
-  const first = r.content?.[0];
+  const first = r.content?.filter((c) => c.type === 'text' && !c.text?.startsWith('[System Note:')).at(-1) ?? r.content?.[0];
   const textOut = first?.type === 'text' ? first.text : JSON.stringify(r);
   try { return { structured: JSON.parse(textOut), raw: r }; } catch { return { text: textOut, raw: r }; }
 }
@@ -84,7 +84,7 @@ if (isMain) {
     const tools = await listTools();
     for (const t of tools) console.log('==', t.name, '\n', JSON.stringify(t.schema).slice(0, 600));
   } else if (cmd) {
-    const args = rest[0] ? JSON.parse(rest[0]) : {};
+    const args = rest[0] === '-' ? JSON.parse(fs.readFileSync(0, 'utf8')) : (rest[0] ? JSON.parse(rest[0]) : {});
     const r = await callTool(cmd, args);
     console.log(typeof r.text === 'string' ? r.text : JSON.stringify(r.structured ?? r, null, 2));
   } else {

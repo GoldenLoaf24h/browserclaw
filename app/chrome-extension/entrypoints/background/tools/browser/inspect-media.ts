@@ -49,10 +49,12 @@ export class InspectMediaTool extends BaseBrowserToolExecutor {
     }
 
     // Path 1: In-Memory Lossless Canvas/Image Extraction
+    let inMemOutcome: any = null;
+    let inMemError: string | null = null;
     try {
       const inMemoryResults = await this.safeExecuteScript(tabId, {
         target: { tabId },
-        func: (targetIdx?: number, targetSelector?: string) => {
+        func: (targetIdx?: number | null, targetSelector?: string | null) => {
           try {
             let el: Element | null = null;
             if (typeof targetIdx === 'number') {
@@ -79,34 +81,46 @@ export class InspectMediaTool extends BaseBrowserToolExecutor {
             const rect = el.getBoundingClientRect();
             const tag = el.tagName.toLowerCase();
 
-            // 1. Direct Canvas element
-            if (el instanceof HTMLCanvasElement) {
-              return {
-                found: true,
-                method: 'in-memory-canvas',
-                tag,
-                width: el.width || rect.width,
-                height: el.height || rect.height,
-                dataUrl: el.toDataURL('image/png'),
-              };
+            // 1. Direct Canvas element (support cross-realm / tag check)
+            if (
+              tag === 'canvas' ||
+              el instanceof HTMLCanvasElement ||
+              typeof (el as any).toDataURL === 'function'
+            ) {
+              try {
+                const canvasEl = el as HTMLCanvasElement;
+                return {
+                  found: true,
+                  method: 'in-memory-canvas',
+                  tag,
+                  width: canvasEl.width || rect.width,
+                  height: canvasEl.height || rect.height,
+                  dataUrl: canvasEl.toDataURL('image/png'),
+                };
+              } catch {}
             }
 
-            // 2. Direct Image element
-            if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
+            // 2. Direct Image element (support cross-realm / tag check)
+            const imgEl = el as HTMLImageElement;
+            if (
+              (tag === 'img' || el instanceof HTMLImageElement) &&
+              imgEl.complete &&
+              imgEl.naturalWidth > 0
+            ) {
               const canvas = document.createElement('canvas');
-              canvas.width = el.naturalWidth;
-              canvas.height = el.naturalHeight;
+              canvas.width = imgEl.naturalWidth;
+              canvas.height = imgEl.naturalHeight;
               const ctx = canvas.getContext('2d');
               if (ctx) {
-                ctx.drawImage(el, 0, 0);
+                ctx.drawImage(imgEl, 0, 0);
                 try {
                   return {
                     found: true,
                     method: 'in-memory-image',
                     tag,
-                    width: el.naturalWidth,
-                    height: el.naturalHeight,
-                    src: el.currentSrc || el.src,
+                    width: imgEl.naturalWidth,
+                    height: imgEl.naturalHeight,
+                    src: imgEl.currentSrc || imgEl.src,
                     dataUrl: canvas.toDataURL('image/png'),
                   };
                 } catch {
@@ -148,10 +162,11 @@ export class InspectMediaTool extends BaseBrowserToolExecutor {
             return { found: false, error: String(e?.message || e) };
           }
         },
-        args: [args.index, args.selector],
+        args: [args.index ?? null, args.selector ?? null],
       });
 
-      const outcome = inMemoryResults?.[0]?.result;
+      inMemOutcome = inMemoryResults?.[0]?.result;
+      const outcome = inMemOutcome;
       if (outcome && outcome.found && outcome.dataUrl) {
         return {
           content: [
@@ -179,8 +194,8 @@ export class InspectMediaTool extends BaseBrowserToolExecutor {
           isError: false,
         };
       }
-    } catch (inMemErr) {
-      // Proceed to crop fallback
+    } catch (inMemErr: any) {
+      inMemError = inMemErr?.message || String(inMemErr);
     }
 
     // Path 2: Super-sampled crop fallback (200%-300% zoom)

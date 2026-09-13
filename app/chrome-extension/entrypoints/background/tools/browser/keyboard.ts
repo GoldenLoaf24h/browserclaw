@@ -318,8 +318,57 @@ class KeyboardTool extends BaseBrowserToolExecutor {
         args.frameId,
       );
 
-      if (result.error) {
-        return createErrorResponse(result.error);
+      if (!result || result.error) {
+        try {
+          const keyLower = keys.trim().toLowerCase();
+          const isEnter = keyLower === 'enter' || keyLower === 'return';
+          const isTab = keyLower === 'tab';
+          const isEscape = keyLower === 'escape' || keyLower === 'esc';
+          const isBackspace = keyLower === 'backspace';
+
+          if (isEnter || isTab || isEscape || isBackspace) {
+            const vk = isEnter ? 13 : isTab ? 9 : isEscape ? 27 : 8;
+            const keyName = isEnter ? 'Enter' : isTab ? 'Tab' : isEscape ? 'Escape' : 'Backspace';
+            await cdpSessionManager.withSession(tab.id, 'keyboard', async () => {
+              await cdpSessionManager.sendCommand(tab.id!, 'Input.dispatchKeyEvent', {
+                type: 'keyDown',
+                key: keyName,
+                code: keyName,
+                text: isEnter ? String.fromCharCode(13) : undefined,
+                unmodifiedText: isEnter ? String.fromCharCode(13) : undefined,
+                windowsVirtualKeyCode: vk,
+                nativeVirtualKeyCode: vk,
+              });
+              await cdpSessionManager.sendCommand(tab.id!, 'Input.dispatchKeyEvent', {
+                type: 'keyUp',
+                key: keyName,
+                code: keyName,
+                windowsVirtualKeyCode: vk,
+                nativeVirtualKeyCode: vk,
+              });
+            });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    success: true,
+                    message: 'Dispatched native CDP key ' + keyName,
+                    method: 'cdp_dispatch_key_event',
+                    isTrusted: true,
+                    key: keyName,
+                  }),
+                },
+              ],
+              isError: false,
+            };
+          }
+        } catch {}
+
+        if (result?.error) {
+          return createErrorResponse(result.error);
+        }
+        return createErrorResponse('Keyboard simulation timed out or failed to receive response');
       }
 
       return {
