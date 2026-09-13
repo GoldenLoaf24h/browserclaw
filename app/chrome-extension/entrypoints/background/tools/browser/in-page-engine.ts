@@ -23,6 +23,23 @@ const EXECUTE_TIMEOUT_MS = 15_000;
 let callSequence = 0;
 
 /**
+ * Cache of tabs where inpage-engine.js has already been injected.
+ * In Chrome MV3, repeated file injections of the 100KB bundle on every single sub-action
+ * (coordinate resolution, occlusion probe, delivery probe) add 4-6 seconds of latency.
+ */
+const injectedTabs = new Set<number>();
+if (typeof chrome !== 'undefined' && chrome.tabs?.onUpdated) {
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === 'loading') {
+      injectedTabs.delete(tabId);
+    }
+  });
+  chrome.tabs.onRemoved?.addListener((tabId) => {
+    injectedTabs.delete(tabId);
+  });
+}
+
+/**
  * chrome.scripting.executeScript itself can hang forever when the renderer is
  * blocked (e.g. a native dialog is open). Wrap every injection with a timeout
  * so the tool surfaces a structured error instead of deadlocking.
@@ -64,45 +81,58 @@ export async function executeInPage<R = any>(
     }
   }
 
-  await raceInjection(chrome.scripting.executeScript({ target, files: ['inpage-engine.js'] }), 'injection');
+  const isAlreadyInjected =
+    typeof target.tabId === 'number' && !target.allFrames && injectedTabs.has(target.tabId);
+  if (!isAlreadyInjected) {
+    await raceInjection(
+      chrome.scripting.executeScript({ target, files: ['inpage-engine.js'] }),
+      'injection',
+    );
+    if (typeof target.tabId === 'number') {
+      injectedTabs.add(target.tabId);
+    }
+  }
 
   const slot = `__MCP_CALL_${++callSequence}`;
 
   // 1) Start: launch the entrypoint synchronously, stash its promise in a box.
-  const startResults = (await raceInjection(chrome.scripting.executeScript({
-    target,
-    func: (ns: string, name: string, fnArgs: unknown[], slotKey: string) => {
-      const g = globalThis as any;
-      const engine = g[ns];
-      const fn = engine ? engine[name] : undefined;
-      const box: {
-        promise?: unknown;
-        settled: boolean;
-        listening?: boolean;
-        value?: unknown;
-        error?: string;
-      } = {
-        promise: undefined,
-        settled: false,
-        listening: false,
-        value: undefined,
-        error: undefined,
-      };
-      g[slotKey] = box;
-      try {
-        box.promise = typeof fn === 'function' ? fn.call(engine, ...fnArgs) : undefined;
-      } catch (err) {
-        box.settled = true;
-        box.error = String(err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : err);
-      }
-      return {
-        engineType: typeof engine,
-        fnType: typeof fn,
-        promiseType: typeof box.promise,
-      };
-    },
-    args: [INPAGE_NAMESPACE, fnName, args, slot],
-  }), 'start')) as unknown as chrome.scripting.InjectionResult<{
+  const startResults = (await raceInjection(
+    chrome.scripting.executeScript({
+      target,
+      func: (ns: string, name: string, fnArgs: unknown[], slotKey: string) => {
+        const g = globalThis as any;
+        const engine = g[ns];
+        const fn = engine ? engine[name] : undefined;
+        const box: {
+          promise?: unknown;
+          settled: boolean;
+          listening?: boolean;
+          value?: unknown;
+          error?: string;
+        } = {
+          promise: undefined,
+          settled: false,
+          listening: false,
+          value: undefined,
+          error: undefined,
+        };
+        g[slotKey] = box;
+        try {
+          box.promise = typeof fn === 'function' ? fn.call(engine, ...fnArgs) : undefined;
+        } catch (err) {
+          box.settled = true;
+          box.error = String(err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : err);
+        }
+        return {
+          engineType: typeof engine,
+          fnType: typeof fn,
+          promiseType: typeof box.promise,
+        };
+      },
+      args: [INPAGE_NAMESPACE, fnName, args, slot],
+    }),
+    'start',
+  )) as unknown as chrome.scripting.InjectionResult<{
     engineType: string;
     fnType: string;
     promiseType: string;
@@ -111,6 +141,9 @@ export async function executeInPage<R = any>(
   for (const r of startResults ?? []) {
     const info = r?.result;
     if (!info || info.engineType !== 'object' || info.fnType !== 'function') {
+      if (typeof target.tabId === 'number') {
+        injectedTabs.delete(target.tabId);
+      }
       throw new Error(
         `In-page engine ${fnName} unavailable: ${info ? `engine=${info.engineType} fn=${info.fnType}` : 'no injection result'}`,
       );
@@ -120,63 +153,67 @@ export async function executeInPage<R = any>(
   // 2) Poll: attach settle callbacks; every dispatcher stays synchronous.
   const deadline = Date.now() + EXECUTE_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    const pollResults = (await raceInjection(chrome.scripting.executeScript({
-      target,
-      func: (slotKey: string) => {
-        const box = (globalThis as any)[slotKey];
-        if (!box) return { done: true, missing: true };
-        if (box.settled) return { done: true };
-        const promise = box.promise;
-        if (promise && typeof promise.then === 'function') {
-          if (box.listening) return { done: false };
-          box.listening = true;
-          promise.then(
-            (value: unknown) => {
-              box.value = value;
-              box.settled = true;
-            },
-            (err: unknown) => {
-              box.error = String(
-                err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : err,
-              );
-              box.settled = true;
-            },
-          );
-          return { done: false };
-        }
-        box.value = promise;
-        box.settled = true;
-        return { done: true };
-      },
+    const pollResults = (await raceInjection(
+      chrome.scripting.executeScript({
+        target,
+        func: (slotKey: string) => {
+          const box = (globalThis as any)[slotKey];
+          if (!box) return { done: true, missing: true };
+          if (box.settled) return { done: true };
+          const promise = box.promise;
+          if (promise && typeof promise.then === 'function') {
+            if (box.listening) return { done: false };
+            box.listening = true;
+            promise.then(
+              (value: unknown) => {
+                box.value = value;
+                box.settled = true;
+              },
+              (err: unknown) => {
+                box.error = String(
+                  err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : err,
+                );
+                box.settled = true;
+              },
+            );
+            return { done: false };
+          }
+          box.value = promise;
+          box.settled = true;
+          return { done: true };
+        },
         args: [slot],
-      }), 'poll')) as unknown as chrome.scripting.InjectionResult<{ done: boolean }>[];
+      }),
+      'poll',
+    )) as unknown as chrome.scripting.InjectionResult<{ done: boolean }>[];
 
     if ((pollResults ?? []).every((r) => r?.result?.done)) break;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 
   // 3) Retrieve: collect settled values and clean the box up.
-  const results = (await raceInjection(chrome.scripting.executeScript({
-    target,
-    func: (slotKey: string) => {
-      const g = globalThis as any;
-      const box = g[slotKey];
-      delete g[slotKey];
-      // A frame can navigate away between start and retrieve - drop it
-      // silently; real engine-missing cases already fail at the start step.
-      if (!box) return undefined;
-      if (!box.settled) return { __mcpInpageError: 'timeout: entrypoint did not settle in 15s' };
-      if (box.error !== undefined) return { __mcpInpageError: box.error };
-      return box.value === undefined ? { __mcpInpageReturn: 'undefined' } : box.value;
-    },
+  const results = (await raceInjection(
+    chrome.scripting.executeScript({
+      target,
+      func: (slotKey: string) => {
+        const g = globalThis as any;
+        const box = g[slotKey];
+        delete g[slotKey];
+        // A frame can navigate away between start and retrieve - drop it
+        // silently; real engine-missing cases already fail at the start step.
+        if (!box) return undefined;
+        if (!box.settled) return { __mcpInpageError: 'timeout: entrypoint did not settle in 15s' };
+        if (box.error !== undefined) return { __mcpInpageError: box.error };
+        return box.value === undefined ? { __mcpInpageReturn: 'undefined' } : box.value;
+      },
       args: [slot],
-    }), 'retrieve')) as unknown as chrome.scripting.InjectionResult<R>[];
+    }),
+    'retrieve',
+  )) as unknown as chrome.scripting.InjectionResult<R>[];
 
   for (const r of results ?? []) {
     const marker = r?.result as
-      | { __mcpInpageError?: string; __mcpInpageReturn?: string }
-      | null
-      | undefined;
+      { __mcpInpageError?: string; __mcpInpageReturn?: string } | null | undefined;
     if (marker?.__mcpInpageError) {
       throw new Error(`In-page engine ${fnName} failed: ${marker.__mcpInpageError}`);
     }
