@@ -204,6 +204,23 @@ describe('dom-indexer regressions', () => {
 
       (globalThis as any).chrome = prevChrome;
     });
+
+    it('assertTabInjectable blocks cloud instance metadata endpoints (169.254.169.254) to prevent SSRF', async () => {
+      const prevChrome = (globalThis as any).chrome;
+      (globalThis as any).chrome = {
+        ...prevChrome,
+        tabs: {
+          ...prevChrome?.tabs,
+          get: vi.fn().mockResolvedValue({ id: 11, url: 'http://169.254.169.254/latest/meta-data/' }),
+        },
+      };
+
+      await expect(assertTabInjectable(11)).rejects.toThrow(
+        /Security Restriction: Navigation or requests to cloud instance metadata service/,
+      );
+
+      (globalThis as any).chrome = prevChrome;
+    });
   });
 
   describe('ping action keyed on the injected file set', () => {

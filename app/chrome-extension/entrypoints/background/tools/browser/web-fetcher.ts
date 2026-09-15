@@ -1,3 +1,4 @@
+import { isCloudMetadataUrl, restrictedUrlErrorMessage } from '@/utils/restricted-url';
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
@@ -44,6 +45,9 @@ class WebFetcherTool extends BaseBrowserToolExecutor {
       if (typeof explicitTabId === 'number') {
         tab = await chrome.tabs.get(explicitTabId);
       } else if (url) {
+        if (isCloudMetadataUrl(url)) {
+          return createErrorResponse(restrictedUrlErrorMessage(url));
+        }
         if (isPopupUrl(url)) {
           return createErrorResponse(
             'Access denied: popup.html cannot be opened or navigated to by agent code paths. Popup is reserved exclusively for user manual interaction.',

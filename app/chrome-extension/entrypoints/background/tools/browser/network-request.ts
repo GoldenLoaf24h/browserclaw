@@ -1,3 +1,4 @@
+import { isCloudMetadataUrl, restrictedUrlErrorMessage } from '@/utils/restricted-url';
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
@@ -26,6 +27,9 @@ class NetworkRequestTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.NETWORK_REQUEST;
 
   async execute(args: NetworkRequestToolParams): Promise<ToolResult> {
+    if (args.url && (isCloudMetadataUrl(args.url) || args.url.startsWith('file:') || args.url.startsWith('file://'))) {
+      return createErrorResponse(restrictedUrlErrorMessage(args.url));
+    }
     const {
       url,
       method = 'GET',

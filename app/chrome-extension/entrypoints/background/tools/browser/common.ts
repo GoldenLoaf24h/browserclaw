@@ -1,3 +1,4 @@
+import { isCloudMetadataUrl, restrictedUrlErrorMessage } from '@/utils/restricted-url';
 import { actionHistoryManager } from '@/utils/action-history-manager';
 import { tabGroupManager } from './tab-group-manager';
 import { tabFaviconManager } from './tab-favicon';

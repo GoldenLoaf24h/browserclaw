@@ -8,17 +8,38 @@
  * panel with a spurious "ping content script failed" log line first.
  */
 
+export function isCloudMetadataUrl(url: string | undefined | null): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    return (
+      h === '169.254.169.254' ||
+      h === 'metadata.google.internal' ||
+      h === 'metadata.internal' ||
+      h.endsWith('.metadata.google.internal') ||
+      h === 'fd00:ec2::254'
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function isRestrictedChromeUrl(url: string | undefined | null): boolean {
   if (!url) return false;
   return (
     url.startsWith('chrome://') ||
     url.startsWith('edge://') ||
     url.startsWith('https://chrome.google.com/webstore') ||
-    url.startsWith('https://microsoftedge.microsoft.com/')
+    url.startsWith('https://microsoftedge.microsoft.com/') ||
+    isCloudMetadataUrl(url)
   );
 }
 
 export function restrictedUrlErrorMessage(url: string | undefined | null): string {
+  if (isCloudMetadataUrl(url)) {
+    return 'Security Restriction: Navigation or requests to cloud instance metadata service (' + (url || 'unknown URL') + ') are strictly forbidden.';
+  }
   return 'Cannot operate on this browser internal page or web store page due to security restrictions: ' + (url || 'unknown URL');
 }
 
