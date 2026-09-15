@@ -218,6 +218,90 @@ export function getShadowRoot(node: Node | null | undefined): ShadowRoot | null 
 /**
  * Helper to find an element by index using pure in-memory WeakRef mapping without DOM attribute pollution.
  */
+/**
+ * Lightweight metadata fingerprint for self-healing DOM node recovery across React/Vue re-renders.
+ */
+const INDEX_FINGERPRINT_KEY = Symbol.for('__browser_use_index_fingerprint_map__');
+
+export interface ElementFingerprint {
+  tag: string;
+  id?: string;
+  name?: string;
+  type?: string;
+  placeholder?: string;
+  testId?: string;
+  ariaLabel?: string;
+  role?: string;
+  inShadowDom?: boolean;
+}
+
+export function getIndexFingerprintMap(): Map<number, ElementFingerprint> {
+  const g = globalThis as any;
+  if (!g[INDEX_FINGERPRINT_KEY]) {
+    g[INDEX_FINGERPRINT_KEY] = new Map<number, ElementFingerprint>();
+  }
+  return g[INDEX_FINGERPRINT_KEY];
+}
+
+function selfHealInShadowRoots(root: Node, fp: ElementFingerprint): Element | null {
+  if (!root) return null;
+  const shadow = getShadowRoot(root);
+  if (shadow) {
+    if (fp.id) {
+      const found = shadow.querySelector('#' + CSS.escape(fp.id));
+      if (found && found.tagName.toLowerCase() === fp.tag) return found;
+    }
+    if (fp.placeholder) {
+      const found = shadow.querySelector(
+        fp.tag + '[placeholder=' + JSON.stringify(fp.placeholder) + ']',
+      );
+      if (found) return found;
+    }
+    if (fp.testId) {
+      const found = shadow.querySelector('[data-testid=' + JSON.stringify(fp.testId) + ']');
+      if (found && found.tagName.toLowerCase() === fp.tag) return found;
+    }
+    if (fp.name) {
+      const found = shadow.querySelector(fp.tag + '[name=' + JSON.stringify(fp.name) + ']');
+      if (found) return found;
+    }
+    for (const child of Array.from(shadow.children)) {
+      const res = selfHealInShadowRoots(child, fp);
+      if (res) return res;
+    }
+  }
+  if ('children' in root && (root as Element).children) {
+    for (const child of Array.from((root as Element).children)) {
+      const res = selfHealInShadowRoots(child, fp);
+      if (res) return res;
+    }
+  }
+  return null;
+}
+
+function selfHealFindElement(fp: ElementFingerprint): Element | null {
+  if (typeof document === 'undefined') return null;
+  if (fp.id) {
+    const byId = document.getElementById(fp.id);
+    if (byId && byId.tagName.toLowerCase() === fp.tag) return byId;
+  }
+  if (fp.testId) {
+    const byTestId = document.querySelector('[data-testid=' + JSON.stringify(fp.testId) + ']');
+    if (byTestId && byTestId.tagName.toLowerCase() === fp.tag) return byTestId;
+  }
+  if (fp.name) {
+    const byName = document.querySelector(fp.tag + '[name=' + JSON.stringify(fp.name) + ']');
+    if (byName) return byName;
+  }
+  if (fp.placeholder) {
+    const byPl = document.querySelector(
+      fp.tag + '[placeholder=' + JSON.stringify(fp.placeholder) + ']',
+    );
+    if (byPl) return byPl;
+  }
+  return selfHealInShadowRoots(document.body, fp);
+}
+
 export function findIndexedElement(index: number): Element | null {
   const isolatedMap = getIsolatedIndexMap();
   if (isolatedMap.has(index)) {
@@ -237,7 +321,16 @@ export function findIndexedElement(index: number): Element | null {
         return el;
       }
     }
-    isolatedMap.delete(index);
+  }
+
+  // Self-healing recovery pass: if element reference disconnected or GC'd (e.g. React/Vue re-render)
+  const fp = getIndexFingerprintMap().get(index);
+  if (fp) {
+    const recovered = selfHealFindElement(fp);
+    if (recovered) {
+      isolatedMap.set(index, wrapElement(recovered));
+      return recovered;
+    }
   }
 
   // Graceful fallback for mock unit tests that mock document.querySelector
@@ -658,6 +751,7 @@ export function inPageDOMPruner(options?: {
   const isolatedMap = getIsolatedIndexMap();
   if (startingIndex === 1) {
     isolatedMap.clear();
+    getIndexFingerprintMap().clear();
   }
 
   let nextIndex = startingIndex;
@@ -1027,10 +1121,16 @@ export function inPageDOMPruner(options?: {
     if (typeof Element !== 'undefined' && !(node instanceof Element)) return;
     if (isAdOrTrackingElement(node)) return;
 
+    const isFile = tag === 'input' && (node as HTMLInputElement).type === 'file';
+    if (!isFile && typeof (node as any).checkVisibility === 'function') {
+      if (!(node as any).checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) {
+        return;
+      }
+    }
+
     const style = window.getComputedStyle(node);
     const rect = node.getBoundingClientRect();
 
-    const isFile = tag === 'input' && (node as HTMLInputElement).type === 'file';
     if (!isFile) {
       if (style.display === 'none' || style.visibility === 'hidden') return;
       if (parseFloat(style.opacity || '1') <= 0) return;
@@ -1137,6 +1237,39 @@ export function inPageDOMPruner(options?: {
     const assignedIndex = nextIndex++;
     isolatedMap.set(assignedIndex, wrapElement(cand.node));
 
+    // Detect visual geometric shape if styled or transformed (diamond, circle, hex, triangle, square)
+    let detectedShape: string | undefined = undefined;
+    try {
+      const targets = [
+        cand.node,
+        ...Array.from(cand.node.querySelectorAll('span, div, i, svg, polygon, circle, rect')),
+      ];
+      for (const t of targets) {
+        const style = t.getAttribute('style') || '';
+        if (/rotate\(\s*(45|135|225|315)deg\s*\)/i.test(style)) {
+          detectedShape = 'diamond';
+          break;
+        }
+        if (/border-radius:\s*(50%|9999px)/i.test(style)) {
+          detectedShape = 'circle';
+          break;
+        }
+        if (/clip-path:\s*polygon/i.test(style)) {
+          const pts = (style.match(/%/g) || []).length;
+          detectedShape = pts >= 12 ? 'hex' : 'triangle';
+          break;
+        }
+        if (t.tagName.toLowerCase() === 'circle') {
+          detectedShape = 'circle';
+          break;
+        }
+        if (t.tagName.toLowerCase() === 'polygon') {
+          detectedShape = 'polygon';
+          break;
+        }
+      }
+    } catch {}
+
     const attributes: Record<string, string> = {};
     const attrsToKeep = [
       'id',
@@ -1170,6 +1303,21 @@ export function inPageDOMPruner(options?: {
     if (cand.isFile) {
       attributes['type'] = 'file';
     }
+    if (detectedShape) {
+      attributes['visual-shape'] = detectedShape;
+    }
+
+    getIndexFingerprintMap().set(assignedIndex, {
+      tag: cand.tag,
+      id: attributes.id,
+      name: attributes.name,
+      type: attributes.type,
+      placeholder: attributes.placeholder,
+      testId: attributes['data-testid'],
+      ariaLabel: attributes['aria-label'],
+      role: attributes.role,
+      inShadowDom: cand.inShadowDom,
+    });
     if (
       (cand.node as HTMLElement).isContentEditable ||
       cand.node.getAttribute('contenteditable') === 'true' ||
@@ -3329,6 +3477,7 @@ export function renderCompactElementLine(el: IndexedElement, frameId?: string | 
   if (el.attributes?.placeholder) parts.push(`placeholder="${el.attributes.placeholder}"`);
   if (tag === 'a' && el.attributes?.href) parts.push(`href="${el.attributes.href}"`);
   if (el.value !== undefined && el.value !== '') parts.push(`value="${el.value}"`);
+  if (el.attributes?.['visual-shape']) parts.push(`shape="${el.attributes['visual-shape']}"`);
 
   if (el.attributes?.required === 'true' || el.attributes?.required === '') parts.push('required');
   if (el.attributes?.disabled === 'true' || el.attributes?.disabled === '') parts.push('disabled');

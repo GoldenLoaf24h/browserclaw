@@ -590,6 +590,7 @@ interface CloseTabsToolParams {
   confirm?: boolean;
   sessionId?: string;
   sessionContext?: string;
+  allManagedGroups?: boolean;
 }
 
 /**
@@ -605,6 +606,23 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
     console.log(`Attempting to close tabs with options:`, args);
 
     try {
+      if (args.allManagedGroups === true || (args as any).agentGroups === true) {
+        const closedCount = await tabGroupManager.closeAllManagedGroups();
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: `Closed all Agent managed tab groups (${closedCount} groups closed)`,
+                closedCount,
+              }),
+            },
+          ],
+          isError: false,
+        };
+      }
+
       // If URL is provided, close all tabs matching that URL
       if (urlPattern) {
         console.log(`Searching for tabs with URL: ${url}`);

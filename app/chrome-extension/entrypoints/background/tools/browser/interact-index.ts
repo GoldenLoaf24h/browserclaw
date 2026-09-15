@@ -67,82 +67,46 @@ export async function getSubframeViewportOffset(
 ): Promise<{ offsetX: number; offsetY: number }> {
   if (!frameId || frameId === 0) return { offsetX: 0, offsetY: 0 };
   try {
-    if (typeof chrome !== 'undefined' && chrome.webNavigation?.getAllFrames) {
-      const allFrames = await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null);
-      if (allFrames && allFrames.length > 0) {
-        const frameMap = new Map<
-          number,
-          { frameId: number; parentFrameId: number; url?: string }
-        >();
-        for (const f of allFrames) {
-          frameMap.set(f.frameId, f);
-        }
-
-        const chain: Array<{ parentId: number; childId: number; childUrl?: string }> = [];
-        let curr = frameMap.get(frameId);
-        while (curr && curr.frameId !== 0) {
-          const parentId = curr.parentFrameId;
-          chain.unshift({ parentId, childId: curr.frameId, childUrl: curr.url });
-          curr = frameMap.get(parentId);
-        }
-
-        if (chain.length > 0) {
-          let totalX = 0;
-          let totalY = 0;
-          for (const link of chain) {
-            const results = await Promise.race([
-              chrome.scripting
-                .executeScript({
-                  target: { tabId, frameIds: [link.parentId] },
-                  func: (targetUrl?: string) => {
-                    const iframes = Array.from(document.querySelectorAll('iframe'));
-                    if (iframes.length === 0) return { offsetX: 0, offsetY: 0 };
-                    let match = iframes.find((f) => {
-                      try {
-                        return (
-                          targetUrl &&
-                          f.src &&
-                          (f.src === targetUrl ||
-                            targetUrl.startsWith(f.src) ||
-                            f.src.startsWith(targetUrl))
-                        );
-                      } catch {
-                        return false;
-                      }
-                    });
-                    if (!match) {
-                      match = iframes[0];
-                    }
-                    if (match) {
-                      const rect = match.getBoundingClientRect();
-                      const style = window.getComputedStyle(match);
-                      const borderLeft = parseFloat(style?.borderLeftWidth || '0') || 0;
-                      const borderTop = parseFloat(style?.borderTopWidth || '0') || 0;
-                      return {
-                        offsetX: Math.round(rect.left + borderLeft),
-                        offsetY: Math.round(rect.top + borderTop),
-                      };
-                    }
-                    return { offsetX: 0, offsetY: 0 };
-                  },
-                  args: [link.childUrl],
-                })
-                .catch(() => null),
-              new Promise<any>((r) => setTimeout(() => r(null), 400)),
-            ]);
-
-            const res = results?.[0]?.result;
-            if (res) {
-              totalX += res.offsetX;
-              totalY += res.offsetY;
-            }
-          }
-          return { offsetX: totalX, offsetY: totalY };
-        }
+    let targetUrl: string | undefined;
+    if (typeof chrome !== 'undefined' && chrome.webNavigation?.getFrame) {
+      const frame = await chrome.webNavigation.getFrame({ tabId, frameId }).catch(() => null);
+      if (frame?.url && frame.url !== 'about:blank') {
+        targetUrl = frame.url;
       }
     }
+
+    const results = await chrome.scripting
+      .executeScript({
+        target: { tabId },
+        func: (url?: string) => {
+          const iframes = Array.from(document.querySelectorAll('iframe'));
+          if (iframes.length === 0) return { offsetX: 0, offsetY: 0 };
+          const match =
+            (url && iframes.find((f) => f.src === url || (f.src && url.startsWith(f.src)))) ||
+            iframes.find((f) => {
+              const r = f.getBoundingClientRect();
+              return r.width > 50 && r.height > 50;
+            }) ||
+            iframes[0];
+          const rect = match.getBoundingClientRect();
+          const style = window.getComputedStyle(match);
+          const borderLeft = parseFloat(style?.borderLeftWidth || '0') || 0;
+          const borderTop = parseFloat(style?.borderTopWidth || '0') || 0;
+          return {
+            offsetX: Math.round(rect.left + borderLeft),
+            offsetY: Math.round(rect.top + borderTop),
+          };
+        },
+        args: [targetUrl],
+      })
+      .catch(() => null);
+
+    const res = results?.[0]?.result;
+    if (res && (res.offsetX !== 0 || res.offsetY !== 0)) {
+      return res;
+    }
   } catch (err) {
-    console.warn(`Failed to resolve subframe ${frameId} cumulative offset:`, err);
+    console.warn('Failed to resolve iframe offset directly:', err);
   }
   return { offsetX: 0, offsetY: 0 };
 }
@@ -232,12 +196,12 @@ async function dispatchMouseMovement(
   humanize = false,
 ): Promise<void> {
   if (!humanize) {
-    // Dispatch intermediate approach steps within 30px radius to guarantee realistic pointer tracking (avoids NO_POINTER_PATH)
+    // Dispatch 5 intermediate approach steps tightly within 35px radius (strictly <= 48px check radius)
+    // with 25ms frame-pacing to prevent Chromium input coalescing from collapsing events (guarantees >= 3 distinct pointermoves)
     const deltas = [
-      { dx: -65, dy: -38 },
-      { dx: -42, dy: -24 },
-      { dx: -24, dy: -14 },
-      { dx: -12, dy: -7 },
+      { dx: -28, dy: -14 },
+      { dx: -18, dy: -9 },
+      { dx: -10, dy: -5 },
       { dx: -4, dy: -2 },
       { dx: 0, dy: 0 },
     ];
@@ -248,7 +212,7 @@ async function dispatchMouseMovement(
         y: Math.round(targetY + d.dy),
         modifiers: modifierMask,
       });
-      await new Promise((r) => setTimeout(r, 12));
+      await new Promise((r) => setTimeout(r, 25));
     }
     lastMousePosMap.set(tabId, { x: targetX, y: targetY });
     return;
@@ -549,7 +513,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       }
 
       // Animate virtual agent cursor to target position before physical interaction
-      await animateAgentCursor(tabId, x, y, { waitForArrival: true, timeoutMs: 1200 });
+      void animateAgentCursor(tabId, x, y);
 
       // Shadow DOM penetrating interception check (self-healing feedback)
       if (args.index !== undefined && !isFallback && action === 'click') {
@@ -570,16 +534,15 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       const modifierMask = computeModifierMask(args.modifiers);
       let usedNativeCDP = false;
       // 2. Compensate cumulative frame offset if target is inside a nested or cross-origin subframe
-      if (
-        targetFrameId !== undefined &&
-        targetFrameId !== 0 &&
-        !isFallback &&
-        !coordResult?.frameOffsetX &&
-        !coordResult?.frameOffsetY
-      ) {
+      if (targetFrameId !== undefined && targetFrameId !== 0 && !isFallback) {
         const offset = await getSubframeViewportOffset(tabId, targetFrameId);
-        x += offset.offsetX;
-        y += offset.offsetY;
+        const localX = coordResult?.frameOffsetX || 0;
+        const localY = coordResult?.frameOffsetY || 0;
+        console.warn(
+          `[FRAME_OFFSET_DEBUG] targetFrameId=${targetFrameId} offset=${JSON.stringify(offset)} local=(${localX},${localY}) final=(${x - localX + offset.offsetX},${y - localY + offset.offsetY})`,
+        );
+        x = x - localX + offset.offsetX;
+        y = y - localY + offset.offsetY;
       }
 
       let dragOutcome: any = undefined;

@@ -8,7 +8,8 @@
  *    the tab group is completely removed and never left as a ghost/empty group.
  */
 
-export type TabGroupColor = 'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange';
+export type TabGroupColor =
+  'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange';
 
 export interface EnsureAgentGroupOptions {
   title?: string;
@@ -127,9 +128,17 @@ export class TabGroupManager {
           groupId: targetGroupId,
         });
 
-        // Update title if caller provided a specific custom title
+        // Update title and/or color if caller provided specific custom title/color
+        const updateProps: { title?: string; color?: chrome.tabGroups.UpdateProperties['color'] } =
+          {};
         if (options.title && options.title.trim()) {
-          await chrome.tabGroups.update(targetGroupId, { title, color }).catch(() => {});
+          updateProps.title = options.title.trim();
+        }
+        if (options.color) {
+          updateProps.color = options.color;
+        }
+        if (Object.keys(updateProps).length > 0) {
+          await chrome.tabGroups.update(targetGroupId, updateProps).catch(() => {});
         }
         return targetGroupId;
       }
@@ -137,7 +146,8 @@ export class TabGroupManager {
       // Create a brand-new group for this window
       const newGroupId = await chrome.tabs.group({
         tabIds: [tabId],
-        createProperties: typeof targetWindowId === 'number' ? { windowId: targetWindowId } : undefined,
+        createProperties:
+          typeof targetWindowId === 'number' ? { windowId: targetWindowId } : undefined,
       });
 
       this.managedGroupIds.add(newGroupId);
@@ -211,6 +221,19 @@ export class TabGroupManager {
       console.warn('[TabGroupManager] closeManagedGroup error:', error);
       return false;
     }
+  }
+
+  /**
+   * Close all tabs across all Agent-managed tab groups.
+   */
+  public async closeAllManagedGroups(): Promise<number> {
+    if (typeof chrome === 'undefined' || !chrome.tabs) return 0;
+    let count = 0;
+    for (const gid of Array.from(this.managedGroupIds)) {
+      const ok = await this.closeManagedGroup(gid);
+      if (ok) count++;
+    }
+    return count;
   }
 
   /**

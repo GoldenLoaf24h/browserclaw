@@ -85,10 +85,12 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           if (match?.result) {
             coords = match.result;
             const targetFrameId = match.frameId ?? 0;
-            if (targetFrameId !== 0 && !coords.frameOffsetX && !coords.frameOffsetY) {
+            if (targetFrameId !== 0) {
               const offset = await getSubframeViewportOffset(targetTabId, targetFrameId);
-              coords.x += offset.offsetX;
-              coords.y += offset.offsetY;
+              const localX = coords?.frameOffsetX || 0;
+              const localY = coords?.frameOffsetY || 0;
+              coords.x = coords.x - localX + offset.offsetX;
+              coords.y = coords.y - localY + offset.offsetY;
             }
           }
         }
@@ -111,10 +113,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           const targetY = coords.y;
 
           // Animate virtual agent cursor to target input before click and type
-          await animateAgentCursor(targetTabId, targetX, targetY, {
-            waitForArrival: true,
-            timeoutMs: 350,
-          });
+          void animateAgentCursor(targetTabId, targetX, targetY);
           void animateAgentCursorClick(targetTabId, targetX, targetY);
 
           // Skip the Ctrl+A + Backspace clear sequence when the field is already

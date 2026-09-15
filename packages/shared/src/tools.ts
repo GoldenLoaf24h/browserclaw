@@ -424,6 +424,21 @@ export const TOOL_SCHEMAS: Tool[] = [
           description:
             'Refresh the current active tab instead of navigating to a URL. When true, the url parameter is ignored. Defaults to false',
         },
+        groupTitle: {
+          type: 'string',
+          description:
+            'Task-aligned title for the Chrome tab group in user language (e.g. "GitHub 搜索", "Flight Tracker"). Fallback: "Agent"',
+        },
+        groupColor: {
+          type: 'string',
+          enum: ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'],
+          description: 'Color for the Chrome tab group. Fallback: "blue"',
+        },
+        autoGroup: {
+          type: 'boolean',
+          description:
+            'Automatically place newly opened tab into an Agent-managed tab group with dedicated title and color. Default: true',
+        },
       },
       required: [],
     },
@@ -562,6 +577,11 @@ export const TOOL_SCHEMAS: Tool[] = [
           type: 'boolean',
           description:
             'Explicit confirmation required to close the active tab when tabIds or url are not specified.',
+        },
+        allManagedGroups: {
+          type: 'boolean',
+          description:
+            'Close all Agent-managed tab groups and their tabs created during automation sessions. Default: false',
         },
       },
       required: [],
@@ -1455,7 +1475,7 @@ export const TOOL_SCHEMAS: Tool[] = [
       openWorldHint: true,
     },
     description:
-      'Click, hover, or interact with an element using its compact 1-based numeric index from chrome_read_dom.',
+      'Click, hover, or interact with an element using its compact 1-based numeric index from chrome_read_dom. When performing predictable multi-step actions (e.g. form submission or chain navigation), prefer chrome_batch_actions to finish in a single round-trip.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1604,7 +1624,7 @@ export const TOOL_SCHEMAS: Tool[] = [
       openWorldHint: true,
     },
     description:
-      'Fill text into an input or textarea element using its compact 1-based numeric index.',
+      'Fill text into an input or textarea element using its compact 1-based numeric index. When filling multiple fields in a form, prefer chrome_batch_actions to fill and submit the entire form in 1 turn.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1652,7 +1672,10 @@ export const TOOL_SCHEMAS: Tool[] = [
       openWorldHint: true,
     },
     description:
-      'Execute a sequential pipeline of browser actions with static and runtime page-drift guards and partial failure reporting.',
+      'Execute a sequential multi-step pipeline of browser actions in a single round-trip without waiting for intermediate model turns.\n' +
+      '* CRITICAL EFFICIENCY RULE: When the next 2+ actions are predictable (e.g. form filling: [fill username, fill password, click submit]; or search flow: [fill query, press Enter, wait]), ALWAYS use chrome_batch_actions instead of individual tool calls. It completes the entire sequence in 1 turn (3~5x faster, 75%+ lower token cost).\n' +
+      '* Supported action types: click, fill, hover, scroll, press_key, wait, fill_form, assert, extract.\n' +
+      '* Set includeDelta: true to automatically inspect DOM changes after the pipeline completes.',
     inputSchema: {
       type: 'object',
       properties: {

@@ -1,6 +1,6 @@
 {
   "name": "browserclaw",
-  "version": "2.3.7",
+  "version": "2.3.8",
   "description": "BrowserClaw - High-efficiency Chrome browser automation MCP server and AI agent skill",
   "private": true,
   "author": "hangye",

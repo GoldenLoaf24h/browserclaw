@@ -404,6 +404,7 @@ function initAgentCursor() {
   let lastFrameTime = performance.now();
   let pendingMoveSequence: number | null = null;
   let userTakeoverDetected = false;
+  let hasInteracted = false;
   type CursorMode = 'off' | 'auto' | 'always';
   let cursorMode: CursorMode = 'always';
 
@@ -430,7 +431,7 @@ function initAgentCursor() {
         cursorMode = changes.agentCursorMode.newValue || 'always';
         if (cursorMode === 'off') {
           hideCursorImmediate();
-        } else if (cursorMode === 'always') {
+        } else if (cursorMode === 'always' && hasInteracted) {
           cursorState.visibilitySpring.target = 1;
           startAnimationLoop();
         }
@@ -645,6 +646,18 @@ function initAgentCursor() {
       x: clamp(targetX, 0, window.innerWidth),
       y: clamp(targetY, 0, window.innerHeight),
     };
+
+    if (!hasInteracted) {
+      hasInteracted = true;
+      cursorState.point = target;
+      resetSpring(cursorState.positionXSpring, target.x);
+      resetSpring(cursorState.positionYSpring, target.y);
+      resetSpring(cursorState.stretchSpring, 1);
+      cursorState.motion = null;
+      renderCursor();
+      triggerArrivalCallback(moveSequence);
+      return;
+    }
 
     const distance = dist(cursorState.point, target);
 

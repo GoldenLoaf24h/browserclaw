@@ -326,7 +326,9 @@ BrowserClaw is specifically engineered to let agents work completely in the back
 
 1. **Never switch the user's active tab**: In multi-tab workflows, **DO NOT call `chrome_switch_tab`** unless the user explicitly requested to switch their active tab view. Calling `chrome_switch_tab` forces Chrome to switch active tabs and steal focus from the user!
 2. **Direct `tabId` Targeting**: All core tools (`chrome_read_dom`, `chrome_interact_index`, `chrome_fill_index`, `chrome_screenshot`, `chrome_smart_scroll`, `chrome_batch_actions`, `chrome_computer`, `chrome_get_markdown`, etc.) accept an explicit `tabId`. Always pass the target `tabId` directly. BrowserClaw uses out-of-band CDP sessions to interact with background tabs without bringing them to the front or moving the user's cursor.
-3. **Background Navigation**: `chrome_navigate` opens new tabs in the background (`active: false`) by default. Never pass `background: false` unless the user explicitly asked to bring the tab into the foreground.
+3. **Background Navigation & Task-Aligned Tab Grouping**:
+   - `chrome_navigate` opens new tabs in the background (`active: false`) by default. Never pass `background: false` unless the user explicitly asked to bring the tab into the foreground.
+   - **Custom Tab Group**: Always generate a short, task-aligned `groupTitle` in the user's language (e.g. `"知乎调研"`, `"GitHub 搜索"`, `"Flight Tracker"`) and pick an appropriate `groupColor` (e.g. `"purple"`, `"cyan"`, `"orange"`). If omitted, it falls back to `"Agent"` and `"blue"`. This gives the user clear visual context of what the agent is currently working on.
 4. **Session Tab Affinity**: When working across multiple turns, pass `sessionId` to bind your agent session to its target tab, preventing accidental fallback to the user's active tab.
 
 ### F. Session State Inspection (`chrome_storage`)

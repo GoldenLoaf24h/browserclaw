@@ -23,27 +23,29 @@ describe('TabGroupManager (Industrial Grouping & Zero-Orphan Cleanup)', () => {
           if (!t) throw new Error(`Tab ${id} not found`);
           return { ...t };
         }),
-        group: vi.fn(async (opts: { tabIds: number[]; groupId?: number; createProperties?: any }) => {
-          if (opts.groupId) {
+        group: vi.fn(
+          async (opts: { tabIds: number[]; groupId?: number; createProperties?: any }) => {
+            if (opts.groupId) {
+              for (const tid of opts.tabIds) {
+                const tab = mockTabs.find((x) => x.id === tid);
+                if (tab) tab.groupId = opts.groupId;
+              }
+              return opts.groupId;
+            }
+            const gid = nextGroupId++;
+            mockGroups.set(gid, {
+              id: gid,
+              windowId: opts.createProperties?.windowId ?? 10,
+              title: '',
+              color: 'grey',
+            });
             for (const tid of opts.tabIds) {
               const tab = mockTabs.find((x) => x.id === tid);
-              if (tab) tab.groupId = opts.groupId;
+              if (tab) tab.groupId = gid;
             }
-            return opts.groupId;
-          }
-          const gid = nextGroupId++;
-          mockGroups.set(gid, {
-            id: gid,
-            windowId: opts.createProperties?.windowId ?? 10,
-            title: '',
-            color: 'grey',
-          });
-          for (const tid of opts.tabIds) {
-            const tab = mockTabs.find((x) => x.id === tid);
-            if (tab) tab.groupId = gid;
-          }
-          return gid;
-        }),
+            return gid;
+          },
+        ),
         query: vi.fn(async (queryInfo: { groupId?: number }) => {
           if (typeof queryInfo.groupId === 'number') {
             return mockTabs.filter((t) => t.groupId === queryInfo.groupId);
@@ -130,5 +132,15 @@ describe('TabGroupManager (Industrial Grouping & Zero-Orphan Cleanup)', () => {
     expect(success).toBe(true);
     expect(mockTabs.filter((t) => t.groupId === gid).length).toBe(0);
     expect(manager.getManagedGroupIds()).not.toContain(gid);
+  });
+
+  it('closes all Agent-managed tab groups via closeAllManagedGroups (Zero-Garbage guarantee)', async () => {
+    const gid1 = await manager.ensureAgentTabGroup(1, { title: 'Group 1' });
+    const gid2 = await manager.ensureAgentTabGroup(3, { title: 'Group 2', windowId: 999 });
+
+    expect(manager.getManagedGroupIds().length).toBe(2);
+    const count = await manager.closeAllManagedGroups();
+    expect(count).toBe(2);
+    expect(manager.getManagedGroupIds().length).toBe(0);
   });
 });

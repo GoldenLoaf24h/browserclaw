@@ -254,6 +254,9 @@ class CDPSessionManager {
       // Attach freshly
       await chrome.debugger.attach({ tabId }, DEBUGGER_PROTOCOL_VERSION);
       this.setState(tabId, { refCount: 1, owners: new Set([owner]), attachedByUs: true });
+      await chrome.debugger
+        .sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: true })
+        .catch(() => {});
       await this.enablePageDomain(tabId);
       await this.enableNetworkDomain(tabId);
     });
@@ -512,6 +515,9 @@ class CDPSessionManager {
           });
           // Short settle delay for transient navigation to stabilize
           await new Promise((r) => setTimeout(r, 100));
+          await chrome.debugger
+            .sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: true })
+            .catch(() => {});
           await this.enablePageDomain(tabId);
           await this.enableNetworkDomain(tabId);
           return true;

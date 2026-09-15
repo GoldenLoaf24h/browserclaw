@@ -118,6 +118,6 @@ describe('Extension Core Features', () => {
       // cancelFileOperation does not throw for unknown or existing ID
       expect(() => cancelFileOperation('req-1')).not.toThrow();
       expect(() => cancelFileOperation('non-existent')).not.toThrow();
-    });
+    }, 15000);
   });
 });

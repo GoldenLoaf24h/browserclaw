@@ -251,8 +251,10 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
               if (targetFrameId !== 0) {
                 const offset = await getSubframeViewportOffset(tabId, targetFrameId);
-                targetX += offset.offsetX;
-                targetY += offset.offsetY;
+                const localX = (loc as any)?.frameOffsetX || 0;
+                const localY = (loc as any)?.frameOffsetY || 0;
+                targetX = targetX - localX + offset.offsetX;
+                targetY = targetY - localY + offset.offsetY;
               }
 
               await animateAgentCursor(tabId, targetX, targetY, {
