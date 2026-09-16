@@ -55,8 +55,24 @@ export const handleCallTool = async (param: ToolCallParam) => {
       args.sessionId = param.sessionId;
     }
     const result = await tool.execute(args);
-    if (typeof args.tabId === 'number' && args.tabId > 0) {
-      tabFaviconManager.markTabActive(args.tabId);
+    let targetTabId = typeof args.tabId === 'number' && args.tabId > 0 ? args.tabId : undefined;
+    if (!targetTabId && result && typeof result === 'object') {
+      if (typeof (result as any).tabId === 'number') {
+        targetTabId = (result as any).tabId;
+      } else if (
+        Array.isArray((result as any).content) &&
+        (result as any).content[0]?.type === 'text'
+      ) {
+        try {
+          const parsed = JSON.parse((result as any).content[0].text);
+          if (typeof parsed?.tabId === 'number' && parsed.tabId > 0) {
+            targetTabId = parsed.tabId;
+          }
+        } catch {}
+      }
+    }
+    if (targetTabId) {
+      tabFaviconManager.markTabActive(targetTabId);
     }
     return result;
   } catch (error) {

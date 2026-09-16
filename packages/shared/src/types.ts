@@ -102,6 +102,8 @@ export interface SessionTabAffinityContext {
 export interface BatchActionItem {
   type:
     | 'click'
+    | 'double_click'
+    | 'right_click'
     | 'fill'
     | 'hover'
     | 'scroll'
@@ -205,6 +207,7 @@ export interface UnifiedLocatorResult {
   y: number;
   resolutionPath: 'ref' | 'selector' | 'text' | 'role' | 'coordinate';
   tagName?: string;
+  inputType?: string;
   text?: string;
   value?: string;
   frameId?: number;

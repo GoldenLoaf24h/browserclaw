@@ -2,6 +2,7 @@ import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { resolveTargetLocation } from './unified-locator';
+import { executeInPage } from './in-page-engine';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { waitForPageSettle } from '@/utils/action-watchdog';
 import type { FillFormParams } from 'chrome-mcp-shared';
@@ -72,6 +73,46 @@ export class FillFormTool extends BaseBrowserToolExecutor {
             continue;
           }
 
+          const isSpecial =
+            loc.tagName === 'select' ||
+            loc.inputType === 'color' ||
+            loc.inputType === 'date' ||
+            loc.inputType === 'range' ||
+            loc.inputType === 'time' ||
+            loc.inputType === 'datetime-local' ||
+            loc.inputType === 'month' ||
+            loc.inputType === 'week' ||
+            loc.inputType === 'checkbox' ||
+            loc.inputType === 'radio' ||
+            loc.inputType === 'file';
+
+          if (isSpecial) {
+            const targetRef = field.ref ?? field.index;
+            const targetIndex =
+              typeof targetRef === 'number'
+                ? targetRef
+                : typeof targetRef === 'string' && /^\d+$/.test(targetRef)
+                  ? parseInt(targetRef, 10)
+                  : undefined;
+            let outcome: any;
+            if (typeof targetIndex === 'number' && targetIndex > 0) {
+              const res = await executeInPage(
+                loc.frameId ? { tabId, frameIds: [loc.frameId] } : { tabId },
+                'inPageFillIndex',
+                [targetIndex, textToFill, field.clear !== false],
+              );
+              outcome = res?.[0]?.result;
+            }
+            results.push({
+              fieldIndex: i,
+              success: outcome?.success !== false,
+              ref: field.ref ?? field.index,
+              selector: field.selector,
+              resolutionPath: loc.resolutionPath,
+            });
+            continue;
+          }
+
           try {
             // 1. Click to focus
             await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
@@ -84,6 +125,7 @@ export class FillFormTool extends BaseBrowserToolExecutor {
               x: loc.x,
               y: loc.y,
               button: 'left',
+              buttons: 1,
               clickCount: 1,
             });
             await cdpSessionManager.sendCommand(tabId, 'Input.dispatchMouseEvent', {
@@ -91,6 +133,7 @@ export class FillFormTool extends BaseBrowserToolExecutor {
               x: loc.x,
               y: loc.y,
               button: 'left',
+              buttons: 0,
               clickCount: 1,
             });
 

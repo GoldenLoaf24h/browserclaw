@@ -13,7 +13,10 @@ const SAMPLE = {
   elementCount: 2,
   interactiveCount: 2,
   compressionRatio: 0.9,
-  indexMap: { 1: { selector: 'button', tagName: 'button' }, 2: { selector: 'input', tagName: 'input' } },
+  indexMap: {
+    1: { selector: 'button', tagName: 'button' },
+    2: { selector: 'input', tagName: 'input' },
+  },
   indexedElements: [
     { index: 1, tagName: 'button', text: 'Go', attributes: { id: 'a' }, isInteractive: true },
     { index: 2, tagName: 'input', attributes: { type: 'email' }, isInteractive: true },
@@ -90,11 +93,60 @@ describe('chrome_read_dom payload shape', () => {
   });
 
   it('declares includeDetails in the tool schema', () => {
-    const schema = TOOL_SCHEMAS.find(
-      (t: any) => t.name === 'chrome_read_dom',
-    ) as any;
+    const schema = TOOL_SCHEMAS.find((t: any) => t.name === 'chrome_read_dom') as any;
     expect(schema).toBeTruthy();
     expect(schema.inputSchema.properties.includeDetails).toBeTruthy();
     expect(schema.inputSchema.properties.includeDetails.type).toBe('boolean');
+  });
+
+  it('remaps subframe visual asset indices sequentially without colliding with main frame asset indices', async () => {
+    const mod = await import('../entrypoints/background/tools/browser/read-dom');
+    const engine = await import('../entrypoints/background/tools/browser/in-page-engine');
+    const spy = vi.spyOn(engine, 'executeInPage');
+
+    const mainResult = {
+      ...SAMPLE,
+      assets: [
+        {
+          index: 1,
+          kind: 'img',
+          rect: { x: 10, y: 10, width: 100, height: 100 },
+          src: 'https://example.com/a.png',
+        },
+      ],
+    };
+    const subframeResult = {
+      ...SAMPLE,
+      assets: [
+        {
+          index: 1,
+          kind: 'img',
+          rect: { x: 5, y: 5, width: 50, height: 50 },
+          src: 'https://sub.example.com/b.png',
+        },
+      ],
+    };
+
+    spy.mockImplementation(async (_target, funcName) => {
+      if (funcName === 'inPageReindexFrame') return [{ result: { success: true } }];
+      return [
+        { frameId: 0, result: mainResult },
+        { frameId: 99, result: subframeResult },
+      ] as any;
+    });
+
+    (mod.readDOMTool as any).resolveAffinityTab = async () => ({
+      id: 1,
+      url: 'https://x.test',
+      title: 'X',
+    });
+
+    const res = await mod.readDOMTool.execute({ includeDetails: true } as any);
+    spy.mockRestore();
+
+    const payload = JSON.parse(res.content[0].text as string);
+    expect(payload.treeString).toContain('[asset 1]');
+    expect(payload.treeString).toContain('[asset 2]');
+    expect(payload.treeString).not.toContain('[asset 1] img 50x50');
   });
 });

@@ -28,16 +28,18 @@ describe('InterceptApiTool (Structured API Sniffing)', () => {
   });
 
   it('intercepts live responses via CDP Network domain and decodes JSON', async () => {
-    vi.spyOn(cdpSessionManager, 'sendCommand').mockImplementation(async (_tabId, method, params: any) => {
-      if (method === 'Network.enable') return {};
-      if (method === 'Network.getResponseBody') {
-        return {
-          body: JSON.stringify({ code: 200, items: [{ id: 1, name: 'Item A' }] }),
-          base64Encoded: false,
-        };
-      }
-      return {};
-    });
+    vi.spyOn(cdpSessionManager, 'sendCommand').mockImplementation(
+      async (_tabId, method, params: any) => {
+        if (method === 'Network.enable') return {};
+        if (method === 'Network.getResponseBody') {
+          return {
+            body: JSON.stringify({ code: 200, items: [{ id: 1, name: 'Item A' }] }),
+            base64Encoded: false,
+          };
+        }
+        return {};
+      },
+    );
 
     let attachedListener: any;
     (chrome.debugger.onEvent.addListener as any).mockImplementation((fn: any) => {
@@ -54,18 +56,14 @@ describe('InterceptApiTool (Structured API Sniffing)', () => {
     // Simulate incoming network response event matching pattern
     setTimeout(() => {
       if (attachedListener) {
-        attachedListener(
-          { tabId: 1 },
-          'Network.responseReceived',
-          {
-            requestId: 'req-123',
-            response: {
-              url: 'https://example.com/api/goods/list?page=1',
-              status: 200,
-              mimeType: 'application/json',
-            },
+        attachedListener({ tabId: 1 }, 'Network.responseReceived', {
+          requestId: 'req-123',
+          response: {
+            url: 'https://example.com/api/goods/list?page=1',
+            status: 200,
+            mimeType: 'application/json',
           },
-        );
+        });
       }
     }, 50);
 
@@ -75,5 +73,56 @@ describe('InterceptApiTool (Structured API Sniffing)', () => {
     expect(parsed.success).toBe(true);
     expect(parsed.data.code).toBe(200);
     expect(parsed.data.items[0].name).toBe('Item A');
+  });
+
+  it('correctly decodes base64 UTF-8 multibyte JSON payloads without mojibake', async () => {
+    const originalPayload = { message: '你好，世界！🚀 BrowserClaw', count: 42 };
+    const jsonStr = JSON.stringify(originalPayload);
+    const base64Str = Buffer.from(jsonStr, 'utf-8').toString('base64');
+
+    vi.spyOn(cdpSessionManager, 'sendCommand').mockImplementation(
+      async (_tabId, method, params: any) => {
+        if (method === 'Network.enable') return {};
+        if (method === 'Network.getResponseBody') {
+          return {
+            body: base64Str,
+            base64Encoded: true,
+          };
+        }
+        return {};
+      },
+    );
+
+    let attachedListener: any;
+    (chrome.debugger.onEvent.addListener as any).mockImplementation((fn: any) => {
+      attachedListener = fn;
+    });
+
+    const execPromise = tool.execute({
+      tabId: 1,
+      urlPattern: '*/api/utf8*',
+      triggerAction: 'wait_next',
+      timeoutMs: 1000,
+    });
+
+    setTimeout(() => {
+      if (attachedListener) {
+        attachedListener({ tabId: 1 }, 'Network.responseReceived', {
+          requestId: 'req-utf8',
+          response: {
+            url: 'https://example.com/api/utf8',
+            status: 200,
+            mimeType: 'application/json; charset=utf-8',
+          },
+        });
+      }
+    }, 50);
+
+    const res = await execPromise;
+    expect(res.isError).toBe(false);
+    const parsed = JSON.parse((res.content[0] as any).text);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data.message).toBe('你好，世界！🚀 BrowserClaw');
+    expect(parsed.data.count).toBe(42);
   });
 });

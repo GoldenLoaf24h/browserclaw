@@ -60,4 +60,18 @@ describe('Shadow DOM & Modal Focus Trap Enhancements', () => {
     expect(check.detected).toBe(true);
     expect(check.type).toBe('#captcha_modal');
   });
+
+  it('detects Cloudflare Turnstile bot challenge container', () => {
+    document.body.innerHTML = `
+      <div id="app">
+        <div class="cf-turnstile" style="width: 300px; height: 65px;"></div>
+      </div>
+    `;
+    const tEl = document.querySelector('.cf-turnstile') as HTMLElement;
+    Object.defineProperty(tEl, 'offsetWidth', { configurable: true, value: 300 });
+
+    const check = inPageCheckCaptcha();
+    expect(check.detected).toBe(true);
+    expect(check.type).toBe('.cf-turnstile');
+  });
 });

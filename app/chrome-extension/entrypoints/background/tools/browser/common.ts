@@ -302,6 +302,7 @@ class NavigateTool extends BaseBrowserToolExecutor {
             }
           });
         } catch {
+          const allTabs = (await chrome.tabs.query({})) || [];
           candidateTabs = allTabs.filter((t) => t.url && t.url.startsWith(url));
         }
         console.log(
@@ -310,11 +311,12 @@ class NavigateTool extends BaseBrowserToolExecutor {
       } else {
         const urlPatterns = buildUrlPatterns(url);
         try {
-          candidateTabs = await chrome.tabs.query({ url: urlPatterns });
+          candidateTabs = (await chrome.tabs.query({ url: urlPatterns })) || [];
         } catch {
-          const allTabs = await chrome.tabs.query({});
-          candidateTabs = allTabs;
+          const allTabs = (await chrome.tabs.query({})) || [];
+          candidateTabs = allTabs || [];
         }
+        if (!Array.isArray(candidateTabs)) candidateTabs = [];
         console.log(`Found ${candidateTabs.length} matching tabs with patterns:`, urlPatterns);
       }
 

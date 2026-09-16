@@ -1674,7 +1674,7 @@ export const TOOL_SCHEMAS: Tool[] = [
     description:
       'Execute a sequential multi-step pipeline of browser actions in a single round-trip without waiting for intermediate model turns.\n' +
       '* CRITICAL EFFICIENCY RULE: When the next 2+ actions are predictable (e.g. form filling: [fill username, fill password, click submit]; or search flow: [fill query, press Enter, wait]), ALWAYS use chrome_batch_actions instead of individual tool calls. It completes the entire sequence in 1 turn (3~5x faster, 75%+ lower token cost).\n' +
-      '* Supported action types: click, fill, hover, scroll, press_key, wait, fill_form, assert, extract.\n' +
+      '* Supported action types: click, double_click, right_click, fill, hover, scroll, press_key, wait, fill_form, assert, extract.\n' +
       '* Set includeDelta: true to automatically inspect DOM changes after the pipeline completes.',
     inputSchema: {
       type: 'object',
@@ -1688,6 +1688,8 @@ export const TOOL_SCHEMAS: Tool[] = [
                 type: 'string',
                 enum: [
                   'click',
+                  'double_click',
+                  'right_click',
                   'fill',
                   'hover',
                   'scroll',

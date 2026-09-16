@@ -82,4 +82,52 @@ describe('Interaction URL Change Detection', () => {
     expect(payload.previousUrl).toBe(staticUrl);
     expect(payload.currentUrl).toBe(staticUrl);
   });
+
+  it('routes checkbox and special widgets to inPageFillIndex directly', async () => {
+    const staticUrl = 'https://example.com/form';
+    (globalThis.chrome.tabs as any).get = vi.fn().mockResolvedValue({
+      id: 103,
+      url: staticUrl,
+      title: 'Form',
+    });
+    vi.spyOn(fillIndexTool as any, 'resolveAffinityTab').mockResolvedValue({
+      id: 103,
+      url: staticUrl,
+    });
+
+    let calledInPageFill = false;
+    vi.spyOn(engine, 'executeInPage').mockImplementation(
+      async (_target: any, fnName: string, args: any[]) => {
+        if (fnName === 'inPageGetElementCoordinates') {
+          return [
+            {
+              result: {
+                success: true,
+                x: 50,
+                y: 60,
+                tagName: 'input',
+                inputType: 'checkbox',
+              },
+            },
+          ] as any;
+        }
+        if (fnName === 'inPageFillIndex') {
+          calledInPageFill = true;
+          return [{ result: { success: true, index: args[0], value: 'true' } }] as any;
+        }
+        return [{ result: { success: true } }] as any;
+      },
+    );
+
+    const res = await fillIndexTool.execute({
+      index: 10,
+      text: 'true',
+      tabId: 103,
+    });
+
+    expect(res.isError).toBe(false);
+    expect(calledInPageFill).toBe(true);
+    const payload = JSON.parse(res.content[0].text);
+    expect(payload.success).toBe(true);
+  });
 });

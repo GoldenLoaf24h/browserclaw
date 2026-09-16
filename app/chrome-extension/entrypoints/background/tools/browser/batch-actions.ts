@@ -223,6 +223,8 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
           switch (item.type) {
             case 'click':
+            case 'double_click':
+            case 'right_click':
             case 'hover': {
               const rawCoord =
                 item.coordinate ??
@@ -257,11 +259,14 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 targetY = targetY - localY + offset.offsetY;
               }
 
-              await animateAgentCursor(tabId, targetX, targetY, {
-                waitForArrival: true,
-                timeoutMs: 1200,
+              void animateAgentCursor(tabId, targetX, targetY, {
+                waitForArrival: false,
               });
-              if (item.type === 'click') {
+              if (
+                item.type === 'click' ||
+                item.type === 'double_click' ||
+                item.type === 'right_click'
+              ) {
                 void animateAgentCursorClick(tabId, targetX, targetY);
               }
               await cdpSessionManager.withSession(tabId, 'batch-actions-mouse', async () => {
@@ -277,6 +282,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     x: targetX,
                     y: targetY,
                     button: 'left',
+                    buttons: 1,
                     clickCount: 1,
                   });
                   await new Promise((r) => setTimeout(r, 35));
@@ -285,18 +291,71 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     x: targetX,
                     y: targetY,
                     button: 'left',
+                    buttons: 0,
                     clickCount: 1,
                   });
+                } else if (item.type === 'double_click') {
+                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mousePressed',
+                    x: targetX,
+                    y: targetY,
+                    button: 'left',
+                    buttons: 1,
+                    clickCount: 1,
+                  });
+                  await new Promise((r) => setTimeout(r, 35));
+                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mouseReleased',
+                    x: targetX,
+                    y: targetY,
+                    button: 'left',
+                    buttons: 0,
+                    clickCount: 1,
+                  });
+                  await new Promise((r) => setTimeout(r, 40));
+                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mousePressed',
+                    x: targetX,
+                    y: targetY,
+                    button: 'left',
+                    buttons: 1,
+                    clickCount: 2,
+                  });
+                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mouseReleased',
+                    x: targetX,
+                    y: targetY,
+                    button: 'left',
+                    buttons: 0,
+                    clickCount: 2,
+                  });
+                } else if (item.type === 'right_click') {
+                  try {
+                    if (typeof item.index === 'number' && item.index > 0) {
+                      await executeInPage({ tabId }, 'inPageInteractIndex', [
+                        item.index,
+                        'right_click',
+                      ]);
+                    } else {
+                      await executeInPage({ tabId }, 'inPageDispatchSyntheticClick', [
+                        null,
+                        targetX,
+                        targetY,
+                        'right_click',
+                      ]);
+                    }
+                  } catch {}
                 }
               });
 
               stepOutput = {
                 x: targetX,
                 y: targetY,
-                [item.type === 'click' ? 'clicked' : 'hovered']: true,
+                action: item.type,
+                [item.type]: true,
                 tagName: loc.tagName,
                 text: loc.text,
-                isTrusted: true,
+                isTrusted: item.type !== 'right_click',
               };
               break;
             }
@@ -337,6 +396,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     y: loc.y,
                     value: loc.value,
                     tagName: loc.tagName,
+                    inputType: loc.inputType,
                   };
                   targetFrameId = loc.frameId ?? 0;
                 }
@@ -361,8 +421,22 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                   }
                 }
 
+                const isSpecialWidget =
+                  loc.tagName === 'select' ||
+                  loc.inputType === 'color' ||
+                  loc.inputType === 'date' ||
+                  loc.inputType === 'range' ||
+                  loc.inputType === 'time' ||
+                  loc.inputType === 'datetime-local' ||
+                  loc.inputType === 'month' ||
+                  loc.inputType === 'week' ||
+                  loc.inputType === 'checkbox' ||
+                  loc.inputType === 'radio' ||
+                  loc.inputType === 'file';
+
                 if (
                   !isCrossOriginSubframe &&
+                  !isSpecialWidget &&
                   coords?.success &&
                   typeof coords.x === 'number' &&
                   typeof coords.y === 'number'
@@ -383,6 +457,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                       x: targetX,
                       y: targetY,
                       button: 'left',
+                      buttons: 1,
                       clickCount: 1,
                     });
                     await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
@@ -390,6 +465,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                       x: targetX,
                       y: targetY,
                       button: 'left',
+                      buttons: 0,
                       clickCount: 1,
                     });
 
@@ -480,17 +556,73 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     func: (sel: string, val: string, shouldClear: boolean) => {
                       const el = document.querySelector(sel);
                       if (!el) return { success: false, error: `Selector "${sel}" not found` };
-                      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+                      if (typeof (el as HTMLElement).focus === 'function')
+                        (el as HTMLElement).focus();
+
+                      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                        window.HTMLInputElement?.prototype || {},
+                        'value',
+                      )?.set;
+                      const nativeCheckboxSetter = Object.getOwnPropertyDescriptor(
+                        window.HTMLInputElement?.prototype || {},
+                        'checked',
+                      )?.set;
+                      const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
+                        window.HTMLTextAreaElement?.prototype || {},
+                        'value',
+                      )?.set;
+
+                      if (
+                        el instanceof HTMLInputElement &&
+                        (el.type === 'checkbox' || el.type === 'radio')
+                      ) {
+                        const isTruthy =
+                          val === 'true' ||
+                          val === '1' ||
+                          val === 'checked' ||
+                          val === 'on' ||
+                          (val !== 'false' && val !== '0' && val !== 'off' && Boolean(val));
+                        if (nativeCheckboxSetter) {
+                          nativeCheckboxSetter.call(el, isTruthy);
+                        } else {
+                          el.checked = isTruthy;
+                        }
+                      } else if (el instanceof HTMLInputElement && nativeInputValueSetter) {
+                        if (shouldClear) nativeInputValueSetter.call(el, '');
+                        nativeInputValueSetter.call(el, val);
+                      } else if (el instanceof HTMLTextAreaElement && nativeTextAreaValueSetter) {
+                        if (shouldClear) nativeTextAreaValueSetter.call(el, '');
+                        nativeTextAreaValueSetter.call(el, val);
+                      } else if (el instanceof HTMLSelectElement) {
+                        let matched = false;
+                        for (const opt of Array.from(el.options)) {
+                          if (
+                            opt.value === val ||
+                            opt.text === val ||
+                            opt.text.trim() === val.trim()
+                          ) {
+                            el.value = opt.value;
+                            matched = true;
+                            break;
+                          }
+                        }
+                        if (!matched) el.value = val;
+                      } else if (
+                        el instanceof HTMLInputElement ||
+                        el instanceof HTMLTextAreaElement
+                      ) {
                         if (shouldClear) el.value = '';
                         el.value = val;
-                        el.dispatchEvent(new Event('input', { bubbles: true }));
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
-                        return { success: true, filledText: val };
+                      } else if ((el as HTMLElement).isContentEditable) {
+                        if (shouldClear) (el as HTMLElement).innerText = '';
+                        (el as HTMLElement).innerText = val;
+                      } else {
+                        (el as any).value = val;
                       }
-                      return {
-                        success: false,
-                        error: `Element matching "${sel}" is not an input or textarea`,
-                      };
+
+                      el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                      el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                      return { success: true, filledText: val };
                     },
                     args: [item.selector, text, item.clear !== false],
                   });
@@ -533,6 +665,46 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     });
                     continue;
                   }
+
+                  const textVal = String(field.value ?? field.text ?? '');
+                  const isSpecial =
+                    loc.tagName === 'select' ||
+                    loc.inputType === 'color' ||
+                    loc.inputType === 'date' ||
+                    loc.inputType === 'range' ||
+                    loc.inputType === 'time' ||
+                    loc.inputType === 'datetime-local' ||
+                    loc.inputType === 'month' ||
+                    loc.inputType === 'week' ||
+                    loc.inputType === 'checkbox' ||
+                    loc.inputType === 'radio' ||
+                    loc.inputType === 'file';
+
+                  if (isSpecial) {
+                    const targetRef = field.ref ?? field.index;
+                    const targetIndex =
+                      typeof targetRef === 'number'
+                        ? targetRef
+                        : typeof targetRef === 'string' && /^\d+$/.test(targetRef)
+                          ? parseInt(targetRef, 10)
+                          : undefined;
+                    let outcome: any;
+                    if (typeof targetIndex === 'number' && targetIndex > 0) {
+                      const res = await executeInPage(
+                        loc.frameId ? { tabId, frameIds: [loc.frameId] } : { tabId },
+                        'inPageFillIndex',
+                        [targetIndex, textVal, field.clear !== false],
+                      );
+                      outcome = res?.[0]?.result;
+                    }
+                    fillFormResults.push({
+                      fieldIndex: f,
+                      success: outcome?.success !== false,
+                      resolutionPath: loc.resolutionPath,
+                    });
+                    continue;
+                  }
+
                   await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
                     type: 'mouseMoved',
                     x: loc.x,
@@ -543,6 +715,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     x: loc.x,
                     y: loc.y,
                     button: 'left',
+                    buttons: 1,
                     clickCount: 1,
                   });
                   await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
@@ -550,6 +723,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     x: loc.x,
                     y: loc.y,
                     button: 'left',
+                    buttons: 0,
                     clickCount: 1,
                   });
 
@@ -582,7 +756,6 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     });
                   }
 
-                  const textVal = String(field.value ?? field.text ?? '');
                   if (textVal.length > 0) {
                     await raceCdpBatch(tabId, 'Input.insertText', {
                       text: textVal,

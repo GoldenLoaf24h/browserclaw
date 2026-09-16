@@ -93,6 +93,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
       };
 
       let currentIndex = (mergedData.indexedElements?.length || 0) + 1;
+      let currentAssetIndex = (mergedData.assets?.length || 0) + 1;
       const subframeLines: string[] = [];
 
       for (const r of results) {
@@ -145,12 +146,14 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
             console.warn(`Failed to synchronize subframe ${r.frameId} index map:`, reindexErr);
           }
         }
-        if (subData.assets && subData.assets.length > 0 && mergedData.assets) {
+        if (subData.assets && subData.assets.length > 0) {
+          if (!mergedData.assets) mergedData.assets = [];
           // Subframe asset geometry is viewport-local to that frame; tag them
-          // with frameId so downstream crop/fetch can resolve the right frame.
+          // with frameId and remapped index so downstream crop/fetch can resolve without collision.
           for (const a of subData.assets) {
             mergedData.assets.push({
               ...a,
+              index: currentAssetIndex++,
               src: a.src ? `${a.src}#@frame=${r.frameId}` : undefined,
             });
           }

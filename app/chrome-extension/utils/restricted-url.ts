@@ -15,6 +15,10 @@ export function isCloudMetadataUrl(url: string | undefined | null): boolean {
     const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
     return (
       h === '169.254.169.254' ||
+      h === '169.254.169.253' ||
+      h === '100.100.100.200' ||
+      h === '169.254.0.2' ||
+      h === 'instance-data' ||
       h === 'metadata.google.internal' ||
       h === 'metadata.internal' ||
       h.endsWith('.metadata.google.internal') ||
@@ -30,7 +34,11 @@ export function isRestrictedChromeUrl(url: string | undefined | null): boolean {
   return (
     url.startsWith('chrome://') ||
     url.startsWith('edge://') ||
+    url.startsWith('devtools://') ||
+    url.startsWith('chrome-extension://') ||
+    url.startsWith('view-source:') ||
     url.startsWith('https://chrome.google.com/webstore') ||
+    url.startsWith('https://chromewebstore.google.com') ||
     url.startsWith('https://microsoftedge.microsoft.com/') ||
     isCloudMetadataUrl(url)
   );
@@ -38,9 +46,16 @@ export function isRestrictedChromeUrl(url: string | undefined | null): boolean {
 
 export function restrictedUrlErrorMessage(url: string | undefined | null): string {
   if (isCloudMetadataUrl(url)) {
-    return 'Security Restriction: Navigation or requests to cloud instance metadata service (' + (url || 'unknown URL') + ') are strictly forbidden.';
+    return (
+      'Security Restriction: Navigation or requests to cloud instance metadata service (' +
+      (url || 'unknown URL') +
+      ') are strictly forbidden.'
+    );
   }
-  return 'Cannot operate on this browser internal page or web store page due to security restrictions: ' + (url || 'unknown URL');
+  return (
+    'Cannot operate on this browser internal page or web store page due to security restrictions: ' +
+    (url || 'unknown URL')
+  );
 }
 
 /**

@@ -445,6 +445,19 @@ class CDPSessionManager {
     });
   }
 
+  private async restoreActiveDomains(tabId: number): Promise<void> {
+    await this.enablePageDomain(tabId).catch(() => {});
+    await this.enableNetworkDomain(tabId).catch(() => {});
+    const activeDomains = this.domainRefCounts.get(tabId);
+    if (activeDomains) {
+      for (const [domain, count] of activeDomains.entries()) {
+        if (count > 0 && domain !== 'Page' && domain !== 'Network') {
+          await this.sendDebuggerCommand(tabId, `${domain}.enable`, {}, 3000).catch(() => {});
+        }
+      }
+    }
+  }
+
   /**
    * Send a CDP command. Requires that this manager has attached to the tab.
    * If not attached by us, will attempt a one-shot attach around the call.
@@ -492,8 +505,7 @@ class CDPSessionManager {
                   owners: originalState?.owners || new Set(['reconnected']),
                   attachedByUs: true,
                 });
-                await this.enablePageDomain(tabId);
-                await this.enableNetworkDomain(tabId);
+                await this.restoreActiveDomains(tabId);
                 return true;
               }
               return false; // attached by another client
@@ -518,8 +530,7 @@ class CDPSessionManager {
           await chrome.debugger
             .sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: true })
             .catch(() => {});
-          await this.enablePageDomain(tabId);
-          await this.enableNetworkDomain(tabId);
+          await this.restoreActiveDomains(tabId);
           return true;
         } catch (reconnectErr) {
           console.warn(`[CDPSessionManager] Auto-reconnect failed for tab ${tabId}:`, reconnectErr);

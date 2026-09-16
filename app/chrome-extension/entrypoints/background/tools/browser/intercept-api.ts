@@ -21,6 +21,26 @@ interface CapturedApiResponse {
   data: any;
 }
 
+export function decodeBase64Utf8(base64Str: string): string {
+  try {
+    if (typeof Buffer !== 'undefined') {
+      return Buffer.from(base64Str, 'base64').toString('utf-8');
+    }
+    const binStr = atob(base64Str);
+    const bytes = new Uint8Array(binStr.length);
+    for (let i = 0; i < binStr.length; i++) {
+      bytes[i] = binStr.charCodeAt(i);
+    }
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch {
+    try {
+      return atob(base64Str);
+    } catch {
+      return base64Str;
+    }
+  }
+}
+
 class ApiInterceptorStore {
   private recentResponses = new Map<number, CapturedApiResponse[]>();
 
@@ -135,7 +155,7 @@ export class InterceptApiTool extends BaseBrowserToolExecutor {
                 let decoded = bodyObj?.body || '';
                 if (bodyObj?.base64Encoded) {
                   try {
-                    decoded = atob(decoded);
+                    decoded = decodeBase64Utf8(decoded);
                   } catch {}
                 }
                 let parsed: any = decoded;

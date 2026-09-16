@@ -101,6 +101,11 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           (coords as any)?.inputType === 'range' ||
           (coords as any)?.inputType === 'time' ||
           (coords as any)?.inputType === 'datetime-local' ||
+          (coords as any)?.inputType === 'month' ||
+          (coords as any)?.inputType === 'week' ||
+          (coords as any)?.inputType === 'checkbox' ||
+          (coords as any)?.inputType === 'radio' ||
+          (coords as any)?.inputType === 'file' ||
           coords?.tagName === 'select';
 
         if (

@@ -298,9 +298,9 @@ Wait for a browser download and return details (id, filename, url, state, size)
 
 ### `chrome_batch_actions`
 
-Execute a sequential pipeline of browser actions with static and runtime page-drift guards and partial failure reporting.
+Execute a sequential pipeline of browser actions with static and runtime page-drift guards and partial failure reporting. Supports `click`, `double_click`, `right_click`, `fill`, `hover`, `scroll`, `press_key`, `wait`, `fill_form`, `assert`, and `extract`.
 
-- `actions`（必填） — List of actions to execute sequentially
+- `actions`（必填） — List of actions to execute sequentially (supports `click`, `double_click`, `right_click`, `fill`, `hover`, `scroll`, `press_key`, `wait`, `fill_form`, `assert`, `extract`)
 - `tabId` — Target tab ID (optional)
 - `windowId` — Target window ID (optional)
 - `waitForSettle` — Wait for DOM mutations to settle after all actions before returning (default: false)

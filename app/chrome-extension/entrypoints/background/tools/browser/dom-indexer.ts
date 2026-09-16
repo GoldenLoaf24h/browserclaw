@@ -248,8 +248,18 @@ function selfHealInShadowRoots(root: Node, fp: ElementFingerprint): Element | nu
   const shadow = getShadowRoot(root);
   if (shadow) {
     if (fp.id) {
-      const found = shadow.querySelector('#' + CSS.escape(fp.id));
+      const escapeId =
+        typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+          ? CSS.escape(fp.id)
+          : fp.id.replace(/([ #;?%&,.+*~':"!^$[\]()=>|/@])/g, '\\$1');
+      const found = shadow.querySelector('#' + escapeId);
       if (found && found.tagName.toLowerCase() === fp.tag) return found;
+    }
+    if (fp.ariaLabel) {
+      const found = shadow.querySelector(
+        fp.tag + '[aria-label=' + JSON.stringify(fp.ariaLabel) + ']',
+      );
+      if (found) return found;
     }
     if (fp.placeholder) {
       const found = shadow.querySelector(
@@ -289,6 +299,12 @@ function selfHealFindElement(fp: ElementFingerprint): Element | null {
     const byTestId = document.querySelector('[data-testid=' + JSON.stringify(fp.testId) + ']');
     if (byTestId && byTestId.tagName.toLowerCase() === fp.tag) return byTestId;
   }
+  if (fp.ariaLabel) {
+    const byAria = document.querySelector(
+      fp.tag + '[aria-label=' + JSON.stringify(fp.ariaLabel) + ']',
+    );
+    if (byAria) return byAria;
+  }
   if (fp.name) {
     const byName = document.querySelector(fp.tag + '[name=' + JSON.stringify(fp.name) + ']');
     if (byName) return byName;
@@ -299,7 +315,8 @@ function selfHealFindElement(fp: ElementFingerprint): Element | null {
     );
     if (byPl) return byPl;
   }
-  return selfHealInShadowRoots(document.body, fp);
+  const searchRoot = document.body || document.documentElement || null;
+  return searchRoot ? selfHealInShadowRoots(searchRoot, fp) : null;
 }
 
 export function findIndexedElement(index: number): Element | null {
@@ -1082,6 +1099,36 @@ export function inPageDOMPruner(options?: {
     return false;
   }
 
+  // Visual assets (img/canvas/video/CSS background images) with viewport
+  // geometry, so the agent can request an individual asset by index.
+  const assets: PageAsset[] = [];
+  const assetRegistry: Array<{ kind: string; el: Element; src?: string }> = [];
+  let assetSeq = 0;
+  const pushAsset = (
+    kind: PageAsset['kind'],
+    el: Element,
+    rect: DOMRect,
+    src?: string,
+    alt?: string,
+  ) => {
+    if (rect.width < 8 || rect.height < 8) return;
+    if (rect.bottom < 0 || rect.right < 0 || rect.top > winHeight || rect.left > winWidth) return;
+    assetSeq += 1;
+    assetRegistry.push({ kind, el, src });
+    assets.push({
+      index: assetSeq,
+      kind,
+      rect: {
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      },
+      ...(src ? { src } : {}),
+      ...(alt ? { alt } : {}),
+    });
+  };
+
   function traverse(
     node: Element,
     propagatingParentRect?: DOMRect | null,
@@ -1130,12 +1177,32 @@ export function inPageDOMPruner(options?: {
 
     const style = window.getComputedStyle(node);
     const rect = node.getBoundingClientRect();
+    const isZeroSize = rect.width <= 0 || rect.height <= 0;
 
     if (!isFile) {
       if (style.display === 'none' || style.visibility === 'hidden') return;
       if (parseFloat(style.opacity || '1') <= 0) return;
-      if (rect.width === 0 && rect.height === 0) return;
-      if (rect.top > winHeight + threshold || rect.bottom < -threshold) return;
+      if (isZeroSize) {
+        if (node.children.length === 0 && !getShadowRoot(node)) return;
+      } else {
+        if (rect.top > winHeight + threshold || rect.bottom < -threshold) return;
+      }
+    }
+
+    // Inline visual asset detection during the single traverse pass (eliminates secondary querySelectorAll thrashing)
+    if (!isZeroSize) {
+      if (tag === 'img') {
+        const img = node as HTMLImageElement;
+        pushAsset('img', img, rect, img.currentSrc || img.src || undefined, img.alt || undefined);
+      } else if (tag === 'canvas' || tag === 'video') {
+        pushAsset(tag as 'canvas' | 'video', node, rect);
+      } else if (assets.length < 40) {
+        const bg = style.backgroundImage;
+        if (bg && bg !== 'none') {
+          const m = /url\(["']?([^"')]+)["']?\)/.exec(bg);
+          if (m) pushAsset('bg-image', node, rect, m[1]);
+        }
+      }
     }
 
     const currentHasPointer = style.cursor === 'pointer';
@@ -1172,7 +1239,7 @@ export function inPageDOMPruner(options?: {
 
     const hasInfoText =
       informational && Boolean(((node as HTMLElement).innerText || node.textContent || '').trim());
-    if (interactive || isFile || (informational && hasInfoText)) {
+    if (!isZeroSize && (interactive || isFile || (informational && hasInfoText))) {
       candidates.push({
         node,
         tag,
@@ -1184,7 +1251,9 @@ export function inPageDOMPruner(options?: {
     }
 
     const nextPropagatingRect =
-      interactive && (tag === 'button' || tag === 'a') ? rect : propagatingParentRect;
+      !isZeroSize && interactive && (tag === 'button' || tag === 'a')
+        ? rect
+        : propagatingParentRect;
     const nextPointer = currentHasPointer || parentHasPointer;
 
     // Traverse standard children
@@ -1498,60 +1567,6 @@ export function inPageDOMPruner(options?: {
     totalOriginalNodes > 0
       ? Number(((totalOriginalNodes - prunedElementCount) / totalOriginalNodes).toFixed(4))
       : 0;
-
-  // Visual assets (img/canvas/video/CSS background images) with viewport
-  // geometry, so the agent can request an individual asset by index.
-  const assets: PageAsset[] = [];
-  const assetRegistry: Array<{ kind: string; el: Element; src?: string }> = [];
-  let assetSeq = 0;
-  const pushAsset = (
-    kind: PageAsset['kind'],
-    el: Element,
-    rect: DOMRect,
-    src?: string,
-    alt?: string,
-  ) => {
-    if (rect.width < 8 || rect.height < 8) return;
-    if (rect.bottom < 0 || rect.right < 0 || rect.top > winHeight || rect.left > winWidth) return;
-    assetSeq += 1;
-    assetRegistry.push({ kind, el, src });
-    assets.push({
-      index: assetSeq,
-      kind,
-      rect: {
-        x: Math.round(rect.left),
-        y: Math.round(rect.top),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-      },
-      ...(src ? { src } : {}),
-      ...(alt ? { alt } : {}),
-    });
-  };
-  try {
-    document.querySelectorAll('img').forEach((img) => {
-      pushAsset(
-        'img',
-        img,
-        img.getBoundingClientRect(),
-        img.currentSrc || img.src || undefined,
-        img.alt || undefined,
-      );
-    });
-    document.querySelectorAll('canvas, video').forEach((el) => {
-      pushAsset(el.tagName.toLowerCase() as 'canvas' | 'video', el, el.getBoundingClientRect());
-    });
-    document.querySelectorAll('*').forEach((el) => {
-      if (assets.length >= 40) return;
-      const tag = el.tagName?.toLowerCase();
-      if (tag === 'img' || tag === 'canvas' || tag === 'video') return;
-      const bg = window.getComputedStyle(el).backgroundImage;
-      const m = bg && bg !== 'none' ? /url\(["']?([^"')]+)["']?\)/.exec(bg) : null;
-      if (m) pushAsset('bg-image', el, el.getBoundingClientRect(), m[1]);
-    });
-  } catch {
-    // Asset collection must never break read_dom
-  }
 
   const treeLines = indexedElements.map((el) => {
     if (outputFormat === 'html') {
@@ -2477,10 +2492,27 @@ export function inPageInteractIndex(
  * Fill input or textarea by 1-based index inside active tab.
  */
 export function inPageFillIndex(
-  index: number,
+  refOrIndex: number | string,
   textToFill: string,
   clear = true,
 ): { success: boolean; index: number; tagName?: string; filledText?: string; error?: string } {
+  let index: number;
+  if (typeof refOrIndex === 'string') {
+    const parsed = refOrIndex.startsWith('ref_')
+      ? parseInt(refOrIndex.slice(4), 10)
+      : parseInt(refOrIndex, 10);
+    if (isNaN(parsed)) {
+      return {
+        success: false,
+        index: 0,
+        error: `Invalid index or ref format: ${refOrIndex}`,
+      };
+    }
+    index = parsed;
+  } else {
+    index = refOrIndex;
+  }
+
   if (index <= 0) {
     return {
       success: false,
@@ -2510,12 +2542,28 @@ export function inPageFillIndex(
     window.HTMLInputElement?.prototype || {},
     'value',
   )?.set;
+  const nativeCheckboxSetter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement?.prototype || {},
+    'checked',
+  )?.set;
   const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
     window.HTMLTextAreaElement?.prototype || {},
     'value',
   )?.set;
 
-  if (el instanceof HTMLInputElement && nativeInputValueSetter) {
+  if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
+    const isTruthy =
+      textToFill === 'true' ||
+      textToFill === '1' ||
+      textToFill === 'checked' ||
+      textToFill === 'on' ||
+      (textToFill !== 'false' && textToFill !== '0' && textToFill !== 'off' && Boolean(textToFill));
+    if (nativeCheckboxSetter) {
+      nativeCheckboxSetter.call(el, isTruthy);
+    } else {
+      el.checked = isTruthy;
+    }
+  } else if (el instanceof HTMLInputElement && nativeInputValueSetter) {
     if (clear) nativeInputValueSetter.call(el, '');
     nativeInputValueSetter.call(el, textToFill);
   } else if (el instanceof HTMLTextAreaElement && nativeTextAreaValueSetter) {
@@ -2588,6 +2636,7 @@ export function inPageExtractMarkdown(includeLinks = true, fit = false): string 
   // fit 模式：crawl4ai 式启发降噪（chrome fit-markdown 的浏览器内等价物）。
   // 只删结构性噪声，不做 BM25/评分——agent 自己会过滤内容。
   let fitRoot: ParentNode = document;
+  const fitNoise = new Set<Element>();
   if (fit) {
     try {
       const main = document.querySelector('article, main, [role=main], #content, .content');
@@ -2596,15 +2645,8 @@ export function inPageExtractMarkdown(includeLinks = true, fit = false): string 
       const noise = fitRoot.querySelectorAll(
         'nav, header, footer, aside, form, [role=navigation], [role=banner], [role=contentinfo], [aria-hidden=true]',
       );
-      const detached: Element[] = [];
-      noise.forEach((el) => detached.push(el));
-      // Mark instead of mutate: serializer checks a set
-      (window as any).__mcpFitNoise__ = new Set(detached);
-    } catch {
-      (window as any).__mcpFitNoise__ = new Set();
-    }
-  } else {
-    (window as any).__mcpFitNoise__ = new Set();
+      noise.forEach((el) => fitNoise.add(el));
+    } catch {}
   }
 
   function serializeChildren(node: Node): string {
@@ -2627,12 +2669,7 @@ export function inPageExtractMarkdown(includeLinks = true, fit = false): string 
     const el = node as Element;
     const tag = el.tagName.toLowerCase();
     if (droppedTags.has(tag)) return '';
-    const fitNoise = (window as any).__mcpFitNoise__ as Set<Element> | undefined;
-    if (fitNoise && fitNoise.size > 0) {
-      for (const n of fitNoise) {
-        if (el === n || n.contains(el)) return '';
-      }
-    }
+    if (fitNoise.size > 0 && fitNoise.has(el)) return '';
     if (!isVisible(el)) return '';
 
     // Handle image elements
@@ -3515,18 +3552,42 @@ export function inPageCheckCaptcha(): { detected: boolean; type?: string } {
       '.tcaptcha-transform',
       'iframe[src*="captcha"]',
       'iframe[src*="recaptcha"]',
+      'iframe[src*="hcaptcha"]',
+      'iframe[src*="turnstile"]',
+      'iframe[src*="challenges.cloudflare.com"]',
+      'iframe[src*="arkoselabs"]',
+      'iframe[src*="funcaptcha"]',
+      '.cf-turnstile',
+      '#cf-turnstile',
+      'div[class*="cf-turnstile" i]',
+      '.h-captcha',
+      '#hcaptcha',
+      'div[class*="hcaptcha" i]',
+      '#arkose',
+      'div[id*="arkose" i]',
+      'div[class*="arkose" i]',
+      'div[id*="aws-waf" i]',
+      'div[class*="aws-waf" i]',
       'div[class*="captcha" i]',
       'div[id*="captcha" i]',
       '.slider-verify',
       '.slide-verify',
       '[data-testid*="captcha" i]',
+      '[data-testid*="turnstile" i]',
     ];
     for (const sel of captchaSelectors) {
-      const el = document.querySelector(sel);
-      if (el && el instanceof HTMLElement) {
-        const style = window.getComputedStyle(el);
-        if (style.display !== 'none' && style.visibility !== 'hidden' && el.offsetWidth > 0) {
-          return { detected: true, type: sel };
+      const els = document.querySelectorAll(sel);
+      for (const el of Array.from(els)) {
+        if (el && el instanceof HTMLElement) {
+          const style = window.getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          if (
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            (el.offsetWidth > 0 || el.offsetHeight > 0 || rect.width > 0 || rect.height > 0)
+          ) {
+            return { detected: true, type: sel };
+          }
         }
       }
     }

@@ -44,6 +44,15 @@ export const MCP_INPAGE_HELPERS = `const mcp = (() => {
     if (typeof t === 'number') {
       const fromMap = deref(getMap().get(t));
       if (fromMap && (fromMap.isConnected !== false)) return fromMap;
+      const fpMap = typeof globalThis !== 'undefined' && globalThis[Symbol.for('__browser_use_index_fingerprint_map__')];
+      if (fpMap && fpMap.has(t)) {
+        const fp = fpMap.get(t);
+        if (fp?.id) { const byId = document.getElementById(fp.id); if (byId) return byId; }
+        if (fp?.testId) { const byTest = document.querySelector('[data-testid="' + fp.testId + '"]'); if (byTest) return byTest; }
+        if (fp?.ariaLabel) { const byAria = document.querySelector((fp.tag || '') + '[aria-label="' + fp.ariaLabel + '"]'); if (byAria) return byAria; }
+        if (fp?.name) { const byName = document.querySelector((fp.tag || '') + '[name="' + fp.name + '"]'); if (byName) return byName; }
+        if (fp?.placeholder) { const byPl = document.querySelector((fp.tag || '') + '[placeholder="' + fp.placeholder + '"]'); if (byPl) return byPl; }
+      }
       return document.querySelector(\`[data-mcp-idx="\${t}"]\`);
     }
     if (typeof t === 'string') {
@@ -51,6 +60,15 @@ export const MCP_INPAGE_HELPERS = `const mcp = (() => {
       if (!isNaN(p)) {
         const fromMap = deref(getMap().get(p));
         if (fromMap && (fromMap.isConnected !== false)) return fromMap;
+        const fpMap = typeof globalThis !== 'undefined' && globalThis[Symbol.for('__browser_use_index_fingerprint_map__')];
+        if (fpMap && fpMap.has(p)) {
+          const fp = fpMap.get(p);
+          if (fp?.id) { const byId = document.getElementById(fp.id); if (byId) return byId; }
+          if (fp?.testId) { const byTest = document.querySelector('[data-testid="' + fp.testId + '"]'); if (byTest) return byTest; }
+          if (fp?.ariaLabel) { const byAria = document.querySelector((fp.tag || '') + '[aria-label="' + fp.ariaLabel + '"]'); if (byAria) return byAria; }
+          if (fp?.name) { const byName = document.querySelector((fp.tag || '') + '[name="' + fp.name + '"]'); if (byName) return byName; }
+          if (fp?.placeholder) { const byPl = document.querySelector((fp.tag || '') + '[placeholder="' + fp.placeholder + '"]'); if (byPl) return byPl; }
+        }
         const fromAttr = document.querySelector(\`[data-mcp-idx="\${p}"]\`);
         if (fromAttr) return fromAttr;
       }

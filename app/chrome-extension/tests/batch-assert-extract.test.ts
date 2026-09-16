@@ -23,6 +23,17 @@ describe('Batch Actions Assert & Extract Pipeline', () => {
     expect(assertAction.expectedText).toBe('Success');
     expect(extractAction.type).toBe('extract');
     expect(extractAction.variableName).toBe('orderId');
+
+    const doubleClickAction: BatchActionItem = {
+      type: 'double_click',
+      index: 5,
+    };
+    const rightClickAction: BatchActionItem = {
+      type: 'right_click',
+      index: 6,
+    };
+    expect(doubleClickAction.type).toBe('double_click');
+    expect(rightClickAction.type).toBe('right_click');
   });
 
   it('verifies BatchActionResult includes extractedData and assertions', () => {
