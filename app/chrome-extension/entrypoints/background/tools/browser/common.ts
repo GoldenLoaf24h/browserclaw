@@ -430,7 +430,17 @@ class NavigateTool extends BaseBrowserToolExecutor {
       }
 
       // 2. If URL is not already open, decide how to open it based on options
-      const openInNewWindow = newWindow || typeof width === 'number' || typeof height === 'number';
+      let agentWindowPreference: string | undefined;
+      try {
+        const stored = await chrome.storage.local.get('agentWindowMode');
+        agentWindowPreference = stored?.agentWindowMode;
+      } catch {}
+
+      const openInNewWindow =
+        newWindow ||
+        agentWindowPreference === 'window' ||
+        typeof width === 'number' ||
+        typeof height === 'number';
 
       if (openInNewWindow) {
         console.log('Opening URL in a new window.');

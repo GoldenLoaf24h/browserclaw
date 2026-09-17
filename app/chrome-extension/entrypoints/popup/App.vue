@@ -4,6 +4,11 @@ import { ref, computed, onMounted } from 'vue';
 const agentEnabled = ref(true);
 const serverConnected = ref(false);
 const cursorMode = ref<'off' | 'auto' | 'always'>('always');
+const windowMode = ref<'tab' | 'window'>('tab');
+
+const windowModeLabel = computed(() => {
+  return windowMode.value === 'window' ? 'Window' : 'Tab';
+});
 
 const cursorModeLabel = computed(() => {
   if (cursorMode.value === 'off') return 'Off';
@@ -17,6 +22,15 @@ const setCursorMode = async (mode: 'off' | 'auto' | 'always') => {
     await chrome.storage.local.set({ agentCursorMode: mode });
   } catch (e) {
     console.error('Failed to save cursor mode:', e);
+  }
+};
+
+const setWindowMode = async (mode: 'tab' | 'window') => {
+  windowMode.value = mode;
+  try {
+    await chrome.storage.local.set({ agentWindowMode: mode });
+  } catch (e) {
+    console.error('Failed to save window mode:', e);
   }
 };
 
@@ -73,6 +87,17 @@ onMounted(async () => {
     }
   } catch {
     cursorMode.value = 'always';
+  }
+
+  try {
+    const localWin = await chrome.storage.local.get('agentWindowMode');
+    if (localWin.agentWindowMode) {
+      windowMode.value = localWin.agentWindowMode;
+    } else {
+      windowMode.value = 'tab';
+    }
+  } catch {
+    windowMode.value = 'tab';
   }
 
   await checkServerStatus();
@@ -135,6 +160,40 @@ onMounted(async () => {
           @click="setCursorMode('always')"
         >
           Always
+        </button>
+      </div>
+    </div>
+
+    <!-- Row 4: Window Mode (Tab vs Window) -->
+    <div class="cursor-row">
+      <div class="cursor-header">
+        <div class="label-with-tooltip">
+          <span class="label">Window Mode</span>
+          <span
+            class="info-icon"
+            title="Tab: Works quietly in color-grouped tabs in your current window.&#10;Window: Opens a separate dedicated OS window for agent tasks."
+            >i</span
+          >
+        </div>
+        <span class="badge">{{ windowModeLabel }}</span>
+      </div>
+      <div class="segmented-control two-step">
+        <div class="segment-indicator-two" :class="windowMode"></div>
+        <button
+          type="button"
+          class="segment-btn"
+          :class="{ active: windowMode === 'tab' }"
+          @click="setWindowMode('tab')"
+        >
+          Tab
+        </button>
+        <button
+          type="button"
+          class="segment-btn"
+          :class="{ active: windowMode === 'window' }"
+          @click="setWindowMode('window')"
+        >
+          Window
         </button>
       </div>
     </div>
@@ -277,6 +336,54 @@ onMounted(async () => {
 
 .segment-indicator.always {
   transform: translateX(200%);
+}
+
+.label-with-tooltip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  color: #4b5563;
+  font-size: 10px;
+  font-weight: 700;
+  font-style: italic;
+  cursor: help;
+  user-select: none;
+  line-height: 1;
+}
+
+.info-icon:hover {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.segmented-control.two-step .segment-indicator-two {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / 2);
+  background: #ffffff;
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.segment-indicator-two.tab {
+  transform: translateX(0%);
+}
+
+.segment-indicator-two.window {
+  transform: translateX(100%);
 }
 
 .segment-btn {

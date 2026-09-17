@@ -43,6 +43,13 @@ class CDPSessionManager {
               defaultPrompt: String(params?.defaultPrompt || ''),
               openedAtMs: Date.now(),
             });
+            // Auto-accept alert/confirm/prompt to prevent hanging CDP execution while keeping dialog details recorded
+            chrome.debugger
+              .sendCommand({ tabId }, 'Page.handleJavaScriptDialog', {
+                accept: true,
+                promptText: params?.defaultPrompt,
+              })
+              .catch(() => {});
           } else if (method === 'Page.javascriptDialogClosed') {
             this.dialogStates.delete(tabId);
           } else if (method === 'Network.requestWillBeSent') {

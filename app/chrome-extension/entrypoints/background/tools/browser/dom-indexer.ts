@@ -1588,31 +1588,105 @@ export function inPageDOMPruner(options?: {
 
   let activeModal: string | undefined = undefined;
   let focusTrapped = false;
+  let blockingLayerKind: 'modal' | 'mask' | undefined = undefined;
+
   try {
-    const dialogs = Array.from(
+    const vpWidth = window.innerWidth || document.documentElement?.clientWidth || 1280;
+    const vpHeight = window.innerHeight || document.documentElement?.clientHeight || 800;
+    const vpArea = vpWidth * vpHeight;
+
+    const positionedCandidates = Array.from(
       document.querySelectorAll(
-        'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]',
+        'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"], div, section, aside',
       ),
     ) as HTMLElement[];
-    for (const d of dialogs) {
-      const isAriaHidden = d.getAttribute('aria-hidden') === 'true';
-      const isOpenAttr =
-        d.tagName.toLowerCase() === 'dialog' ? (d as HTMLDialogElement).open : true;
-      if (!isAriaHidden && isOpenAttr) {
-        let isVis = false;
-        try {
-          const style = window.getComputedStyle(d);
-          isVis = style.display !== 'none' && style.visibility !== 'hidden' && d.offsetWidth > 0;
-        } catch {}
-        if (isVis) {
-          focusTrapped = true;
-          const tag = d.tagName.toLowerCase();
-          const id = d.id ? `#${d.id}` : '';
-          const name =
-            d.getAttribute('aria-label') ||
-            d.querySelector('h1, h2, h3, [role="heading"]')?.textContent?.trim()?.slice(0, 40);
-          activeModal = name ? `${tag}${id} "${name}"` : `${tag}${id || '.modal'}`;
-          break;
+
+    let topBlocker: {
+      el: HTMLElement;
+      coverage: number;
+      kind: 'modal' | 'mask';
+      name?: string;
+    } | null = null;
+
+    for (const d of positionedCandidates) {
+      if (!d || d.getAttribute('aria-hidden') === 'true') continue;
+      const style = window.getComputedStyle(d);
+      if (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        style.pointerEvents === 'none'
+      )
+        continue;
+      const pos = style.position;
+      const isPositioned = pos === 'fixed' || pos === 'absolute' || pos === 'sticky';
+      const isDialogRole =
+        d.tagName.toLowerCase() === 'dialog' ||
+        d.getAttribute('role') === 'dialog' ||
+        d.getAttribute('role') === 'alertdialog' ||
+        d.getAttribute('aria-modal') === 'true';
+
+      if (!isPositioned && !isDialogRole) continue;
+
+      const rect = d.getBoundingClientRect();
+      const ix = Math.max(0, Math.min(rect.right, vpWidth) - Math.max(rect.left, 0));
+      const iy = Math.max(0, Math.min(rect.bottom, vpHeight) - Math.max(rect.top, 0));
+      const cov = vpArea > 0 ? (ix * iy) / vpArea : 0;
+
+      const qualifies = cov >= 0.6 || (isDialogRole && cov >= 0.12);
+      if (!qualifies) continue;
+
+      const hasInputs = !!d.querySelector('input, textarea, select, button, a');
+      const kind: 'modal' | 'mask' =
+        isDialogRole || hasInputs ? 'modal' : cov >= 0.85 ? 'mask' : 'modal';
+
+      const tag = d.tagName.toLowerCase();
+      const id = d.id ? `#${d.id}` : '';
+      const name =
+        d.getAttribute('aria-label') ||
+        d.querySelector('h1, h2, h3, [role="heading"]')?.textContent?.trim()?.slice(0, 40);
+      const desc = name
+        ? `${tag}${id} "${name}"`
+        : `${tag}${id || (kind === 'mask' ? '.mask' : '.modal')}`;
+
+      if (!topBlocker || cov > topBlocker.coverage) {
+        topBlocker = { el: d, coverage: cov, kind, name: desc };
+      }
+    }
+
+    if (topBlocker) {
+      focusTrapped = true;
+      blockingLayerKind = topBlocker.kind;
+      activeModal = topBlocker.name;
+    }
+  } catch {}
+
+  try {
+    if (!activeModal) {
+      const dialogs = Array.from(
+        document.querySelectorAll(
+          'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]',
+        ),
+      ) as HTMLElement[];
+      for (const d of dialogs) {
+        const isAriaHidden = d.getAttribute('aria-hidden') === 'true';
+        const isOpenAttr =
+          d.tagName.toLowerCase() === 'dialog' ? (d as HTMLDialogElement).open : true;
+        if (!isAriaHidden && isOpenAttr) {
+          let isVis = false;
+          try {
+            const style = window.getComputedStyle(d);
+            isVis = style.display !== 'none' && style.visibility !== 'hidden' && d.offsetWidth > 0;
+          } catch {}
+          if (isVis) {
+            focusTrapped = true;
+            const tag = d.tagName.toLowerCase();
+            const id = d.id ? `#${d.id}` : '';
+            const name =
+              d.getAttribute('aria-label') ||
+              d.querySelector('h1, h2, h3, [role="heading"]')?.textContent?.trim()?.slice(0, 40);
+            activeModal = name ? `${tag}${id} "${name}"` : `${tag}${id || '.modal'}`;
+            break;
+          }
         }
       }
     }
@@ -3513,7 +3587,15 @@ export function renderCompactElementLine(el: IndexedElement, frameId?: string | 
   if (el.attributes?.name) parts.push(`name="${el.attributes.name}"`);
   if (el.attributes?.placeholder) parts.push(`placeholder="${el.attributes.placeholder}"`);
   if (tag === 'a' && el.attributes?.href) parts.push(`href="${el.attributes.href}"`);
-  if (el.value !== undefined && el.value !== '') parts.push(`value="${el.value}"`);
+  if (el.value !== undefined && el.value !== '') {
+    const isSensitive =
+      inputType === 'password' ||
+      el.attributes?.name?.toLowerCase().includes('password') ||
+      el.attributes?.autocomplete?.toLowerCase().includes('password') ||
+      el.attributes?.autocomplete?.toLowerCase().includes('cc-');
+    const valDisplay = isSensitive ? '•••' : el.value;
+    parts.push(`value="${valDisplay}"`);
+  }
   if (el.attributes?.['visual-shape']) parts.push(`shape="${el.attributes['visual-shape']}"`);
 
   if (el.attributes?.required === 'true' || el.attributes?.required === '') parts.push('required');
