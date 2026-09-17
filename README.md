@@ -4,7 +4,7 @@
   <p><b>Take full control of everything in your own browser.</b></p>
   <p>
     <a href="./docs/MAP.md">🗺️ Project Map</a> ·
-    <a href="./docs/TOOLS.md">Tool Reference (52)</a> ·
+    <a href="./docs/TOOLS.md">Tool Reference (53)</a> ·
     <a href="./AGENT_CONFIG_GUIDE.md">Client Config</a> ·
     <a href="./README.zh-CN.md">📖 简体中文</a> ·
     <a href="https://github.com/GoldenLoaf24h/browserclaw/releases">Releases</a>
@@ -41,6 +41,9 @@ BrowserClaw is a high-performance Model Context Protocol (MCP) platform that giv
 - 🔍 **Targeted Grep (`chrome_grep`)**: Sub-100 token instant element and text search across large documents.
 - 🖱️ **Human-Grade Aesthetics**: 1:1 spring-kinematics virtual cursor overlay and dedicated tab groups lifecycle management.
 - 🛡️ **Zero-Jitter Session Retention**: 10-minute session-aware CDP retention eliminates infobar dropping and viewport accordion shifts.
+- 🪟 **Window Isolation Mode & Color Tab Groups**: Toggle between quiet in-window Tab Groups (with background focus emulation) or a fully dedicated OS Window where CDP infobars are strictly confined.
+- 🩺 **Instant Environment Doctor (chrome_doctor & CLI)**: One-command health checks for 12306 port connectivity, tokens, and browser settings.
+- 📁 **Site Playbook Recipes (skill/recipes/)**: Cache and persist proven DOM interaction pipelines for specific websites, cutting exploration tokens by 80%+.
 - 🌐 **Manage Everything in Your Real Browser**: Unlike conventional automation tools confined to throwaway headless bubbles, BrowserClaw gives your agent full, authenticated control to manage everything in your everyday local browser — active tabs, windows, cookies, browsing history, and bookmarks.
 
 ---
@@ -104,9 +107,9 @@ Every tool in the browser automation ecosystem has distinct architectural tradeo
 
 ---
 
-## 🛠️ Complete Tool Catalog (52 MCP Tools)
+## 🛠️ Complete Tool Catalog (53 MCP Tools)
 
-All 52 schema-validated tools are grouped into 6 logical categories below. **Click any category to expand its tool listing.**
+All 53 schema-validated tools are grouped into 6 logical categories below. **Click any category to expand its tool listing.**
 For machine-readable JSON schemas and detailed option flags, consult **[docs/TOOLS.md](./docs/TOOLS.md)**.
 
 <details>
@@ -188,7 +191,7 @@ For machine-readable JSON schemas and detailed option flags, consult **[docs/TOO
 </details>
 
 <details>
-<summary><b>🗂️ 6. Tab Groups, Bookmarks & Diagnostics (9 Tools)</b></summary>
+<summary><b>🗂️ 6. Tab Groups, Bookmarks & Diagnostics (10 Tools)</b></summary>
 
 <br/>
 
@@ -227,7 +230,7 @@ See **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** for detailed topology and
 ## 📚 Documentation Map
 
 - **[Project Map & Index](./docs/MAP.md)**: 🗺️ Master navigation hub, reading paths by role, and code topology.
-- **[Tool Reference](./docs/TOOLS.md)**: Auto-generated parameter dictionary for all 52 tools.
+- **[Tool Reference](./docs/TOOLS.md)**: Auto-generated parameter dictionary for all 53 tools.
 - **[Agent Integration Guide](./AGENT_CONFIG_GUIDE.md)**: 6 core interaction rules and client configurations.
 - **[Architecture Deep-Dive](./docs/ARCHITECTURE.md)**: Monorepo design, security boundaries, and ADR records.
 - **[Troubleshooting](./docs/TROUBLESHOOTING.md)**: Instant diagnosis checklist for connection or execution errors.
