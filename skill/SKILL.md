@@ -360,11 +360,32 @@ Reads localStorage, sessionStorage, and cookies for the current tab in one call:
 
 ## 5. Configuration & Self-Healing Diagnostics
 
-For complete client configuration files and self-repair diagnostics:
+For complete client configuration files, self-repair diagnostics, and version upgrades:
 
 - **Client Configs**: See [`config/mcp-config.json`](./config/mcp-config.json) for Claude Desktop, Cursor, Windsurf, Cline, Roo Code, and Antigravity.
-- **Diagnostic Tool**: Run `chrome_doctor or browserclaw doctor` to run a comprehensive health check on port `12306`, bridge token, Chrome extension connection, and Native Messaging Host registration.
+- **Diagnostic Tool**: Run `chrome_doctor` or `browserclaw doctor` to run a comprehensive health check on port `12306`, bridge token, Chrome extension connection, and Native Messaging Host registration.
 - **Troubleshooting Guide**: See [`config/TROUBLESHOOTING.md`](./config/TROUBLESHOOTING.md) for quick solutions to common connection or state issues.
+
+### 5.1 Extension & Native Host Upgrade Procedure
+
+When a user asks how to upgrade BrowserClaw, or when diagnosing outdated version mismatches:
+
+1. **GitHub Release Download (Direct)**:
+   - Download the latest `browserclaw-extension-vX.Y.Z.zip` from [Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest).
+   - Unzip and overwrite the existing unpacked extension folder.
+   - Open `chrome://extensions/` and click the **"Reload" (重新载入)** icon on the BrowserClaw card.
+
+2. **Source Code / Git Pull Upgrade**:
+   ```bash
+   git pull origin main
+   pnpm install
+   pnpm build
+   ```
+   - Then click the "Reload" icon in `chrome://extensions/` to reload the newly compiled extension output.
+
+3. **Verify Upgrade Success**:
+   - Run `browserclaw doctor` in the terminal or call `chrome_doctor {}` via MCP.
+   - Verify that all core components show `pass` and report the updated version.
 
 ---
 
