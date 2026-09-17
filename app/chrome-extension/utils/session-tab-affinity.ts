@@ -128,6 +128,38 @@ export class SessionTabAffinityManager {
     }
     return null;
   }
+
+  private queueMap = new Map<string, Promise<any>>();
+
+  /**
+   * Run an asynchronous operation sequentially for a given session or tab key.
+   * Ensures that concurrent actions (e.g. rapid posts/replies or fast batches)
+   * targeting the same tab or session do not overlap or race with each other.
+   */
+  public async runSerialized<T>(key: string | number, op: () => Promise<T>): Promise<T> {
+    const k = String(key);
+    const prev = this.queueMap.get(k) || Promise.resolve();
+    let currentResolve: () => void;
+    const currentPromise = new Promise<void>((resolve) => {
+      currentResolve = resolve;
+    });
+
+    const chained = prev
+      .catch(() => {})
+      .then(async () => {
+        try {
+          return await op();
+        } finally {
+          currentResolve!();
+          if (this.queueMap.get(k) === chained) {
+            this.queueMap.delete(k);
+          }
+        }
+      });
+
+    this.queueMap.set(k, chained);
+    return chained;
+  }
 }
 
 export const sessionTabAffinity = new SessionTabAffinityManager();

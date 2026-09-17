@@ -530,6 +530,38 @@ export function inPageScrollToIndex(index: number): boolean {
   if (!el || !(el instanceof Element)) return false;
   try {
     el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' as any });
+
+    // Secondary safety check: ensure element is not occluded by sticky top/bottom bars or within safe 80px viewport margins
+    const win = el.ownerDocument?.defaultView || window;
+    const vh = win.innerHeight || 800;
+    const margins = getStickyOcclusionMargins(win);
+    const elStyle = typeof win.getComputedStyle === 'function' ? win.getComputedStyle(el) : null;
+    const scrollMarginTop = parseFloat(elStyle?.scrollMarginTop || '0') || 0;
+    const scrollMarginBottom = parseFloat(elStyle?.scrollMarginBottom || '0') || 0;
+    const safeTop = Math.min(Math.max(margins.top, scrollMarginTop, 80), Math.round(vh * 0.35));
+    const safeBottom = Math.min(Math.max(margins.bottom, scrollMarginBottom, 80), Math.round(vh * 0.35));
+
+    try {
+      const r = el.getBoundingClientRect();
+      if (r.top < safeTop + 10) {
+        const delta = r.top - safeTop - 20;
+        win.scrollBy?.({ top: delta, behavior: 'instant' as any });
+        let anc = composedParent(el);
+        while (anc && anc !== win.document.body && anc !== win.document.documentElement) {
+          anc.scrollBy?.({ top: delta, behavior: 'instant' as any });
+          anc = composedParent(anc);
+        }
+      } else if (r.bottom > vh - safeBottom - 10) {
+        const delta = r.bottom - (vh - safeBottom) + 20;
+        win.scrollBy?.({ top: delta, behavior: 'instant' as any });
+        let anc = composedParent(el);
+        while (anc && anc !== win.document.body && anc !== win.document.documentElement) {
+          anc.scrollBy?.({ top: delta, behavior: 'instant' as any });
+          anc = composedParent(anc);
+        }
+      }
+    } catch {}
+
     return true;
   } catch {
     return false;
@@ -691,6 +723,136 @@ export function inPageRenderHighlights(indexedElements: IndexedElement[]): void 
   }
 
   (document.body || document.documentElement).appendChild(overlay);
+}
+
+/**
+ * Detect rich text composer / editor semantics vs generic searchbox inputs.
+ * Enables accurate input disambiguation in modern SPAs (Twitter/X, Notion, Slack, GitHub).
+ */
+export function detectEditorSemantics(el: Element): {
+  isComposer: boolean;
+  isEditor: boolean;
+  isSearch: boolean;
+} {
+  if (!el || !(el instanceof Element)) {
+    return { isComposer: false, isEditor: false, isSearch: false };
+  }
+
+  const tag = el.tagName.toLowerCase();
+  const role = (el.getAttribute('role') || '').toLowerCase();
+  const type = (el.getAttribute('type') || '').toLowerCase();
+  const id = (el.getAttribute('id') || '').toLowerCase();
+  const name = (el.getAttribute('name') || '').toLowerCase();
+  const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+  const placeholder = (el.getAttribute('placeholder') || '').toLowerCase();
+  const className = (typeof el.className === 'string' ? el.className : '').toLowerCase();
+  const dataTestId = (
+    el.getAttribute('data-testid') ||
+    el.getAttribute('data-test-id') ||
+    ''
+  ).toLowerCase();
+
+  const isContentEditable =
+    el.getAttribute('contenteditable') === 'true' ||
+    el.getAttribute('contenteditable') === '' ||
+    (typeof (el as HTMLElement).isContentEditable === 'boolean' &&
+      (el as HTMLElement).isContentEditable);
+
+  // 1. Search Box Detection
+  const isSearchType = tag === 'input' && type === 'search';
+  const isSearchRole = role === 'searchbox' || role === 'search';
+  const hasSearchAncestor =
+    typeof el.closest === 'function' &&
+    Boolean(el.closest('[role="search"], form[role="search"], .search-box, .search-form'));
+  const matchesSearchText =
+    /(search|query|find|sousuo|搜索|查找)/i.test(
+      `${id} ${name} ${ariaLabel} ${placeholder} ${dataTestId}`,
+    );
+
+  const isSearch =
+    isSearchType ||
+    isSearchRole ||
+    (!isContentEditable && matchesSearchText && (tag === 'input' || hasSearchAncestor));
+
+  if (isSearch) {
+    return { isComposer: false, isEditor: false, isSearch: true };
+  }
+
+  // 2. Rich Text Editor / SPA Composer signatures
+  const isTwitterComposer =
+    dataTestId.includes('tweettextarea') ||
+    dataTestId.includes('tweet_box') ||
+    /(tweet text|post text|what is happening|what\'s happening|post your reply|compose post|compose tweet|发帖|有什么新鲜事|发布你的回复)/i.test(
+      `${ariaLabel} ${placeholder} ${dataTestId}`,
+    );
+
+  const isRichEditorFramework =
+    isContentEditable ||
+    className.includes('drafteditor') ||
+    className.includes('lexical') ||
+    className.includes('prosemirror') ||
+    className.includes('ql-editor') ||
+    className.includes('cm-content') ||
+    className.includes('monaco-editor') ||
+    el.hasAttribute('data-lexical-editor') ||
+    el.hasAttribute('data-slate-editor') ||
+    el.hasAttribute('data-contents');
+
+  const isMultiLineText =
+    tag === 'textarea' ||
+    (role === 'textbox' && el.getAttribute('aria-multiline') === 'true');
+
+  const isPostOrCommentContext =
+    /(post|comment|reply|compose|tweet|thread|feed|status|feed-box|message|chat-input|editor|wysiwyg|pinglun|huifu|帖子|评论|回复)/i.test(
+      `${id} ${name} ${ariaLabel} ${placeholder} ${className} ${dataTestId}`,
+    );
+
+  const isComposer =
+    isTwitterComposer ||
+    (isRichEditorFramework && isPostOrCommentContext) ||
+    (isMultiLineText && isPostOrCommentContext) ||
+    (isContentEditable && isTwitterComposer);
+
+  const isEditor =
+    !isComposer && (isRichEditorFramework || isMultiLineText || isContentEditable);
+
+  return { isComposer, isEditor, isSearch: false };
+}
+
+/**
+ * Detect fixed/sticky top and bottom occlusion bars (navbars, sticky headers, floating toolbars).
+ * Returns safe margins to ensure elements scrolled or targeted are not occluded.
+ */
+export function getStickyOcclusionMargins(win: Window): { top: number; bottom: number } {
+  let topMargin = 0;
+  let bottomMargin = 0;
+  try {
+    const doc = win.document;
+    if (!doc || typeof doc.querySelectorAll !== 'function') return { top: 0, bottom: 0 };
+    const vpW = win.innerWidth || 1280;
+    const vpH = win.innerHeight || 800;
+    const candidates = doc.querySelectorAll(
+      'header, nav, [role="banner"], [role="navigation"], [class*="header" i], [class*="nav" i], [class*="topbar" i], [class*="toolbar" i], [class*="floating" i], [class*="sticky" i], [class*="fixed" i]',
+    );
+    for (const c of Array.from(candidates)) {
+      if (!(c instanceof (win as any).HTMLElement)) continue;
+      const s = win.getComputedStyle(c);
+      if (s.position === 'fixed' || s.position === 'sticky') {
+        const r = c.getBoundingClientRect();
+        if (r.width >= vpW * 0.4 && r.height >= 20 && r.height <= vpH * 0.4) {
+          if (r.top <= 15) {
+            topMargin = Math.max(topMargin, Math.round(r.bottom));
+          } else if (r.bottom >= vpH - 15) {
+            bottomMargin = Math.max(bottomMargin, Math.round(vpH - r.top));
+          }
+        }
+      }
+    }
+  } catch {}
+  return {
+    top: Math.min(topMargin, 160),
+    bottom: Math.min(bottomMargin, 160),
+  };
 }
 
 /**
@@ -1790,6 +1952,7 @@ export function inPageDOMPruner(options?: {
     }
 
     const text = extractCleanElementText(cand.node, maxTextLength);
+    const editorSemantics = detectEditorSemantics(cand.node);
 
     const indexedElem: IndexedElement = {
       index: assignedIndex,
@@ -1812,6 +1975,9 @@ export function inPageDOMPruner(options?: {
         x: occlusion.safeClickPoint.x,
         y: occlusion.safeClickPoint.y,
       },
+      isComposer: editorSemantics.isComposer || undefined,
+      isEditor: editorSemantics.isEditor || undefined,
+      isSearch: editorSemantics.isSearch || undefined,
     };
 
     indexedElements.push(indexedElem);
@@ -1872,6 +2038,7 @@ export function inPageDOMPruner(options?: {
 
   let activeModal: string | undefined = undefined;
   let focusTrapped = false;
+  let isConfirmationTrap = false;
   let blockingLayerKind: 'modal' | 'mask' | undefined = undefined;
 
   try {
@@ -1890,6 +2057,7 @@ export function inPageDOMPruner(options?: {
       coverage: number;
       kind: 'modal' | 'mask';
       name?: string;
+      isTrap?: boolean;
     } | null = null;
 
     for (const d of positionedCandidates) {
@@ -1932,8 +2100,18 @@ export function inPageDOMPruner(options?: {
         ? `${tag}${id} "${name}"`
         : `${tag}${id || (kind === 'mask' ? '.mask' : '.modal')}`;
 
+      const textSnippet = `${desc} ${name || ''} ${d.textContent?.slice(0, 300) || ''}`;
+      const isDiscardOrConfirm =
+        /(discard|abandon|unsaved|confirm|放弃|取消|未保存|确认放弃|是否放弃|离开)/i.test(textSnippet);
+
       if (!topBlocker || cov > topBlocker.coverage) {
-        topBlocker = { el: d, coverage: cov, kind, name: desc };
+        topBlocker = {
+          el: d,
+          coverage: cov,
+          kind,
+          name: isDiscardOrConfirm ? `${desc} [CONFIRMATION_TRAP]` : desc,
+          isTrap: isDiscardOrConfirm,
+        };
       }
     }
 
@@ -1941,6 +2119,9 @@ export function inPageDOMPruner(options?: {
       focusTrapped = true;
       blockingLayerKind = topBlocker.kind;
       activeModal = topBlocker.name;
+      if (topBlocker.isTrap) {
+        isConfirmationTrap = true;
+      }
     }
   } catch {}
 
@@ -1968,7 +2149,18 @@ export function inPageDOMPruner(options?: {
             const name =
               d.getAttribute('aria-label') ||
               d.querySelector('h1, h2, h3, [role="heading"]')?.textContent?.trim()?.slice(0, 40);
-            activeModal = name ? `${tag}${id} "${name}"` : `${tag}${id || '.modal'}`;
+            const textSnippet = `${tag}${id} ${name || ''} ${d.textContent?.slice(0, 300) || ''}`;
+            const isDiscardOrConfirm =
+              /(discard|abandon|unsaved|confirm|放弃|取消|未保存|确认放弃|是否放弃|离开)/i.test(
+                textSnippet,
+              );
+            const baseDesc = name ? `${tag}${id} "${name}"` : `${tag}${id || '.modal'}`;
+            if (isDiscardOrConfirm) {
+              isConfirmationTrap = true;
+              activeModal = `${baseDesc} [CONFIRMATION_TRAP]`;
+            } else {
+              activeModal = baseDesc;
+            }
             break;
           }
         }
@@ -1977,9 +2169,10 @@ export function inPageDOMPruner(options?: {
   } catch {}
 
   if (activeModal) {
-    treeString =
-      `[Modal Guidance: Active modal focus trap (${activeModal}). Prioritize interacting with modal elements or dismissing it.]\n` +
-      treeString;
+    const modalNotice = isConfirmationTrap
+      ? `[Modal Guidance: CRITICAL CONFIRMATION TRAP DETECTED (${activeModal}). A secondary confirmation dialog is open ("Discard / Confirm" / "放弃帖子？"). You MUST dismiss or confirm this dialog (e.g. click "Discard" or "Cancel") before attempting any other actions on the page.]\n`
+      : `[Modal Guidance: Active modal focus trap (${activeModal}). Prioritize interacting with modal elements or dismissing it.]\n`;
+    treeString = modalNotice + treeString;
   }
 
   if (pages_down > 0 || pages_up > 0) {
@@ -2011,6 +2204,7 @@ export function inPageDOMPruner(options?: {
     scrollInfo,
     activeModal,
     focusTrapped: focusTrapped || undefined,
+    isConfirmationTrap: isConfirmationTrap || undefined,
     selectorMatched: options?.selector !== undefined ? selectorMatched : undefined,
   };
 }
@@ -2028,18 +2222,22 @@ export function actionPointForElement(
     rects.push(rect);
   }
 
+  const margins = getStickyOcclusionMargins(view);
+  const safeTop = margins.top > 0 ? margins.top : 0;
+  const safeBottom = margins.bottom > 0 ? view.innerHeight - margins.bottom : view.innerHeight;
+
   let best = null;
   for (const rect of rects) {
     const left = Math.max(0, rect.left);
-    const top = Math.max(0, rect.top);
+    const top = Math.max(safeTop, rect.top);
     const right = Math.min(view.innerWidth, rect.right);
-    const bottom = Math.min(view.innerHeight, rect.bottom);
+    const bottom = Math.min(safeBottom, rect.bottom);
     const visibleArea = Math.max(0, right - left) * Math.max(0, bottom - top);
 
     const centerX = (rect.left + rect.right) / 2;
     const centerY = (rect.top + rect.bottom) / 2;
     const distanceX = centerX - Math.max(0, Math.min(view.innerWidth, centerX));
-    const distanceY = centerY - Math.max(0, Math.min(view.innerHeight, centerY));
+    const distanceY = centerY - Math.max(safeTop, Math.min(safeBottom, centerY));
     const viewportDistance = distanceX * distanceX + distanceY * distanceY;
 
     if (
@@ -2059,9 +2257,13 @@ export function actionPointForElement(
   }
 
   if (best) {
+    const safeY = Math.min(
+      Math.max(best.rect.top + 5, safeTop + 10),
+      Math.max(safeTop + 10, Math.min(best.rect.bottom - 5, safeBottom - 10)),
+    );
     return {
       x: (best.rect.left + best.rect.right) / 2,
-      y: (best.rect.top + best.rect.bottom) / 2,
+      y: safeY,
     };
   }
   return null;
@@ -2152,16 +2354,28 @@ export function extractElementLocationDetails(el: Element): {
   frameOffsetX: number;
   frameOffsetY: number;
   attributes?: Record<string, string>;
+  isComposer?: boolean;
+  isEditor?: boolean;
+  isSearch?: boolean;
 } {
   const win = el.ownerDocument?.defaultView || window;
   const initialRect = el.getBoundingClientRect();
   const vh = win.innerHeight || 0;
   const vw = win.innerWidth || 0;
+  const margins = getStickyOcclusionMargins(win);
+  const elStyle = typeof win.getComputedStyle === 'function' ? win.getComputedStyle(el) : null;
+  const scrollMarginTop = parseFloat(elStyle?.scrollMarginTop || '0') || 0;
+  const scrollMarginBottom = parseFloat(elStyle?.scrollMarginBottom || '0') || 0;
+  const safeTop = Math.min(Math.max(margins.top, scrollMarginTop, 80), Math.round(vh * 0.35));
+  const safeBottom = Math.min(Math.max(margins.bottom, scrollMarginBottom, 80), Math.round(vh * 0.35));
+  const minSafeTop = safeTop;
+  const maxSafeBottom = Math.max(minSafeTop, vh - safeBottom);
+
   const inViewport =
     vh > 0 &&
     vw > 0 &&
-    initialRect.top >= 0 &&
-    initialRect.bottom <= vh &&
+    initialRect.top >= minSafeTop &&
+    initialRect.bottom <= maxSafeBottom &&
     initialRect.left >= 0 &&
     initialRect.right <= vw &&
     initialRect.width > 0 &&
@@ -2216,6 +2430,28 @@ export function extractElementLocationDetails(el: Element): {
         }
       } catch {}
     }
+
+    // Secondary safety check: if element ended up occluded by a sticky top header or bottom bar, nudge scroll
+    try {
+      const updatedR = el.getBoundingClientRect();
+      if (updatedR.top < safeTop + 10) {
+        const delta = updatedR.top - safeTop - 20;
+        win.scrollBy?.({ top: delta, behavior: 'instant' as any });
+        let anc = composedParent(el);
+        while (anc && anc !== win.document.body && anc !== win.document.documentElement) {
+          anc.scrollBy?.({ top: delta, behavior: 'instant' as any });
+          anc = composedParent(anc);
+        }
+      } else if (updatedR.bottom > vh - safeBottom - 10) {
+        const delta = updatedR.bottom - (vh - safeBottom) + 20;
+        win.scrollBy?.({ top: delta, behavior: 'instant' as any });
+        let anc = composedParent(el);
+        while (anc && anc !== win.document.body && anc !== win.document.documentElement) {
+          anc.scrollBy?.({ top: delta, behavior: 'instant' as any });
+          anc = composedParent(anc);
+        }
+      }
+    } catch {}
   }
 
   const rect = el.getBoundingClientRect();
@@ -2266,6 +2502,8 @@ export function extractElementLocationDetails(el: Element): {
     }
   }
 
+  const semantics = detectEditorSemantics(el);
+
   return {
     success: true,
     x: Math.round(clickX + frameOffsetX),
@@ -2293,6 +2531,9 @@ export function extractElementLocationDetails(el: Element): {
             Array.from((el as Element).attributes || []).map((a) => [a.name, a.value]),
           )
         : undefined,
+    isComposer: semantics.isComposer || undefined,
+    isEditor: semantics.isEditor || undefined,
+    isSearch: semantics.isSearch || undefined,
   };
 }
 
@@ -2648,8 +2889,11 @@ export function inPageLocateByText(
 
   try {
     const normalizedTarget = (text || '').trim().toLowerCase();
+    const isSeekingComposer = role === 'composer' || role === 'editor';
     const selector = role
-      ? `[role="${role}"], ${role}`
+      ? isSeekingComposer
+        ? '[role="textbox"], textarea, [contenteditable], [data-testid*="tweetTextarea" i], .DraftEditor-root, .ProseMirror, .ql-editor, div, span, [role]'
+        : `[role="${role}"], ${role}`
       : 'button, a, input, textarea, select, span, p, div, h1, h2, h3, h4, [role]';
     let elements: NodeListOf<Element>;
     try {
@@ -2674,36 +2918,50 @@ export function inPageLocateByText(
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) continue;
 
-      if (role) {
+      const semantics = detectEditorSemantics(el);
+      if (role === 'composer') {
+        if (!semantics.isComposer && !semantics.isEditor) continue;
+      } else if (role === 'editor') {
+        if (!semantics.isEditor && !semantics.isComposer) continue;
+      } else if (role) {
         const elRole = el.getAttribute('role')?.toLowerCase() || el.tagName.toLowerCase();
         if (elRole !== role.toLowerCase()) continue;
       }
+
+      // If looking for textbox, penalize generic search inputs and reward rich compose boxes
+      const searchPenalty = role === 'textbox' && semantics.isSearch ? 40 : 0;
+      const composerBonus = semantics.isComposer ? 25 : semantics.isEditor ? 15 : 0;
 
       if (normalizedTarget) {
         const elText = (el.textContent || '').trim().toLowerCase();
         const ariaLabel = (el.getAttribute('aria-label') || '').trim().toLowerCase();
         const placeholder = (el.getAttribute('placeholder') || '').trim().toLowerCase();
 
+        let matchScore = 0;
         if (
           elText === normalizedTarget ||
           ariaLabel === normalizedTarget ||
           placeholder === normalizedTarget
         ) {
-          bestMatch = el;
-          bestScore = 100;
-          break; // exact match
+          matchScore = 100;
+        } else if (elText.includes(normalizedTarget) || ariaLabel.includes(normalizedTarget)) {
+          matchScore = 50;
         }
-        if (elText.includes(normalizedTarget) || ariaLabel.includes(normalizedTarget)) {
-          if (bestScore < 50) {
+
+        if (matchScore > 0) {
+          const totalScore = matchScore + composerBonus - searchPenalty;
+          if (totalScore > bestScore) {
             bestMatch = el;
-            bestScore = 50;
+            bestScore = totalScore;
           }
         }
       } else {
         // Only role was specified
-        bestMatch = el;
-        bestScore = 10;
-        break;
+        const roleScore = 10 + composerBonus - searchPenalty;
+        if (roleScore > bestScore) {
+          bestMatch = el;
+          bestScore = roleScore;
+        }
       }
     }
 
@@ -3116,17 +3374,55 @@ export function inPageFillIndex(
       el.value = '';
     }
     el.value = textToFill;
-  } else if ((el as HTMLElement).isContentEditable) {
+  } else if (
+    (el as HTMLElement).isContentEditable ||
+    el.getAttribute('contenteditable') === 'true' ||
+    el.getAttribute('contenteditable') === '' ||
+    Boolean(el.querySelector?.('[contenteditable="true"]'))
+  ) {
+    const editTarget =
+      (el as HTMLElement).isContentEditable || el.getAttribute('contenteditable') === 'true'
+        ? (el as HTMLElement)
+        : ((el.querySelector?.('[contenteditable="true"]') as HTMLElement) || (el as HTMLElement));
+
     if (clear) {
-      (el as HTMLElement).innerText = '';
+      const sel = window.getSelection();
+      if (sel && typeof document.createRange === 'function') {
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(editTarget);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          document.execCommand('delete', false);
+        } catch {}
+      }
+      editTarget.innerText = '';
     }
-    (el as HTMLElement).innerText = textToFill;
+    let inserted = false;
+    try {
+      inserted = document.execCommand('insertText', false, textToFill);
+    } catch {}
+    if (!inserted) {
+      editTarget.innerText = textToFill;
+    }
+    try {
+      editTarget.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          composed: true,
+          inputType: 'insertText',
+          data: textToFill,
+        }),
+      );
+    } catch {
+      editTarget.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    }
+    editTarget.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
   } else {
     (el as any).value = textToFill;
+    el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
   }
-
-  el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
 
   if (pressEnter) {
     el.dispatchEvent(
@@ -3721,10 +4017,16 @@ export function inPageFindSmartScrollTarget(options?: {
 
       const winW = typeof window !== 'undefined' ? window.innerWidth || 800 : 800;
       const winH = typeof window !== 'undefined' ? window.innerHeight || 600 : 600;
+      const margins =
+        typeof window !== 'undefined'
+          ? getStickyOcclusionMargins(window)
+          : { top: 0, bottom: 0 };
+      const safeTopMargin = Math.min(Math.max(margins.top, 80), Math.round(winH * 0.35));
+      const safeBottomMargin = Math.min(Math.max(margins.bottom, 80), Math.round(winH * 0.35));
       const vLeft = Math.max(0, rect.left);
-      const vTop = Math.max(0, rect.top);
+      const vTop = Math.max(safeTopMargin, rect.top);
       const vRight = Math.min(winW, rect.right);
-      const vBottom = Math.min(winH, rect.bottom);
+      const vBottom = Math.min(winH - safeBottomMargin, rect.bottom);
       const visibleWidth = Math.max(1, vRight - vLeft);
       const visibleHeight = Math.max(1, vBottom - vTop);
       const dispatchX = Math.round(vLeft + visibleWidth / 2);
@@ -3773,12 +4075,18 @@ export function inPageFindSmartScrollTarget(options?: {
     clientWidth,
   );
 
+  const winMargins = win ? getStickyOcclusionMargins(win) : { top: 0, bottom: 0 };
+  const safeTop = Math.min(Math.max(winMargins.top, 80), Math.round(clientHeight * 0.35));
+  const safeBottom = clientHeight - Math.min(Math.max(winMargins.bottom, 80), Math.round(clientHeight * 0.35));
+  const effectiveH = Math.max(10, safeBottom - safeTop);
+  const windowDispatchY = Math.round(safeTop + effectiveH / 2);
+
   return {
     found: true,
     isWindow: true,
     tagName: 'window',
     x: Math.round(clientWidth / 2),
-    y: Math.round(clientHeight / 2),
+    y: windowDispatchY,
     width: clientWidth,
     height: clientHeight,
     scrollLeft: scrollX,
@@ -3970,7 +4278,12 @@ export function inPageCheckInterception(
   index: number,
   x: number,
   y: number,
-): { intercepted: boolean; description?: string } {
+): {
+  intercepted: boolean;
+  description?: string;
+  canPierce?: boolean;
+  pierceReason?: string;
+} {
   const el = findIndexedElement(index);
   if (!el || !(el instanceof Element)) return { intercepted: false };
 
@@ -3981,7 +4294,66 @@ export function inPageCheckInterception(
     !el.contains(intercepting) &&
     !intercepting.contains(el)
   ) {
-    return { intercepted: true, description: describeHitTarget(intercepting) };
+    const win = intercepting.ownerDocument?.defaultView || window;
+    let isTransparentOrTransient = false;
+    let pierceReason: string | undefined;
+
+    try {
+      const style = win.getComputedStyle(intercepting);
+      // 1. Pointer-events: none -> passes straight through
+      if (style.pointerEvents === 'none') {
+        return { intercepted: false };
+      }
+      // 2. Hidden display / visibility -> passes straight through
+      if (style.display === 'none' || style.visibility === 'hidden') {
+        return { intercepted: false };
+      }
+      // 3. Near-zero opacity -> non-opaque overlay
+      const op = parseFloat(style.opacity || '1');
+      if (op <= 0.05) {
+        isTransparentOrTransient = true;
+        pierceReason = 'zero_opacity';
+      }
+
+      // 4. Transparent background color (e.g. rgba(0, 0, 0, 0) or transparent)
+      const bg = (style.backgroundColor || '').toLowerCase().replace(/\s+/g, '');
+      const isTransparentBg =
+        bg === 'transparent' || bg === 'rgba(0,0,0,0)' || bg === 'hsla(0,0%,0%,0)';
+
+      // 5. Transient backdrop masks / loading stubs / fading transitions
+      const classIdStr = `${intercepting.className || ''} ${intercepting.id || ''} ${intercepting.getAttribute('role') || ''}`.toLowerCase();
+      const isMaskOrBackdrop =
+        /(backdrop|mask|overlay|loading|spinner|shim|transition|fading|fade-out|toast|stub)/i.test(
+          classIdStr,
+        );
+      const isAriaHidden = intercepting.getAttribute('aria-hidden') === 'true';
+      const isPresentation = intercepting.getAttribute('role') === 'presentation';
+
+      // Check if intercepting element has no interactive children
+      const hasInteractiveChildren = Boolean(
+        intercepting.querySelector?.('button, a, input, textarea, select, [role="button"]'),
+      );
+
+      if (
+        !hasInteractiveChildren &&
+        (isMaskOrBackdrop || isAriaHidden || isPresentation || isTransparentBg || op <= 0.1)
+      ) {
+        isTransparentOrTransient = true;
+        pierceReason = pierceReason || (isTransparentBg ? 'transparent_background' : 'transient_mask');
+      }
+    } catch {}
+
+    const desc = describeHitTarget(intercepting);
+    if (isTransparentOrTransient) {
+      return {
+        intercepted: true,
+        description: desc,
+        canPierce: true,
+        pierceReason: pierceReason || 'transient_overlay',
+      };
+    }
+
+    return { intercepted: true, description: desc };
   }
   return { intercepted: false };
 }
@@ -3993,6 +4365,33 @@ export function inPageDispatchSyntheticClick(
   action: 'click' | 'right_click' | 'double_click' = 'click',
 ): boolean {
   let el = typeof index === 'number' && index > 0 ? findIndexedElement(index) : null;
+  if (!el && typeof document !== 'undefined' && typeof (document as any).elementsFromPoint === 'function') {
+    const elements = (document as any).elementsFromPoint(x, y) || [];
+    for (const cand of elements) {
+      if (!(cand instanceof Element)) continue;
+      const win = cand.ownerDocument?.defaultView || window;
+      let isMask = false;
+      try {
+        const s = win.getComputedStyle(cand);
+        if (s.pointerEvents === 'none' || s.display === 'none' || s.visibility === 'hidden') {
+          continue;
+        }
+        const op = parseFloat(s.opacity || '1');
+        const bg = (s.backgroundColor || '').toLowerCase().replace(/\s+/g, '');
+        const isTransparentBg = bg === 'transparent' || bg === 'rgba(0,0,0,0)';
+        const classId = `${cand.className || ''} ${cand.id || ''} ${cand.getAttribute('role') || ''}`.toLowerCase();
+        const matchesMask = /(backdrop|mask|overlay|loading|spinner|shim|transition|fading|fade-out|toast|stub)/i.test(classId);
+        const hasInteractive = Boolean(cand.querySelector?.('button, a, input, textarea, select, [role="button"]'));
+        if (!hasInteractive && (op <= 0.05 || (matchesMask && isTransparentBg))) {
+          isMask = true;
+        }
+      } catch {}
+      if (!isMask) {
+        el = cand;
+        break;
+      }
+    }
+  }
   if (!el && typeof document !== 'undefined' && typeof document.elementFromPoint === 'function') {
     el = document.elementFromPoint(x, y);
   }
@@ -4043,6 +4442,64 @@ export function inPageDispatchSyntheticClick(
 }
 
 /**
+ * Detect active confirmation trap dialogs (e.g. "Discard draft?", "放弃帖子？") on the page.
+ */
+export function inPageDetectConfirmationTrap(): {
+  detected: boolean;
+  title?: string;
+  buttons?: string[];
+} {
+  if (typeof document === 'undefined') return { detected: false };
+  try {
+    const dialogs = Array.from(
+      document.querySelectorAll(
+        'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]',
+      ),
+    ) as HTMLElement[];
+    for (const d of dialogs) {
+      const isAriaHidden = d.getAttribute('aria-hidden') === 'true';
+      const isOpenAttr =
+        d.tagName.toLowerCase() === 'dialog' ? (d as HTMLDialogElement).open : true;
+      if (isAriaHidden || !isOpenAttr) continue;
+      const win = d.ownerDocument?.defaultView || window;
+      let isVis = false;
+      try {
+        const style = win.getComputedStyle(d);
+        isVis =
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          (d.offsetWidth > 0 || d.offsetHeight > 0);
+      } catch {}
+      if (!isVis) continue;
+
+      const title =
+        d.getAttribute('aria-label') ||
+        d.querySelector('h1, h2, h3, [role="heading"]')?.textContent?.trim()?.slice(0, 80) ||
+        d.textContent?.slice(0, 150)?.trim();
+
+      const textSnippet = `${d.tagName} ${title || ''} ${d.textContent?.slice(0, 300) || ''}`;
+      const isTrap =
+        /(discard|abandon|unsaved|confirm|放弃|取消|未保存|确认放弃|是否放弃|离开)/i.test(
+          textSnippet,
+        );
+
+      if (isTrap) {
+        const buttons = Array.from(d.querySelectorAll('button, [role="button"]'))
+          .map((b) => b.textContent?.trim() || b.getAttribute('aria-label') || '')
+          .filter(Boolean)
+          .slice(0, 5);
+        return {
+          detected: true,
+          title: title || 'Confirmation Dialog',
+          buttons,
+        };
+      }
+    }
+  } catch {}
+  return { detected: false };
+}
+
+/**
  * Format an indexed element into a concise, Accessibility-Tree-inspired line.
  * Omits closing tags and redundant markup, cutting token usage by 60%+.
  */
@@ -4057,6 +4514,7 @@ export function renderCompactElementLine(el: IndexedElement, frameId?: string | 
     else if (inputType === 'submit' || inputType === 'button') role = 'button';
     else if (inputType === 'password') role = 'password';
     else if (inputType === 'file') role = 'file';
+    else if (inputType === 'search' || el.isSearch || role === 'searchbox') role = 'searchbox';
     else role = 'textbox';
   } else if (tag === 'a') {
     role = 'link';
@@ -4078,6 +4536,11 @@ export function renderCompactElementLine(el: IndexedElement, frameId?: string | 
   const parts: string[] = [`[${el.index}]`];
   if (el.inShadowDom) {
     parts.push('[shadow]');
+  }
+  if (el.isComposer) {
+    parts.push('[composer]');
+  } else if (el.isEditor) {
+    parts.push('[editor]');
   }
   parts.push(role);
   if (text) parts.push(text);

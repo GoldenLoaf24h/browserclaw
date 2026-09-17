@@ -142,26 +142,49 @@ export async function waitForPageSettle(
       adaptiveMs,
       hasActiveNet,
     ]);
-    return results?.[0]?.result ?? { settled: true, durationMs: 0, mutationsObserved: 0 };
+    const settleRes = results?.[0]?.result ?? { settled: true, durationMs: 0, mutationsObserved: 0 };
+    settleRes.networkSettled = !hasActiveNet;
+
+    // Check for secondary confirmation traps (e.g. "Discard draft?", "放弃帖子？")
+    try {
+      const trapRes = (await executeInPage({ tabId }, 'inPageDetectConfirmationTrap', []))?.[0]?.result;
+      if (trapRes?.detected) {
+        settleRes.confirmationTrap = trapRes;
+      }
+    } catch {}
+
+    return settleRes;
   } catch {
     // If navigation happened or scripting was blocked, return gracefully
-    return { settled: true, durationMs: 0, mutationsObserved: 0 };
+    return { settled: true, durationMs: 0, mutationsObserved: 0, networkSettled: true };
   }
 }
 
 /**
  * Wait for in-flight network requests to reach quiescence (zero active requests).
- * Bounded by maxWaitMs to prevent indefinite hangs on long-lived connections.
+ * Incorporates an initial grace delay (allowing async event handlers to dispatch requests)
+ * and a sliding quiet window. Bounded by maxWaitMs to prevent indefinite hangs.
  */
 export async function waitForNetworkQuiescence(
   tabId: number,
-  maxWaitMs = 1500,
+  maxWaitMs = 2000,
   pollIntervalMs = 25,
-  quietSlidingWindowMs = 100,
+  quietSlidingWindowMs = 120,
+  initialGraceMs = 60,
 ): Promise<boolean> {
   try {
     const { cdpSessionManager } = await import('@/utils/cdp-session-manager');
-    const deadline = Date.now() + maxWaitMs;
+    if (cdpSessionManager.isAttached(tabId)) {
+      await cdpSessionManager.enableNetworkDomain(tabId).catch(() => {});
+    }
+
+    // Brief initial grace delay allowing asynchronous onClick/mutation handlers
+    // to dispatch fetch/XHR network requests to Chromium
+    if (initialGraceMs > 0) {
+      await new Promise((r) => setTimeout(r, initialGraceMs));
+    }
+
+    const deadline = Date.now() + Math.max(0, maxWaitMs - initialGraceMs);
     let consecutiveQuietStart = cdpSessionManager.hasInFlightRequests(tabId) ? 0 : Date.now();
 
     while (Date.now() < deadline) {

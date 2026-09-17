@@ -3,7 +3,7 @@ import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES, type BatchActionItem, type BatchActionResult } from 'chrome-mcp-shared';
 import { DIAGNOSTIC_REFRESH_GUIDANCE } from './dom-indexer';
 import { executeInPage } from './in-page-engine';
-import { waitForPageSettle } from '@/utils/action-watchdog';
+import { waitForPageSettle, waitForNetworkQuiescence } from '@/utils/action-watchdog';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { computeHumanizedPoints } from '@/utils/mouse-trajectory';
 import {
@@ -17,6 +17,7 @@ import { getSubframeViewportOffset } from './interact-index';
 import { tabFaviconManager } from './tab-favicon';
 import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
 import { parseUnifiedCoordinate } from '@/utils/coordinate-parser';
+import { sessionTabAffinity } from '@/utils/session-tab-affinity';
 
 export interface BatchActionsParams {
   actions: BatchActionItem[];
@@ -24,6 +25,9 @@ export interface BatchActionsParams {
   windowId?: number;
   waitForSettle?: boolean;
   settleTimeoutMs?: number;
+  /** Wait for network requests to settle after actions or batch */
+  waitForNetworkQuiescence?: boolean;
+  quiescenceTimeoutMs?: number;
   includeDelta?: boolean;
   sessionId?: string;
   sessionContext?: string;
@@ -162,7 +166,8 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
       const tabId = tab.id;
       tabFaviconManager.markTabActive(tabId);
 
-      const initialUrl = tab.url || '';
+      return await sessionTabAffinity.runSerialized(tabId, async () => {
+        const initialUrl = tab.url || '';
       const actionResults: Array<{
         actionIndex: number;
         success: boolean;
@@ -260,6 +265,41 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 targetY = targetY - localY + offset.offsetY;
               }
 
+              // Interception check & mask piercing
+              let maskPierced: { description: string; reason: string } | undefined;
+              const targetIndex =
+                typeof item.index === 'number'
+                  ? item.index
+                  : typeof item.ref === 'number'
+                    ? item.ref
+                    : undefined;
+
+              if (targetIndex !== undefined && item.type === 'click') {
+                try {
+                  const interceptRes = (
+                    await executeInPage({ tabId }, 'inPageCheckInterception', [
+                      targetIndex,
+                      targetX,
+                      targetY,
+                    ])
+                  )?.[0]?.result;
+                  if (interceptRes?.intercepted && interceptRes?.description) {
+                    if (interceptRes.canPierce && item.pierceOverlay !== false) {
+                      maskPierced = {
+                        description: interceptRes.description,
+                        reason: interceptRes.pierceReason || 'transient_mask',
+                      };
+                    } else if (item.pierceOverlay === false) {
+                      throw new Error(
+                        `Action ${i} click intercepted by ${interceptRes.description}`,
+                      );
+                    }
+                  }
+                } catch (e: any) {
+                  if (item.pierceOverlay === false && e.message?.includes('intercepted')) throw e;
+                }
+              }
+
               void animateAgentCursor(tabId, targetX, targetY, {
                 waitForArrival: false,
               });
@@ -302,6 +342,15 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     buttons: 0,
                     clickCount: 1,
                   });
+                  if (maskPierced) {
+                    try {
+                      await executeInPage({ tabId }, 'inPageDispatchSyntheticClick', [
+                        targetIndex ?? null,
+                        targetX,
+                        targetY,
+                      ]);
+                    } catch {}
+                  }
                 } else if (item.type === 'double_click') {
                   await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
                     type: 'mousePressed',
@@ -365,7 +414,8 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 [item.type]: true,
                 tagName: loc.tagName,
                 text: loc.text,
-                isTrusted: item.type !== 'right_click',
+                isTrusted: item.type !== 'right_click' && !maskPierced,
+                ...(maskPierced ? { piercedOverlay: maskPierced } : {}),
               };
               break;
             }
@@ -381,9 +431,14 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 );
               }
               const text = item.text ?? item.value ?? '';
+              const isMultiLineOrPostText =
+                text.includes('\n') ||
+                text.length > 60 ||
+                /(http|#|@|tweet|post|reply|thread)/i.test(text);
               let filledViaCdp = false;
               let coords: any;
               let isKnownEmpty = false;
+              let disambiguationWarning: string | undefined;
 
               const targetRef = item.ref ?? item.index;
               const targetIndex =
@@ -398,6 +453,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 const loc = await resolveTargetLocation(tabId, {
                   ref: targetRef,
                   selector: item.selector,
+                  preferComposer: item.preferComposer ?? isMultiLineOrPostText,
                 });
                 if (loc.success) {
                   coords = {
@@ -407,8 +463,25 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     value: loc.value,
                     tagName: loc.tagName,
                     inputType: loc.inputType,
+                    isComposer: loc.isComposer,
+                    isEditor: loc.isEditor,
+                    isSearch: loc.isSearch,
+                    attributes: loc.attributes,
                   };
                   targetFrameId = loc.frameId ?? 0;
+                }
+
+                const isSearchTarget = Boolean(
+                  coords?.isSearch ||
+                  coords?.inputType === 'search' ||
+                  /(search|query|find|sousuo|搜索|查找)/i.test(
+                    `${coords?.attributes?.name || ''} ${coords?.attributes?.id || ''} ${coords?.attributes?.['aria-label'] || ''} ${coords?.attributes?.placeholder || ''}`,
+                  ),
+                );
+
+                if (isSearchTarget && isMultiLineOrPostText) {
+                  disambiguationWarning = `[Input Disambiguation Notice] Batch action ${i} targeted a search input (searchbox), but the filled text looks like a multi-line post or comment. Verify targeting the [composer] element instead.`;
+                  console.warn(`[BatchActionsTool] ${disambiguationWarning}`);
                 }
 
                 let isCrossOriginSubframe = false;
@@ -551,6 +624,10 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     isTrusted: true,
                     method: 'cdp_native',
                     tagName: coords.tagName,
+                    isComposer: coords?.isComposer,
+                    isEditor: coords?.isEditor,
+                    isSearch: coords?.isSearch,
+                    ...(disambiguationWarning ? { disambiguationWarning } : {}),
                   };
                   filledViaCdp = true;
                 }
@@ -714,6 +791,12 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     outcome?.error ||
                       `Fill failed on [${targetRef ?? item.selector}]. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
                   );
+                }
+                if (outcome && typeof outcome === 'object') {
+                  if (coords?.isComposer) outcome.isComposer = true;
+                  if (coords?.isEditor) outcome.isEditor = true;
+                  if (coords?.isSearch) outcome.isSearch = true;
+                  if (disambiguationWarning) outcome.disambiguationWarning = disambiguationWarning;
                 }
                 stepOutput = outcome;
               }
@@ -1311,6 +1394,14 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
               throw new Error(`Unsupported batch action type: ${(item as any).type}`);
           }
 
+          if (item.waitForNetworkQuiescence) {
+            const qTimeout = item.quiescenceTimeoutMs || args.quiescenceTimeoutMs || 2000;
+            const netSettled = await waitForNetworkQuiescence(tabId, qTimeout);
+            if (typeof stepOutput === 'object' && stepOutput !== null) {
+              stepOutput.networkSettled = netSettled;
+            }
+          }
+
           if (item.waitForSettle) {
             const itemSettle = await waitForPageSettle(tabId, { timeoutMs: item.settleTimeoutMs });
             if (typeof stepOutput === 'object' && stepOutput !== null) {
@@ -1337,6 +1428,11 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
         }
       }
 
+      let networkSettled: boolean | undefined;
+      if (args.waitForNetworkQuiescence) {
+        networkSettled = await waitForNetworkQuiescence(tabId, args.quiescenceTimeoutMs || 2000);
+      }
+
       let batchSettle: any = undefined;
       if (args.waitForSettle) {
         batchSettle = await waitForPageSettle(tabId, { timeoutMs: args.settleTimeoutMs });
@@ -1352,7 +1448,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
       const urlChanged = Boolean(initialUrl && currentUrl && initialUrl !== currentUrl);
 
       const totalCompleted = actionResults.filter((r) => r.success).length;
-      const batchResult: BatchActionResult & { spaDriftNotice?: string } = {
+      const batchResult: BatchActionResult & { spaDriftNotice?: string; networkSettled?: boolean } = {
         success: totalCompleted === actions.length,
         completedActions: totalCompleted,
         totalActions: actions.length,
@@ -1363,20 +1459,22 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
         interruptedReason,
         settle: batchSettle,
         spaDriftNotice,
+        ...(typeof networkSettled === 'boolean' ? { networkSettled } : {}),
         ...(Object.keys(extractedData).length > 0 ? { extractedData } : {}),
         ...(assertions.length > 0 ? { assertions } : {}),
         ...(delta ? { delta } : {}),
       };
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(batchResult),
-          },
-        ],
-        isError: !batchResult.success,
-      };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(batchResult),
+            },
+          ],
+          isError: !batchResult.success,
+        };
+      });
     } catch (error) {
       if (error instanceof DialogOpenedError) {
         return createDialogInterruptResponse(error);

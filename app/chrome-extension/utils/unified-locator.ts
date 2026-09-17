@@ -95,6 +95,9 @@ export async function resolveTargetLocation(
           frameOffsetX: match.frameOffsetX,
           frameOffsetY: match.frameOffsetY,
           attributes: match.attributes,
+          isComposer: (match as any).isComposer,
+          isEditor: (match as any).isEditor,
+          isSearch: (match as any).isSearch,
           warning: invalidationWarning,
         };
       }
@@ -140,6 +143,9 @@ export async function resolveTargetLocation(
           frameOffsetX: match.frameOffsetX,
           frameOffsetY: match.frameOffsetY,
           attributes: match.attributes,
+          isComposer: (match as any).isComposer,
+          isEditor: (match as any).isEditor,
+          isSearch: (match as any).isSearch,
         };
       }
     } catch (e) {
@@ -150,9 +156,11 @@ export async function resolveTargetLocation(
   // 3. Tertiary: Try visible text and/or ARIA role
   if (hasTextOrRole && deps.executeInPage) {
     try {
+      const effectiveRole =
+        options.role === 'textbox' && options.preferComposer ? 'composer' : options.role;
       const res = await deps.executeInPage({ tabId }, 'inPageLocateByText', [
         targetText || '',
-        options.role,
+        effectiveRole,
       ]);
       let match = res?.[0]?.result;
       let targetFrameId = 0;
@@ -161,7 +169,7 @@ export async function resolveTargetLocation(
         const frameResults = await deps.executeInPage(
           { tabId, allFrames: true },
           'inPageLocateByText',
-          [targetText || '', options.role],
+          [targetText || '', effectiveRole],
         );
         const subMatch = frameResults.find((r) => r.result?.success);
         if (subMatch?.result) {
@@ -184,6 +192,9 @@ export async function resolveTargetLocation(
           frameOffsetX: match.frameOffsetX,
           frameOffsetY: match.frameOffsetY,
           attributes: match.attributes,
+          isComposer: (match as any).isComposer,
+          isEditor: (match as any).isEditor,
+          isSearch: (match as any).isSearch,
         };
       }
     } catch (e) {

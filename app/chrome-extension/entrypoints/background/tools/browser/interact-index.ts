@@ -8,7 +8,7 @@ import {
   createDialogInterruptResponse,
 } from '../../../../utils/race-cdp';
 import { executeInPage } from './in-page-engine';
-import { waitForPageSettle } from '../../../../utils/action-watchdog';
+import { waitForPageSettle, waitForNetworkQuiescence } from '../../../../utils/action-watchdog';
 import { inPageArmDeliveryProbe, inPageReadDeliveryProbe } from './dom-indexer';
 import { screenshotContextManager, scaleCoordinates } from '../../../../utils/screenshot-context';
 import { computeHumanizedPoints } from '../../../../utils/mouse-trajectory';
@@ -39,11 +39,17 @@ export interface InteractIndexParams {
   windowId?: number;
   waitForSettle?: boolean;
   settleTimeoutMs?: number;
+  /** Wait for in-flight network requests to settle after interaction before returning (default: false) */
+  waitForNetworkQuiescence?: boolean;
+  /** Quiescence timeout in ms (default 2000) */
+  quiescenceTimeoutMs?: number;
   humanize?: boolean;
   includeDelta?: boolean;
   sessionId?: string;
   sessionContext?: string;
   autoSnap?: boolean;
+  /** Automatically pierce non-opaque, transient, or presentation backdrop masks */
+  pierceOverlay?: boolean;
 }
 
 /**
@@ -318,8 +324,10 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       if (!tabId) {
         return createErrorResponse('No active tab found for chrome_interact_index');
       }
-      const previousUrl = tab.url || '';
-      tabFaviconManager.markTabActive(tabId);
+
+      return await sessionTabAffinity.runSerialized(tabId, async () => {
+        const previousUrl = tab.url || '';
+        tabFaviconManager.markTabActive(tabId);
 
       // D3 (TESTING-NOTES #19): when no explicit tabId/session bound the
       // target, resolveAffinityTab fell through to the user's ACTIVE tab -
@@ -546,15 +554,23 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       void animateAgentCursor(tabId, x, y);
 
       // Shadow DOM penetrating interception check (self-healing feedback)
+      let maskPierced: { description: string; reason: string } | undefined;
       if (args.index !== undefined && !isFallback && action === 'click') {
         try {
           const interceptRes = (
             await executeInPage(targetScope, 'inPageCheckInterception', [args.index, x, y])
           )?.[0]?.result;
           if (interceptRes?.intercepted && interceptRes?.description) {
-            return createErrorResponse(
-              `Element [${args.index}] click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first. Hint: If this is an open modal, interact with its buttons to dismiss. If it is a captcha or human verification, call chrome_request_human_intervention.`,
-            );
+            if (interceptRes.canPierce && args.pierceOverlay !== false) {
+              maskPierced = {
+                description: interceptRes.description,
+                reason: interceptRes.pierceReason || 'transient_mask',
+              };
+            } else {
+              return createErrorResponse(
+                `Element [${args.index}] click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first. Hint: If this is an open modal, interact with its buttons to dismiss. If it is a captcha or human verification, call chrome_request_human_intervention.`,
+              );
+            }
           }
         } catch {
           // Non-blocking on inspection failure
@@ -914,6 +930,15 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
 
       // 3. Action Settle & Auto-Wait Watchdog
       let settleResult: any = undefined;
+      let networkSettled: boolean | undefined = undefined;
+
+      if (args.waitForNetworkQuiescence) {
+        networkSettled = await waitForNetworkQuiescence(
+          tabId,
+          args.quiescenceTimeoutMs || 2000,
+        );
+      }
+
       if (args.waitForSettle) {
         settleResult = await waitForPageSettle(tabId, { timeoutMs: args.settleTimeoutMs });
       }
@@ -929,10 +954,11 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           const probe = (await executeInPage(targetScope, 'inPageReadDeliveryProbe', [true]))?.[0]
             ?.result;
           deliveryVerified = Boolean(probe?.delivered);
-          if (!deliveryVerified) {
+          if (!deliveryVerified || maskPierced) {
             deliveryHits = probe?.hits ?? [];
-            // Click Probe Fallback: if native CDP events were dropped (e.g. background tab throttling),
-            // fall back to synthetic DOM event dispatch to ensure 100% execution.
+            // Click Probe / Mask Piercing Fallback: if native CDP events were dropped (e.g. background tab throttling)
+            // or if a transparent/transient mask intercepted the click, fall back to synthetic DOM event dispatch
+            // directly on the underlying target element to ensure 100% execution.
             if (action === 'click') {
               try {
                 const synRes = (
@@ -944,7 +970,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 )?.[0]?.result;
                 if (synRes) {
                   deliveryVerified = true;
-                  fallbackTriggered = 'synthetic_click_probe';
+                  fallbackTriggered = maskPierced ? 'synthetic_click_pierce' : 'synthetic_click_probe';
                   usedNativeCDP = false;
                 }
               } catch {
@@ -955,6 +981,21 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         } catch {
           deliveryVerified = undefined;
         }
+      } else if (maskPierced && action === 'click') {
+        try {
+          const synRes = (
+            await executeInPage(targetScope, 'inPageDispatchSyntheticClick', [
+              args.index ?? null,
+              x,
+              y,
+            ])
+          )?.[0]?.result;
+          if (synRes) {
+            deliveryVerified = true;
+            fallbackTriggered = 'synthetic_click_pierce';
+            usedNativeCDP = false;
+          }
+        } catch {}
       }
 
       // Visibility: screenshot-context TTL silently expires after 5 minutes;
@@ -991,6 +1032,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 isTrusted: usedNativeCDP,
                 coordinates: { x, y },
                 fallbackTriggered,
+                ...(maskPierced ? { piercedOverlay: maskPierced } : {}),
                 mode: isFallback
                   ? 'hybrid_visual_fallback'
                   : hasCoord && !hasIndex
@@ -1000,6 +1042,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 humanized: Boolean(args.humanize),
                 drag: action === 'drag' ? dragOutcome : undefined,
                 settle: settleResult,
+                ...(typeof networkSettled === 'boolean' ? { networkSettled } : {}),
                 screenshotCtxWarning,
                 ...(affinityWarning ? { affinityWarning } : {}),
                 ...(delta ? { delta } : {}),
@@ -1016,6 +1059,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         ],
         isError: false,
       };
+      });
     } catch (error) {
       if (error instanceof DialogOpenedError) {
         return createDialogInterruptResponse(error);

@@ -1713,6 +1713,20 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           type: 'string',
           description: 'Optional session identifier to bind affinity to a specific tab context',
         },
+        pierceOverlay: {
+          type: 'boolean',
+          description:
+            'Automatically pierce non-opaque or transient backdrop masks/loading stubs when intercepted (default: true)',
+        },
+        waitForNetworkQuiescence: {
+          type: 'boolean',
+          description:
+            'Wait for in-flight network requests to settle after this interaction before returning (default: false)',
+        },
+        quiescenceTimeoutMs: {
+          type: 'number',
+          description: 'Network quiescence timeout in ms (default: 2000)',
+        },
       },
       required: [],
     },
@@ -1908,6 +1922,25 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
                 description:
                   'Maximum settle timeout in milliseconds for this action (default: 1500)',
               },
+              waitForNetworkQuiescence: {
+                type: 'boolean',
+                description:
+                  'Wait for in-flight network requests to settle before proceeding to next action (default: false)',
+              },
+              quiescenceTimeoutMs: {
+                type: 'number',
+                description: 'Network quiescence timeout in ms (default: 2000)',
+              },
+              pierceOverlay: {
+                type: 'boolean',
+                description:
+                  'Automatically pierce non-opaque or transient backdrop masks for click actions (default: true)',
+              },
+              preferComposer: {
+                type: 'boolean',
+                description:
+                  'Prioritize rich composer/editor elements over generic search inputs when resolving textbox (default: false)',
+              },
               // For type: 'assert'
               expectedText: {
                 type: 'string',
@@ -1951,6 +1984,15 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         settleTimeoutMs: {
           type: 'number',
           description: 'Maximum settle timeout in milliseconds (default: 1500, range: 200-10000)',
+        },
+        waitForNetworkQuiescence: {
+          type: 'boolean',
+          description:
+            'Wait for in-flight network requests to settle after all actions before returning (default: false)',
+        },
+        quiescenceTimeoutMs: {
+          type: 'number',
+          description: 'Network quiescence timeout in ms (default: 2000)',
         },
         includeDelta: {
           type: 'boolean',

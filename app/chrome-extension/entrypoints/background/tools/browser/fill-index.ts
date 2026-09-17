@@ -54,8 +54,10 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
         return createErrorResponse('No active tab found for chrome_fill_index');
       }
       const targetTabId: number = tab.id;
-      const previousUrl = tab.url || '';
-      tabFaviconManager.markTabActive(targetTabId);
+
+      return await sessionTabAffinity.runSerialized(targetTabId, async () => {
+        const previousUrl = tab.url || '';
+        tabFaviconManager.markTabActive(targetTabId);
 
       // D3 (TESTING-NOTES #19): surface active-tab fallback in the response.
       const fillIdxAffinityWarning =
@@ -67,6 +69,8 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
 
       let outcome: any = null;
       let filledViaCdp = false;
+      let coords: any = null;
+      let disambiguationWarning: string | undefined;
 
       // 1. Try CDP native mouse click + Input.insertText (isTrusted: true)
       try {
@@ -75,7 +79,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           'inPageGetElementCoordinates',
           [args.index],
         );
-        let coords = coordRes?.[0]?.result;
+        coords = coordRes?.[0]?.result;
         if (!coords?.success) {
           const frameResults = await executeInPage(
             { tabId: targetTabId, allFrames: true },
@@ -108,6 +112,23 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           (coords as any)?.inputType === 'radio' ||
           (coords as any)?.inputType === 'file' ||
           coords?.tagName === 'select';
+
+        const isSearchTarget = Boolean(
+          (coords as any)?.isSearch ||
+          coords?.inputType === 'search' ||
+          /(search|query|find|sousuo|搜索|查找)/i.test(
+            `${coords?.attributes?.name || ''} ${coords?.attributes?.id || ''} ${coords?.attributes?.['aria-label'] || ''} ${coords?.attributes?.placeholder || ''}`,
+          ),
+        );
+        const isMultiLineOrPostText =
+          textToFill.includes('\n') ||
+          textToFill.length > 60 ||
+          /(http|#|@|tweet|post|reply|thread)/i.test(textToFill);
+
+        if (isSearchTarget && isMultiLineOrPostText) {
+          disambiguationWarning = `[Input Disambiguation Notice] Targeted element [${args.index}] appears to be a search input (searchbox), but the filled text looks like a multi-line post or comment. If you intended to post or reply, verify with chrome_read_dom to target the [composer] element instead.`;
+          console.warn(`[FillIndexTool] ${disambiguationWarning}`);
+        }
 
         if (
           coords?.success &&
@@ -236,6 +257,10 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
             isTrusted: true,
             method: 'cdp_native',
             tagName: coords.tagName,
+            isComposer: (coords as any)?.isComposer,
+            isEditor: (coords as any)?.isEditor,
+            isSearch: (coords as any)?.isSearch,
+            disambiguationWarning,
           };
           filledViaCdp = true;
         }
@@ -268,6 +293,15 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           const match = frameResults.find((r) => r.result?.success);
           if (match?.result) {
             outcome = match.result;
+          }
+        }
+
+        if (outcome && typeof outcome === 'object') {
+          if ((coords as any)?.isComposer) outcome.isComposer = true;
+          if ((coords as any)?.isEditor) outcome.isEditor = true;
+          if ((coords as any)?.isSearch) outcome.isSearch = true;
+          if (disambiguationWarning) {
+            outcome.disambiguationWarning = disambiguationWarning;
           }
         }
 
@@ -329,15 +363,16 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
       (outcome as any).previousUrl = previousUrl;
       (outcome as any).currentUrl = currentUrl;
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(outcome),
-          },
-        ],
-        isError: false,
-      };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(outcome),
+            },
+          ],
+          isError: false,
+        };
+      });
     } catch (error) {
       if (error instanceof DialogOpenedError) {
         return createDialogInterruptResponse(error);

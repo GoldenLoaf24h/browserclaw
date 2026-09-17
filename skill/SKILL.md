@@ -93,6 +93,16 @@ Mouse and keyboard input dispatched through the CDP path (`chrome_interact_index
 
 Framework validators (React Hook Form, Angular, VeeValidate) often only set `aria-invalid` / `aria-required` and never touch the native `validity` object; both paths are reported, so a field marked `aria-invalid="true"` also shows `invalid="true"`.
 
+#### Input Disambiguation: Rich Composer vs Search Box
+In modern SPAs (Twitter/X, Notion, Slack, GitHub), compose areas and search boxes can both present as text inputs. BrowserClaw automatically flags:
+- `[composer]` — Rich tweet/post compose boxes (`contenteditable="true"`, Draft.js, Lexical, multiline textbox). ALWAYS target this element when posting or replying!
+- `[editor]` — Code or rich Markdown editors (ProseMirror, Quill, Monaco, CodeMirror).
+- `searchbox` — Top navigation or search queries. If you accidentally attempt to fill a searchbox with multi-line or long post content, `chrome_fill_index` will return an `[Input Disambiguation Notice]` to prompt targeting the composer.
+
+#### Modal Confirmation Trap Warning (`[CONFIRMATION_TRAP]`)
+When leaving an unsaved post or composer, SPAs often open a secondary confirmation dialog (e.g. `"Discard draft?"`, `"放弃帖子？"`). BrowserClaw detects this trap, flags `isConfirmationTrap: true`, and injects a high-priority warning banner:
+`[Modal Guidance: CRITICAL CONFIRMATION TRAP DETECTED ... You MUST dismiss or confirm this dialog before attempting any other actions]`
+
 ### Phase 2: Act (Single vs. Batch Operations)
 
 #### A. Single Action

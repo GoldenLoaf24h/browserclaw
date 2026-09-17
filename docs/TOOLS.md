@@ -153,6 +153,7 @@ Click, hover, or interact with an element using its compact 1-based numeric inde
 - `index` — Compact 1-based numeric index of the target element
 - `coordinate` — Visual fallback coordinates in viewport/CSS pixels: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized
 - `coordinateSpace:viewport|screenshot` — Coordinate reference space. "viewport" (default) assumes standard CSS viewport pixels. "screenshot" scales coordinates based on the latest screenshot 
+- `autoSnap` — When clicking via coordinates or visual fallback, magnetically snap to the closest interactive element if clicked within 24px of whitespace. Default: 
 - `points` — Click sequence: dispatch a full CDP click at each viewport point with intervalMs pacing (rapid burst for moving canvas targets)
 - `intervalMs` — Delay between points in the click sequence, 5-500ms (default 35)
 - `action:click|hover|double_click|right_click|drag` — Interaction action to perform (default: click). "drag" requires `end` and moves from the indexed element to that target.
@@ -169,6 +170,9 @@ Click, hover, or interact with an element using its compact 1-based numeric inde
 - `humanize` — Simulate realistic human-like cursor trajectory with micro-jitter before clicking (default: false)
 - `includeDelta` — Automatically capture and return DOM changes caused by this interaction in the delta field (default: false)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
+- `pierceOverlay` — Automatically pierce non-opaque or transient backdrop masks/loading stubs when intercepted (default: true)
+- `waitForNetworkQuiescence` — Wait for in-flight network requests to settle after this interaction before returning (default: false)
+- `quiescenceTimeoutMs` — Network quiescence timeout in ms (default: 2000)
 
 ### `chrome_fill_index`
 
@@ -243,6 +247,8 @@ Execute a sequential multi-step pipeline of browser actions in a single round-tr
 - `windowId` — Target window ID (optional)
 - `waitForSettle` — Wait for DOM mutations to settle after all actions before returning (default: false)
 - `settleTimeoutMs` — Maximum settle timeout in milliseconds (default: 1500, range: 200-10000)
+- `waitForNetworkQuiescence` — Wait for in-flight network requests to settle after all actions before returning (default: false)
+- `quiescenceTimeoutMs` — Network quiescence timeout in ms (default: 2000)
 - `includeDelta` — Automatically capture and return DOM changes caused by the batch in the delta field (default: false)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
 
@@ -260,6 +266,7 @@ Use a mouse and keyboard to interact with a web browser, and take screenshots.
 - `ref` — Element ref/index from chrome_read_dom. For click/scroll/scroll_to/key/type and drag end when provided; takes precedence over coordinates.
 - `coordinates` — Coordinates for actions: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized, 0~1000 per-mille, or abso
 - `coordinateSpace:viewport|screenshot` — Space of coordinates: viewport (default, absolute CSS pixels) or screenshot (mapped through the most recent screenshot context for this tab).
+- `autoSnap` — Magnetically snap coordinate clicks to the closest interactive element if clicked within 24px of whitespace. Default: true.
 - `startCoordinates` — Starting coordinates for drag action: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box.
 - `startRef` — Drag start ref/index from chrome_read_dom (alternative to startCoordinates).
 - `scrollDirection` — Scroll direction: up | down | left | right
@@ -267,7 +274,12 @@ Use a mouse and keyboard to interact with a web browser, and take screenshots.
 - `text` — Text to type (for action=type) or keys/chords separated by space (for action=key, e.g. "Backspace Enter" or "cmd+a")
 - `repeat` — For action=key: number of times to repeat the key sequence (integer 1-100, default 1).
 - `modifiers` — Modifier keys for click actions (left_click/right_click/double_click/triple_click).
-- `region` — For action=zoom: rectangular region to capture (x0,y0)-(x1,y1) in viewport pixels (or screenshot-space if a recent screenshot context exists).
+- `region` — For action=zoom: rectangular region to capture (x0,y0)-(x1,y1) in viewport pixels or row-first bounding box [ymin, xmin, ymax, xmax].
+- `crop` — Alias for region: { x, y, width, height } or { x0, y0, x1, y1 }.
+- `grid` — For action=zoom or action=screenshot: overlay coordinate reference grid or reticle crosshairs.
+- `highClarity` — For action=screenshot or action=zoom: preserve 100% full-resolution sharpness without downsampling.
+- `format:png|jpeg|webp` — Image format for action=screenshot or action=zoom.
+- `quality` — Image compression quality from 0 to 100.
 - `selector` — CSS selector for fill (alternative to ref).
 - `value` — Value to set for action=fill (string | boolean | number)
 - `elements` — For action=fill_form: list of elements to fill (ref + value)
@@ -326,10 +338,13 @@ Rolls back the most recent mutating action on this tab (e.g. reverts form field 
 - `highlight` — Deprecated alias for som; still accepted but hidden from the schema to keep it small. Prefer som.
 - `targetIndex` — Compact 1-based numeric index of target element from chrome_read_dom to crop and capture only this specific region of interest
 - `padding` — Padding in pixels to expand around targetIndex crop area (default: 0)
-- `grid` — Overlay semi-transparent coordinate reference grid with dashed lines and (x, y) markers to eliminate visual estimation hallucination (default: false)
+- `region` — Lossless high-density ROI crop: capture only a specific sub-region { x0, y0, x1, y1 } in CSS pixels or polymorphic [ymin, xmin, ymax, xmax]. Completel
+- `crop` — Alias for region: { x, y, width, height } or { x0, y0, x1, y1 }.
+- `grid` — Overlay semi-transparent coordinate reference grid with perimeter tape measure rulers (20/50/100px ticks) and interior reticle crosshairs (+) to elimi
 - `expandSearchArea` — For small elements (< 100x100), adaptively expand the crop bounding box to preserve surrounding headers and text context (default: true)
 - `format:png|jpeg|webp` — Image output format: webp (default, high compression for LLM), jpeg, or png
 - `quality` — Image compression quality from 0 to 100 for webp/jpeg formats (default: 80)
+- `highClarity` — Prioritize 100% full-resolution clarity without downsampling (disables dimension scaling, keeps 1:1 CSS pixel sharpness for reading fine details or di
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
 
 ### `chrome_smart_scroll`

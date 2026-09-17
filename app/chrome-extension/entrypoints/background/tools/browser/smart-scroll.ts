@@ -7,6 +7,7 @@ import { waitForPageSettle } from '@/utils/action-watchdog';
 import { executeInPage } from './in-page-engine';
 import type { SmartScrollTargetInfo } from './dom-indexer';
 import { parseUnifiedCoordinate, type PolymorphicCoordinate } from '@/utils/coordinate-parser';
+import { sessionTabAffinity } from '@/utils/session-tab-affinity';
 
 export interface SmartScrollParams {
   tabId?: number;
@@ -62,26 +63,34 @@ export class SmartScrollTool extends BaseBrowserToolExecutor {
       }
 
       const tabId = tab.id;
-      const direction = args.direction || 'down';
 
-      let resolvedCoordinate = args.coordinate;
-      if (args.coordinate) {
-        const parsed = parseUnifiedCoordinate(args.coordinate, { tabId });
-        if (parsed) {
-          resolvedCoordinate = parsed;
+      return await sessionTabAffinity.runSerialized(tabId, async () => {
+        const direction = args.direction || 'down';
+
+        let resolvedCoordinate = args.coordinate;
+        if (args.coordinate) {
+          const parsed = parseUnifiedCoordinate(args.coordinate, { tabId });
+          if (parsed) {
+            resolvedCoordinate = parsed;
+          }
         }
-      }
 
-      const refIndex = args.ref ?? args.index;
+        const refIndex = args.ref ?? args.index;
 
-      // 1. Locate optimal scroll target container
-      const targetResults = await executeInPage({ tabId }, 'inPageFindSmartScrollTarget', [
-        {
-          selector: args.selector,
-          ref: refIndex,
-          coordinate: resolvedCoordinate,
-        },
-      ]);
+        // Targeted scroll: if an indexed element is specified without explicit direction/amount,
+        // bring it into safe view respecting sticky margins and safe viewport margin
+        if (typeof refIndex === 'number' && refIndex > 0 && !args.direction && !args.amount) {
+          await executeInPage({ tabId }, 'inPageScrollToIndex', [refIndex]);
+        }
+
+        // 1. Locate optimal scroll target container
+        const targetResults = await executeInPage({ tabId }, 'inPageFindSmartScrollTarget', [
+          {
+            selector: args.selector,
+            ref: refIndex,
+            coordinate: resolvedCoordinate,
+          },
+        ]);
 
       const target = (targetResults?.[0]?.result || {
         found: true,
@@ -206,41 +215,42 @@ export class SmartScrollTool extends BaseBrowserToolExecutor {
         Math.min(100, Math.max(0, (currentScrollTop / maxScrollY) * 100)),
       );
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(
-              {
-                success: true,
-                direction,
-                scrolledPixels: pixelDistance,
-                scrollProgress: `${scrollProgress}%`,
-                target: {
-                  isWindow: target.isWindow,
-                  tagName: target.tagName,
-                  selector: target.selector,
-                  coordinate: { x: target.x, y: target.y },
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(
+                {
+                  success: true,
+                  direction,
+                  scrolledPixels: pixelDistance,
+                  scrollProgress: `${scrollProgress}%`,
+                  target: {
+                    isWindow: target.isWindow,
+                    tagName: target.tagName,
+                    selector: target.selector,
+                    coordinate: { x: target.x, y: target.y },
+                  },
+                  container: {
+                    scrollTop: currentScrollTop,
+                    scrollLeft: currentScrollLeft,
+                    scrollHeight: updatedStatus?.scrollHeight ?? target.scrollHeight,
+                    clientHeight: updatedStatus?.clientHeight ?? target.clientHeight,
+                  },
+                  canScrollDown: updatedStatus
+                    ? updatedStatus.canScrollDown
+                    : currentScrollTop < maxScrollY,
+                  canScrollUp: updatedStatus ? updatedStatus.canScrollUp : currentScrollTop > 0,
+                  settle: settleResult,
                 },
-                container: {
-                  scrollTop: currentScrollTop,
-                  scrollLeft: currentScrollLeft,
-                  scrollHeight: updatedStatus?.scrollHeight ?? target.scrollHeight,
-                  clientHeight: updatedStatus?.clientHeight ?? target.clientHeight,
-                },
-                canScrollDown: updatedStatus
-                  ? updatedStatus.canScrollDown
-                  : currentScrollTop < maxScrollY,
-                canScrollUp: updatedStatus ? updatedStatus.canScrollUp : currentScrollTop > 0,
-                settle: settleResult,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-        isError: false,
-      };
+                null,
+                2,
+              ),
+            },
+          ],
+          isError: false,
+        };
+      });
     } catch (error) {
       if (error instanceof DialogOpenedError) {
         return createDialogInterruptResponse(error);

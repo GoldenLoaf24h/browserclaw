@@ -343,10 +343,18 @@ class CDPSessionManager {
   }
 
   /**
+   * Check if a tab is currently attached by this manager.
+   */
+  isAttached(tabId: number): boolean {
+    const s = this.getState(tabId);
+    return Boolean(s && s.attachedByUs);
+  }
+
+  /**
    * Enable Network domain so CDP emits requestWillBeSent and
    * loadingFinished/loadingFailed events for accurate in-flight request tracking.
    */
-  private async enableNetworkDomain(tabId: number): Promise<void> {
+  async enableNetworkDomain(tabId: number): Promise<void> {
     await this.enableDomain(tabId, 'Network');
   }
 

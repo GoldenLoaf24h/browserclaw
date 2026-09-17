@@ -46,6 +46,12 @@ export interface IndexedElement {
   /** True when the element was reached by piercing one or more shadow roots */
   inShadowDom?: boolean;
   safeClickPoint?: { x: number; y: number };
+  /** True when element is a rich text compose box (Twitter composer, Draft.js, Lexical, multi-line comment/post area) */
+  isComposer?: boolean;
+  /** True when element is a rich code or text editor (ProseMirror, Quill, Monaco, CodeMirror) */
+  isEditor?: boolean;
+  /** True when element is a search input or searchbox */
+  isSearch?: boolean;
 }
 
 export interface ScrollInfo {
@@ -86,6 +92,8 @@ export interface PrunedDOMTreeResult {
   activeModal?: string;
   /** True when an open modal is trapping focus on the page */
   focusTrapped?: boolean;
+  /** True when an active modal is a secondary confirmation trap (e.g. "Discard draft?", "放弃帖子？") */
+  isConfirmationTrap?: boolean;
   /** True if a container matching the requested selector was found */
   selectorMatched?: boolean;
 }
@@ -94,6 +102,10 @@ export interface PageSettleResult {
   settled: boolean;
   durationMs: number;
   mutationsObserved: number;
+  /** True when network requests reached quiescence during wait */
+  networkSettled?: boolean;
+  /** Details of active confirmation trap dialog detected during settle, if any */
+  confirmationTrap?: { detected: boolean; title?: string };
 }
 
 export interface SessionTabAffinityContext {
@@ -134,6 +146,14 @@ export interface BatchActionItem {
   pressEnter?: boolean;
   waitForSettle?: boolean;
   settleTimeoutMs?: number;
+  /** Wait for in-flight network requests to reach quiescence before proceeding */
+  waitForNetworkQuiescence?: boolean;
+  /** Quiescence timeout in ms (default 2000) */
+  quiescenceTimeoutMs?: number;
+  /** Automatically pierce non-opaque or transient backdrop masks for click */
+  pierceOverlay?: boolean;
+  /** Prioritize rich composer/editor elements when resolving textbox */
+  preferComposer?: boolean;
   // For type: 'assert'
   expectedText?: string;
   condition?: 'contains' | 'equals' | 'visible' | 'not_visible';
@@ -202,6 +222,8 @@ export interface UnifiedLocatorOptions {
   coordinates?: { x: number; y: number };
   /** Coordinate space of coordinate/coordinates: "viewport" (default) or "screenshot" (scale via last screenshot context) */
   coordinateSpace?: 'viewport' | 'screenshot';
+  /** Prioritize rich composer/editor elements over generic search inputs when resolving role=textbox or fill targets */
+  preferComposer?: boolean;
 }
 
 export interface UnifiedLocatorResult {
@@ -217,6 +239,9 @@ export interface UnifiedLocatorResult {
   frameOffsetX?: number;
   frameOffsetY?: number;
   attributes?: Record<string, string>;
+  isComposer?: boolean;
+  isEditor?: boolean;
+  isSearch?: boolean;
   error?: string;
   warning?: string;
 }
