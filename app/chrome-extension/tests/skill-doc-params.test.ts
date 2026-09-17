@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { TOOL_SCHEMAS } from 'chrome-mcp-shared';
 
 /**
@@ -72,7 +72,7 @@ describe('SKILL.md parameter examples match the tool schemas', () => {
     const fs = await import('node:fs');
     const crypto = await import('node:crypto');
     const canonical = fs.readFileSync('../../skill/SKILL.md', 'utf-8');
-    const installedBrowserclaw = fs.readFileSync('C:/Users/Lenovo/.gemini/config/skills/browserclaw/SKILL.md', 'utf-8');
+    const localPath = 'C:/Users/Lenovo/.gemini/config/skills/browserclaw/SKILL.md'; if (!fs.existsSync(localPath)) return; const installedBrowserclaw = fs.readFileSync(localPath, 'utf-8');
 
     expect(installedBrowserclaw).toBe(canonical);
 
@@ -89,3 +89,4 @@ describe('SKILL.md parameter examples match the tool schemas', () => {
     expect(managedMc.contentHash).toBe(actualMcHash);
   });
 });
+
