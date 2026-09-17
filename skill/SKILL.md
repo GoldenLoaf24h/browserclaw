@@ -11,9 +11,10 @@ Use this skill when interacting with the user's real local Chrome browser throug
 
 ## 1. Canonical Tool Contract & Zero-Redundancy Standards
 
-BrowserClaw strictly enforces **Canonical High-Reliability Tools**. All legacy, brittle selector-based and redundant tools have been permanently purged:
+BrowserClaw strictly enforces **Canonical High-Reliability Tools (45 tools total)**. All legacy, brittle selector-based and redundant tools have been permanently purged:
+
 - **Clicking**: Exclusively use `chrome_interact_index` (1-based index, Shadow DOM pierced, humanized micro-jitter curve). Legacy `click_element` and `burst_interact` are removed.
-- **Filling**: Exclusively use `chrome_fill_index` (handles text, passwords, checkboxes, and dates automatically) or `chrome_batch_actions` (pipelined). Legacy `fill_or_select` and `fill_form` are removed.
+- **Filling**: Exclusively use `chrome_fill_index` (handles text, passwords, checkboxes, and dates automatically, with optional `pressEnter: true` to trigger immediate submission) or `chrome_batch_actions` (pipelined). Legacy `fill_or_select` and `fill_form` are removed.
 - **Scrolling**: Exclusively use `chrome_smart_scroll` (overflow-aware, returns remaining pages). Legacy `scroll` and `scroll_to_text` are removed.
 - **Reading Content**: Exclusively use `chrome_get_markdown` for articles/summaries, and `chrome_read_dom` for UI interaction. Legacy `get_web_content` and `get_links` are removed.
 
@@ -109,7 +110,8 @@ Framework validators (React Hook Form, Angular, VeeValidate) often only set `ari
   {
     "index": 2,
     "text": "developer@example.com",
-    "clear": true
+    "clear": true,
+    "pressEnter": false // Set to true to immediately dispatch Enter key after filling (e.g. search boxes)
   }
   ```
 
@@ -122,7 +124,7 @@ When filling multiple fields or executing consecutive actions, **always prefer `
 {
   "actions": [
     { "type": "fill", "index": 2, "text": "developer@example.com", "clear": true },
-    { "type": "fill", "index": 3, "text": "SuperSecretPass!", "clear": true },
+    { "type": "fill", "index": 3, "text": "SuperSecretPass!", "clear": true, "pressEnter": true },
     { "type": "click", "index": 4 },
     { "type": "wait", "durationMs": 300 }
   ],
@@ -387,6 +389,7 @@ When a user asks how to upgrade BrowserClaw, or when diagnosing outdated version
    - Open `chrome://extensions/` and click the **"Reload" (重新载入)** icon on the BrowserClaw card.
 
 2. **Source Code / Git Pull Upgrade**:
+
    ```bash
    git pull origin main
    pnpm install
@@ -401,6 +404,7 @@ When a user asks how to upgrade BrowserClaw, or when diagnosing outdated version
 ### 5.2 Site Automation Recipes & DIY Playbook Caching (`recipes/`)
 
 BrowserClaw supports persisting and reusing proven interaction patterns for specific websites under `recipes/`:
+
 - **Checking Existing Recipes**: Before exploring complex or repetitive sites from scratch, check if a matching playbook exists in `recipes/<site-name>.md`.
 - **Authoring Reusable Recipes**: When an agent successfully solves a complex multi-step workflow (e.g. specialized ERPs, dev portals, or custom web forms), it can distill the key selectors, fast-path pipelines (`chrome_batch_actions`), and timing gotchas into `recipes/<service>.md` following `recipes/template.md`.
 - **Benefits**: Subsequent runs can bypass redundant full-DOM exploration, saving 80%+ tokens and accelerating execution by 3x~5x.
@@ -481,7 +485,7 @@ For multi-step flows (e.g. filling search forms and collecting results):
 }
 ```
 
-Executes with zero intermediate roundtrip lag and returns extracted values under `extractedData`. Automatically handles cross-origin iframe coordinate translation.
+Executes with zero intermediate roundtrip lag and returns extracted values under `extractedData`. Automatically handles cross-origin iframe coordinate translation and subframe probe routing across nested browsing contexts.
 
 ### 6.4 Handling Captchas & 2FA (`chrome_request_human_intervention`)
 

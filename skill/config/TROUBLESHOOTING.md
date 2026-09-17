@@ -118,7 +118,7 @@ Windows 用户亦可直接双击运行 [`skill/config/repair.bat`](./repair.bat)
     }
   }
   ```
-  Agent 只需调用 `chrome_handle_dialog({ accept: true })` 即可平滑解除挂起。
+  Agent 只需调用 `chrome_handle_dialog({ action: 'accept' })` 即可平滑解除挂起。
 
 ---
 
@@ -182,5 +182,5 @@ Windows 用户亦可直接双击运行 [`skill/config/repair.bat`](./repair.bat)
 | :--------------------- | :----------------------------- | :------------------------------------------------------ |
 | **Chrome MV3 扩展**    | `app/chrome-extension/`        | `app/chrome-extension/.output/chrome-mv3`               |
 | **Native Bridge 服务** | `app/native-server/`           | `127.0.0.1:12306` (Token: `~/.chrome-mcp/bridge-token`) |
-| **MCP 工具与契约声明** | `packages/shared/src/tools.ts` | 导出 52 个工具供客户端自动内省与校验                    |
+| **MCP 工具与契约声明** | `packages/shared/src/tools.ts` | 导出 45 个规范工具供客户端自动内省与校验                |
 | **诊断与配置**         | `skill/config/`                | `doctor.mjs`, `mcp-config.json`, `repair.bat`           |
