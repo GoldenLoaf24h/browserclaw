@@ -11,6 +11,9 @@ export interface ScreenshotContext {
   // Viewport-relative origin offset for element crops (ROI)
   originX?: number;
   originY?: number;
+  // Region/crop dimensions in CSS viewport pixels before transport downscaling
+  cropWidth?: number;
+  cropHeight?: number;
   // Device pixel ratio at capture time (optional, for reference)
   devicePixelRatio?: number;
   // Hostname of the page when the screenshot was taken (used for domain safety checks)
@@ -61,12 +64,21 @@ export function scaleCoordinates(
   y: number,
   ctx: ScreenshotContext,
 ): { x: number; y: number } {
-  if (!ctx.screenshotWidth || !ctx.screenshotHeight || !ctx.viewportWidth || !ctx.viewportHeight) {
+  if (!ctx.screenshotWidth || !ctx.screenshotHeight) {
     return { x, y };
   }
   const ox = ctx.originX || 0;
   const oy = ctx.originY || 0;
-  const sx = ox + (x / ctx.screenshotWidth) * ctx.viewportWidth;
-  const sy = oy + (y / ctx.screenshotHeight) * ctx.viewportHeight;
+  const isCropped = Boolean(ctx.originX || ctx.originY || ctx.cropWidth || ctx.cropHeight);
+  const targetW =
+    ctx.cropWidth ??
+    (isCropped ? (ctx.cropWidth ?? ctx.screenshotWidth) : (ctx.viewportWidth || ctx.screenshotWidth));
+  const targetH =
+    ctx.cropHeight ??
+    (isCropped
+      ? (ctx.cropHeight ?? ctx.screenshotHeight)
+      : (ctx.viewportHeight || ctx.screenshotHeight));
+  const sx = ox + (x / ctx.screenshotWidth) * targetW;
+  const sy = oy + (y / ctx.screenshotHeight) * targetH;
   return { x: Math.round(sx), y: Math.round(sy) };
 }

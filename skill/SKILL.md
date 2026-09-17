@@ -232,7 +232,7 @@ For dynamic UI targets, fast animations, canvas items, or rapid sequential click
 
 When an element cannot be targeted via DOM index (e.g. Canvas games, WebGL charts, image CAPTCHAs, unlabeled SVGs):
 
-### 1. Capture Grid Screenshot
+### 1. Capture Precision Grid / Perimeter Ruler Screenshot
 
 ```json
 // Call chrome_screenshot
@@ -242,39 +242,53 @@ When an element cannot be targeted via DOM index (e.g. Canvas games, WebGL chart
 }
 ```
 
-- Returns 1:1 CSS viewport WebP image with red/blue 100px grid ruler lines.
-- **Anti-Blindness Defense**: Even if an oversized page exceeds 450KB and is saved locally, BrowserClaw **always returns an in-memory WebP thumbnail (<150KB) in the `{ type: "image" }` block**, ensuring remote agents never go blind.
+- **Perimeter Tape Measure Rulers**: Renders 20px minor, 50px medium, and 100px major ticks along top and left borders with unambiguous coordinate labels and non-occluding reticle crosshairs (`+`) at intersections.
+- **Grid Styles**: `"ruler"` (default perimeter ruler), `"crosshair"` (pure reticle crosshairs without screen-crossing lines, completely eliminating element border confusion like mistaking lines for dice edges), `"classic"` (dashed red lines), or `"1000"` (normalized 0-1000 per-mille).
+- **Zero-Blur Smart Compression**: Automatically steps WebP/JPEG quality factors while strictly preserving 1:1 CSS pixel resolution (`scale: 1.0`), preventing Vision API downscale blur for standard viewports.
+- **High-Clarity Mode**: Pass `"highClarity": true` to disable dimension scaling and preserve 100% full-resolution sharpness for micro-details.
 
-### 2. Dispatch Multimodal Coordinate Actions
+### 2. Lossless ROI Sub-Region Crops & Zoom
+
+To inspect or interact with fine details (small dice dots, tiny badges, CAPTCHAs):
+
+```json
+// Call chrome_screenshot with ROI region
+{
+  "region": { "x0": 1100, "y0": 380, "x1": 1250, "y1": 460 },
+  "grid": "crosshair",
+  "highClarity": true
+}
+```
+
+Or via `chrome_computer`:
+```json
+{
+  "action": "zoom",
+  "region": [380, 1100, 460, 1250] // [ymin, xmin, ymax, xmax]
+}
+```
+
+BrowserClaw captures the sub-region at native resolution, preserves global viewport origin offsets in `screenshotContextManager`, and ensures subsequent clicks accurately map back to global page coordinates.
+
+### 3. Dispatch Multimodal Coordinate Actions & Magnetic Auto-Snapping
 
 The **Polymorphic Coordinate Inference Engine (PCIE)** automatically adapts to any spatial coordinate format:
 
 - **Cartesian Pixels**: `{ "x": 420, "y": 280 }` or `[420, 280]`
 - **Row-First Bounding Box**: `[ymin, xmin, ymax, xmax]` (auto-calculates safe geometric center)
-- **Normalized / Per-Mille**: `0.0 ~ 1.0` or `0 ~ 1000` (auto-rescales by viewport width/height)
+- **Normalized / Per-Mille**: `0.0 ~ 1.0` or `0 ~ 1000` (auto-rescales by viewport width/height or crop bounds)
 - **CSS Style**: `{ "left": 420, "top": 280 }`
+
+- **Magnetic Auto-Snapping (`autoSnap: true`, default)**: When clicking blank whitespace within 24px of an interactive element (e.g. dice, button, SVG icon), BrowserClaw automatically snaps the click to the element's safe area, preventing wasted rounds from minor model measurement drift.
 
 ```json
 // Call chrome_interact_index with coordinate
 {
   "coordinate": { "x": 420, "y": 280 },
-  "action": "click"
+  "action": "click",
+  "autoSnap": true
 }
 ```
-
-### 3. High-Resolution ROI Zoom (Micro-Elements)
-
-To inspect or interact with tiny icons or text:
-
-```json
-// Call chrome_computer with zoom action
-{
-  "action": "zoom",
-  "region": [200, 300, 350, 450] // [ymin, xmin, ymax, xmax]
-}
-```
-
-BrowserClaw centers and magnifies the region into a crisp 400×400 high-res image and automatically adjusts subsequent coordinate offsets via `screenshotContextManager`.
 
 ---
 

@@ -28,25 +28,55 @@ export function parseUnifiedCoordinate(
         let rawX: number | undefined;
         let rawY: number | undefined;
         if (Array.isArray(input)) {
-          rawX = Number(input[0]);
-          rawY = Number(input[1]);
+          if (input.length === 2) {
+            const isYFirst = options?.pointFormat === 'gemini' || options?.pointFormat === 'yx';
+            rawX = Number(isYFirst ? input[1] : input[0]);
+            rawY = Number(isYFirst ? input[0] : input[1]);
+          } else if (input.length === 4) {
+            rawX = (Number(input[1]) + Number(input[3])) / 2;
+            rawY = (Number(input[0]) + Number(input[2])) / 2;
+          }
         } else if (typeof input === 'object' && input !== null) {
-          rawX = Number((input as any).x);
-          rawY = Number((input as any).y);
+          rawX = Number((input as any).x ?? (input as any).left);
+          rawY = Number((input as any).y ?? (input as any).top);
         }
+        const isNormalized =
+          options?.scale === '1000' ||
+          options?.scale === 'fraction' ||
+          options?.pointFormat === 'gemini' ||
+          (typeof rawX === 'number' &&
+            typeof rawY === 'number' &&
+            rawX <= 1.0 &&
+            rawY <= 1.0 &&
+            (rawX > 0 || rawY > 0));
+
         if (
+          !isNormalized &&
           typeof rawX === 'number' &&
           typeof rawY === 'number' &&
           Number.isFinite(rawX) &&
           Number.isFinite(rawY)
         ) {
-          if (rawX > ctx.screenshotWidth || rawY > ctx.screenshotHeight) {
+          const cropW = ctx.cropWidth || ctx.screenshotWidth;
+          const cropH = ctx.cropHeight || ctx.screenshotHeight;
+          if (
+            (rawX > cropW && rawX <= (ctx.viewportWidth || 1920) + 50) ||
+            (rawY > cropH && rawY <= (ctx.viewportHeight || 1080) + 50)
+          ) {
             treatAsViewport = true;
           }
         }
       }
 
-      if (!treatAsViewport) {
+      if (treatAsViewport) {
+        opts = {
+          viewportWidth: ctx.viewportWidth || 1280,
+          viewportHeight: ctx.viewportHeight || 800,
+          originX: 0,
+          originY: 0,
+          ...options,
+        };
+      } else {
         let scWidth = ctx.screenshotWidth;
         let scHeight = ctx.screenshotHeight;
         const dpr = ctx.devicePixelRatio;
@@ -56,8 +86,9 @@ export function parseUnifiedCoordinate(
           let rx: number | undefined;
           let ry: number | undefined;
           if (Array.isArray(input)) {
-            rx = Number(input[0]);
-            ry = Number(input[1]);
+            const isYFirst = options?.pointFormat === 'gemini' || options?.pointFormat === 'yx';
+            rx = Number(isYFirst ? input[1] : input[0]);
+            ry = Number(isYFirst ? input[0] : input[1]);
           } else if (typeof input === 'object' && input !== null) {
             rx = Number((input as any).x ?? (input as any).left);
             ry = Number((input as any).y ?? (input as any).top);
@@ -82,8 +113,10 @@ export function parseUnifiedCoordinate(
           viewportHeight: ctx.viewportHeight || ctx.screenshotHeight,
           screenshotWidth: scWidth,
           screenshotHeight: scHeight,
-          originX: typeof options.originX === 'number' ? options.originX : ctx.originX || 0,
-          originY: typeof options.originY === 'number' ? options.originY : ctx.originY || 0,
+          cropWidth: ctx.cropWidth,
+          cropHeight: ctx.cropHeight,
+          originX: typeof options?.originX === 'number' ? options.originX : ctx.originX || 0,
+          originY: typeof options?.originY === 'number' ? options.originY : ctx.originY || 0,
           ...options,
         };
       }

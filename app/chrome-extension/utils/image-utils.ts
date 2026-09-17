@@ -224,8 +224,165 @@ export async function compressImage(
 }
 
 /**
- * Overlay semi-transparent coordinate reference grid with dashed lines and (x, y) markers
- * on a screenshot to eliminate visual estimation hallucination for multimodal models.
+ * Normalizes an image data URL to exact CSS dimensions by scaling onto an OffscreenCanvas.
+ * Eliminates physical coordinate drift across arbitrary display scaling (125%, 150%, 200%).
+ */
+export async function normalizeImageToCssDimensions(
+  dataUrl: string,
+  targetWidthCss: number,
+  targetHeightCss: number,
+  mimeType: string = 'image/webp',
+  quality: number = 0.8,
+): Promise<string> {
+  const img = await createImageBitmapFromUrl(dataUrl);
+  if (
+    img.width === targetWidthCss &&
+    img.height === targetHeightCss &&
+    dataUrl.startsWith(`data:${mimeType}`)
+  ) {
+    return dataUrl;
+  }
+  const canvas = new OffscreenCanvas(targetWidthCss, targetHeightCss);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Failed to get 2D context from OffscreenCanvas');
+  ctx.drawImage(img, 0, 0, targetWidthCss, targetHeightCss);
+  return await canvasToDataURL(canvas, mimeType, quality);
+}
+
+export interface SmartCompressResult {
+  dataUrl: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  scaleRatio: number;
+  wasDownscaled: boolean;
+  byteLength: number;
+}
+
+/**
+ * Smart transport compression for screenshots and visual captures.
+ * Prioritizes 100% full-resolution clarity (scale: 1.0) via format/quality optimization,
+ * completely avoiding blurry downsampling for standard web pages.
+ * Only scales dimensions as an absolute last resort on massive pages (e.g. huge fullPage stitches).
+ */
+export async function smartCompressForTransport(
+  imageDataUrl: string,
+  options?: {
+    maxBytes?: number;
+    preferredFormat?: 'image/webp' | 'image/jpeg' | 'image/png';
+    allowDimensionScaling?: boolean;
+    quality?: number;
+  },
+): Promise<SmartCompressResult> {
+  const maxBytes = options?.maxBytes ?? 450 * 1024;
+  const imageBitmap = await createImageBitmapFromUrl(imageDataUrl);
+  const origW = imageBitmap.width;
+  const origH = imageBitmap.height;
+  imageBitmap.close();
+
+  const getBase64Len = (dataUrl: string) => {
+    const comma = dataUrl.indexOf(',');
+    return comma >= 0 ? dataUrl.length - comma - 1 : dataUrl.length;
+  };
+
+  const initialLen = getBase64Len(imageDataUrl);
+  const preferredFormat = options?.preferredFormat || 'image/webp';
+
+  // If already within budget and matches preferred format, return untouched
+  if (
+    initialLen <= maxBytes &&
+    (!options?.preferredFormat || imageDataUrl.startsWith(`data:${options.preferredFormat}`))
+  ) {
+    const mime = (imageDataUrl.match(/^data:([^;]+);/) || [])[1] || preferredFormat;
+    return {
+      dataUrl: imageDataUrl,
+      mimeType: mime,
+      width: origW,
+      height: origH,
+      scaleRatio: 1.0,
+      wasDownscaled: false,
+      byteLength: initialLen,
+    };
+  }
+
+  // Phase 1: High-Clarity Optimization at Scale 1.0 (Zero downsampling blur)
+  const targetFormat = preferredFormat === 'image/png' ? 'image/webp' : preferredFormat;
+  const qualitySteps = [options?.quality ?? 0.82, 0.72, 0.60, 0.48];
+  let bestCandidate: { dataUrl: string; mimeType: string } | null = null;
+  let bestCandidateLen = Infinity;
+
+  for (const q of qualitySteps) {
+    const candidate = await compressImage(imageDataUrl, {
+      scale: 1.0,
+      quality: q,
+      format: targetFormat,
+    });
+    const cLen = getBase64Len(candidate.dataUrl);
+    if (cLen < bestCandidateLen) {
+      bestCandidate = candidate;
+      bestCandidateLen = cLen;
+    }
+    if (cLen <= maxBytes) {
+      return {
+        dataUrl: candidate.dataUrl,
+        mimeType: candidate.mimeType,
+        width: origW,
+        height: origH,
+        scaleRatio: 1.0,
+        wasDownscaled: false,
+        byteLength: cLen,
+      };
+    }
+  }
+
+  // Phase 2: Proportional Scaling as Last Resort for Massive Images
+  if (options?.allowDimensionScaling !== false && bestCandidate) {
+    const scaleRatio = Math.max(
+      0.25,
+      Math.min(0.85, Math.sqrt((maxBytes * 0.9) / bestCandidateLen)),
+    );
+    const thumb = await compressImage(imageDataUrl, {
+      scale: scaleRatio,
+      quality: 0.75,
+      format: targetFormat,
+    });
+    const scaledW = Math.round(origW * scaleRatio);
+    const scaledH = Math.round(origH * scaleRatio);
+    return {
+      dataUrl: thumb.dataUrl,
+      mimeType: thumb.mimeType,
+      width: scaledW,
+      height: scaledH,
+      scaleRatio,
+      wasDownscaled: true,
+      byteLength: getBase64Len(thumb.dataUrl),
+    };
+  }
+
+  return {
+    dataUrl: bestCandidate?.dataUrl || imageDataUrl,
+    mimeType: bestCandidate?.mimeType || preferredFormat,
+    width: origW,
+    height: origH,
+    scaleRatio: 1.0,
+    wasDownscaled: false,
+    byteLength: bestCandidateLen,
+  };
+}
+
+export interface CoordinateGridOptions {
+  style?: 'ruler' | 'crosshair' | 'dense' | 'classic';
+  normalized1000?: boolean;
+  originX?: number;
+  originY?: number;
+}
+
+/**
+ * Overlay high-precision coordinate reference grid on a screenshot.
+ * Features:
+ * 1. Perimeter tape measure rulers (top & left) with 20px minor, 50px medium, 100px major ticks and crisp numeric labels.
+ * 2. Non-confusing interior reticle crosshairs (+) and subtle grid lines that NEVER overpower content or look like element borders.
+ * 3. High-contrast coordinate pill badges at intersections to completely eliminate ruler misreading.
  */
 export async function overlayCoordinateGrid(
   imageDataUrl: string,
@@ -233,6 +390,7 @@ export async function overlayCoordinateGrid(
   gridStepCss: number = 100,
   format: string = 'image/png',
   quality?: number,
+  options?: CoordinateGridOptions,
 ): Promise<string> {
   const imageBitmap = await createImageBitmapFromUrl(imageDataUrl);
   try {
@@ -246,71 +404,183 @@ export async function overlayCoordinateGrid(
     ctx.drawImage(imageBitmap, 0, 0);
 
     const stepPx = Math.max(10, Math.round(gridStepCss * dpr));
+    const ox = Math.round((options?.originX ?? 0) * dpr);
+    const oy = Math.round((options?.originY ?? 0) * dpr);
+    const isClassic = options?.style === 'classic';
+    const isCrosshairOnly = options?.style === 'crosshair';
+
     ctx.save();
-    ctx.lineWidth = Math.max(1, Math.round(dpr));
-    ctx.setLineDash([4 * dpr, 4 * dpr]);
-    ctx.strokeStyle = 'rgba(255, 30, 80, 0.35)'; // high contrast semi-transparent red
 
-    // Draw vertical grid lines
-    for (let x = stepPx; x < canvas.width; x += stepPx) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, canvas.height);
-      ctx.stroke();
+    if (isClassic) {
+      // Backward-compatible classic dashed red lines
+      ctx.lineWidth = Math.max(1, Math.round(dpr));
+      ctx.setLineDash([4 * dpr, 4 * dpr]);
+      ctx.strokeStyle = 'rgba(255, 30, 80, 0.35)';
+
+      for (let x = stepPx; x < canvas.width; x += stepPx) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+
+      for (let y = stepPx; y < canvas.height; y += stepPx) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+    } else {
+      if (!isCrosshairOnly) {
+        // Enhanced Mode: Ultra-subtle interior guide lines (never mistaken for element borders)
+        ctx.lineWidth = Math.max(1, Math.round(dpr));
+        ctx.setLineDash([2 * dpr, 6 * dpr]);
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)'; // extremely light cyan guideline
+
+        for (let x = stepPx; x < canvas.width; x += stepPx) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
+          ctx.stroke();
+        }
+
+        for (let y = stepPx; y < canvas.height; y += stepPx) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(canvas.width, y);
+          ctx.stroke();
+        }
+      }
+
+      // Interior Reticle Crosshairs (+) at intersections: unambiguous coordinate anchors
+      ctx.setLineDash([]);
+      ctx.lineWidth = Math.max(1, Math.round(1.5 * dpr));
+      const crossArm = Math.max(4, Math.round(5 * dpr));
+
+      for (let x = stepPx; x < canvas.width; x += stepPx) {
+        for (let y = stepPx; y < canvas.height; y += stepPx) {
+          ctx.strokeStyle = 'rgba(0, 240, 255, 0.55)'; // cyan crosshair
+          ctx.beginPath();
+          ctx.moveTo(x - crossArm, y);
+          ctx.lineTo(x + crossArm, y);
+          ctx.moveTo(x, y - crossArm);
+          ctx.lineTo(x, y + crossArm);
+          ctx.stroke();
+
+          // Amber center reticle dot
+          ctx.fillStyle = 'rgba(245, 158, 11, 0.9)';
+          const dotRadius = Math.max(1, Math.round(dpr));
+          ctx.fillRect(x - dotRadius, y - dotRadius, dotRadius * 2 + 1, dotRadius * 2 + 1);
+        }
+      }
     }
 
-    // Draw horizontal grid lines
-    for (let y = stepPx; y < canvas.height; y += stepPx) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(canvas.width, y);
-      ctx.stroke();
-    }
-
-    // Draw coordinate labels at intersections and along axes
+    // Coordinate labels and Top/Left Perimeter Tape Measure Rulers
     ctx.setLineDash([]);
     const fontSize = Math.max(9, Math.round(9 * dpr));
     ctx.font = `${fontSize}px monospace`;
 
-    // Intersections: Draw unobtrusive, semi-transparent labels at 200px intervals (or 100px on small canvases)
+    // Intersections: Draw unambiguous pill badges at 200px intervals (or 100px on small canvases)
     const intersectionInterval = canvas.width > 800 && canvas.height > 600 ? stepPx * 2 : stepPx;
     for (let x = intersectionInterval; x < canvas.width; x += intersectionInterval) {
       for (let y = intersectionInterval; y < canvas.height; y += intersectionInterval) {
         const xCss = Math.round(x / dpr);
         const yCss = Math.round(y / dpr);
-        const label = `(${xCss},${yCss})`;
+        const globalX = Math.round((x + ox) / dpr);
+        const globalY = Math.round((y + oy) / dpr);
+
+        let label = (ox !== 0 || oy !== 0) ? `(${globalX},${globalY})` : `(${xCss},${yCss})`;
+        if (options?.normalized1000) {
+          const normY = Math.round((yCss / (canvas.height / dpr)) * 1000);
+          const normX = Math.round((xCss / (canvas.width / dpr)) * 1000);
+          label = `[${normY},${normX}]`;
+        }
+
         const tm = ctx.measureText(label);
         const pad = 1.5 * dpr;
 
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.45)'; // semi-transparent slate
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.65)'; // slate pill background
         ctx.fillRect(x + pad, y + pad, tm.width + pad * 2, fontSize + pad * 2);
         ctx.fillStyle = '#00ffff'; // bright cyan text
         ctx.fillText(label, x + pad * 2, y + pad + fontSize);
       }
     }
 
-    // Along top axis
-    for (let x = stepPx; x < canvas.width; x += stepPx) {
-      const xCss = Math.round(x / dpr);
-      const label = `x:${xCss}`;
-      const tm = ctx.measureText(label);
-      const pad = 1.5 * dpr;
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
-      ctx.fillRect(x + pad, pad, tm.width + pad * 2, fontSize + pad * 2);
-      ctx.fillStyle = '#facc15'; // bright amber text
-      ctx.fillText(label, x + pad * 2, pad + fontSize);
+    // Top Perimeter Ruler Bar (X-axis)
+    const rulerH = Math.min(Math.floor(canvas.height * 0.25), Math.max(14, Math.round(18 * dpr)));
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+    ctx.fillRect(0, 0, canvas.width, rulerH);
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.7)';
+    ctx.fillRect(0, rulerH - 1, canvas.width, 1); // bottom border line
+
+    // Left Perimeter Ruler Bar (Y-axis)
+    const rulerW = Math.min(Math.floor(canvas.width * 0.25), Math.max(18, Math.round(26 * dpr)));
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+    ctx.fillRect(0, 0, rulerW, canvas.height);
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.7)';
+    ctx.fillRect(rulerW - 1, 0, 1, canvas.height); // right border line
+
+    // Corner Origin Badge
+    ctx.fillStyle = '#00ffff';
+    ctx.font = `bold ${Math.max(8, Math.round(8 * dpr))}px monospace`;
+    const originLabel = options?.normalized1000
+      ? '[0,0]'
+      : (ox !== 0 || oy !== 0)
+        ? `${Math.round(ox / dpr)},${Math.round(oy / dpr)}`
+        : '0,0';
+    ctx.fillText(originLabel, 2 * dpr, Math.round(12 * dpr));
+
+    ctx.font = `${fontSize}px monospace`;
+
+    // Ticks along Top axis (every 10px minor, 50px medium, 100px or gridStepCss major)
+    const tickIntervalCss = 10;
+    const maxCssW = canvas.width / dpr;
+    for (let xCss = tickIntervalCss; xCss < maxCssW; xCss += tickIntervalCss) {
+      const x = Math.round(xCss * dpr);
+      const isMajor = xCss % gridStepCss === 0;
+      const isMedium = !isMajor && xCss % 50 === 0;
+      const tickLen = isMajor ? Math.round(8 * dpr) : isMedium ? Math.round(5 * dpr) : Math.round(3 * dpr);
+
+      ctx.fillStyle = isMajor ? '#facc15' : isMedium ? 'rgba(250, 204, 21, 0.7)' : 'rgba(148, 163, 184, 0.5)';
+      ctx.fillRect(x, rulerH - tickLen, 1, tickLen);
+
+      if (isMajor) {
+        let label: string;
+        if (options?.normalized1000) {
+          const normX = Math.round((x / canvas.width) * 1000);
+          label = `${normX}`;
+        } else {
+          const globalX = Math.round(xCss + (options?.originX ?? 0));
+          label = `${globalX}`;
+        }
+        ctx.fillStyle = '#facc15'; // bright amber
+        ctx.fillText(label, x + 2 * dpr, rulerH - 3 * dpr);
+      }
     }
 
-    // Along left axis
-    for (let y = stepPx; y < canvas.height; y += stepPx) {
-      const yCss = Math.round(y / dpr);
-      const label = `y:${yCss}`;
-      const tm = ctx.measureText(label);
-      const pad = 1.5 * dpr;
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
-      ctx.fillRect(pad, y + pad, tm.width + pad * 2, fontSize + pad * 2);
-      ctx.fillStyle = '#facc15'; // bright amber text
-      ctx.fillText(label, pad * 2, y + pad + fontSize);
+    // Ticks along Left axis (every 10px minor, 50px medium, 100px or gridStepCss major)
+    const maxCssH = canvas.height / dpr;
+    for (let yCss = tickIntervalCss; yCss < maxCssH; yCss += tickIntervalCss) {
+      const y = Math.round(yCss * dpr);
+      const isMajor = yCss % gridStepCss === 0;
+      const isMedium = !isMajor && yCss % 50 === 0;
+      const tickLen = isMajor ? Math.round(8 * dpr) : isMedium ? Math.round(5 * dpr) : Math.round(3 * dpr);
+
+      ctx.fillStyle = isMajor ? '#facc15' : isMedium ? 'rgba(250, 204, 21, 0.7)' : 'rgba(148, 163, 184, 0.5)';
+      ctx.fillRect(rulerW - tickLen, y, tickLen, 1);
+
+      if (isMajor) {
+        let label: string;
+        if (options?.normalized1000) {
+          const normY = Math.round((y / canvas.height) * 1000);
+          label = `${normY}`;
+        } else {
+          const globalY = Math.round(yCss + (options?.originY ?? 0));
+          label = `${globalY}`;
+        }
+        ctx.fillStyle = '#facc15'; // bright amber
+        ctx.fillText(label, 2 * dpr, y - 2 * dpr);
+      }
     }
 
     ctx.restore();

@@ -6,15 +6,16 @@ import { ERROR_MESSAGES, TIMEOUTS } from '@/common/constants';
 import { TOOL_MESSAGE_TYPES } from '@/common/message-types';
 import { clickTool, fillTool } from './interaction';
 import { keyboardTool } from './keyboard';
-import { screenshotTool } from './screenshot';
+import { screenshotTool, normalizeImageToCssDimensions } from './screenshot';
 import { screenshotContextManager, scaleCoordinates } from '@/utils/screenshot-context';
 import { screenshotOriginViolation, dwell } from '@/utils/screenshot-guard';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { screenshotRingBuffer } from '@/utils/screenshot-ring-buffer';
-import { compressImage } from '@/utils/image-utils';
+import { compressImage, smartCompressForTransport, overlayCoordinateGrid } from '@/utils/image-utils';
 import { parseUnifiedCoordinate, type PolymorphicCoordinate } from '@/utils/coordinate-parser';
 import { sessionTabAffinity } from '@/utils/session-tab-affinity';
 import { animateAgentCursor } from './agent-cursor';
+import { executeInPage } from './in-page-engine';
 
 type MouseButton = 'left' | 'right' | 'middle';
 
@@ -80,6 +81,12 @@ interface ComputerParams {
   background?: boolean; // avoid focusing/activating
   sessionId?: string;
   sessionContext?: string;
+  autoSnap?: boolean; // automatically snap coordinates to closest interactive element if clicked whitespace (default: true)
+  grid?: boolean | 'ruler' | 'crosshair' | 'classic' | '1000';
+  highClarity?: boolean;
+  crop?: any;
+  quality?: number;
+  format?: 'png' | 'jpeg' | 'webp';
 }
 
 // Minimal CDP helper encapsulated here to avoid scattering CDP code
@@ -395,6 +402,17 @@ class ComputerTool extends BaseBrowserToolExecutor {
           // fall through to error handling below
         }
 
+        if (coord && params.autoSnap !== false && resolvedBy === 'coordinates') {
+          try {
+            const snap = (
+              await executeInPage({ tabId }, 'inPageSnapCoordinate', [coord.x, coord.y, 24])
+            )?.[0]?.result;
+            if (snap?.snapped) {
+              coord = { x: snap.x, y: snap.y };
+            }
+          } catch {}
+        }
+
         if (!coord)
           return createErrorResponse(
             'Provide ref or selector or coordinates for hover, or failed to resolve target',
@@ -491,9 +509,21 @@ class ComputerTool extends BaseBrowserToolExecutor {
 
         const stale = screenshotOriginViolation(tab.id!, tab.url, params.action);
         if (stale) return createErrorResponse(stale);
-        const coord = project(params.coordinates);
+        let coord = project(params.coordinates);
         if (!coord) {
           return createErrorResponse('Failed to resolve coordinates');
+        }
+        let autoSnapResult: { snapped: boolean; targetTag?: string; distance?: number } | undefined;
+        if (params.autoSnap !== false) {
+          try {
+            const snap = (
+              await executeInPage({ tabId }, 'inPageSnapCoordinate', [coord.x, coord.y, 24])
+            )?.[0]?.result;
+            if (snap?.snapped) {
+              autoSnapResult = { snapped: true, targetTag: snap.targetTag, distance: snap.distance };
+              coord = { x: snap.x, y: snap.y };
+            }
+          } catch {}
         }
         // Direct native CDP mouse event dispatch for coordinate clicks (isTrusted: true)
         try {
@@ -538,6 +568,7 @@ class ComputerTool extends BaseBrowserToolExecutor {
                   success: true,
                   action: params.action,
                   coordinates: coord,
+                  ...(autoSnapResult ? { autoSnap: autoSnapResult } : {}),
                 }),
               },
             ],
@@ -602,6 +633,20 @@ class ComputerTool extends BaseBrowserToolExecutor {
           }
         }
         if (!coord) return createErrorResponse('Failed to resolve coordinates from ref/selector');
+
+        let doubleSnapResult: { snapped: boolean; targetTag?: string; distance?: number } | undefined;
+        if (params.coordinates && params.autoSnap !== false && coord) {
+          try {
+            const snap = (
+              await executeInPage({ tabId }, 'inPageSnapCoordinate', [coord.x, coord.y, 24])
+            )?.[0]?.result;
+            if (snap?.snapped) {
+              doubleSnapResult = { snapped: true, targetTag: snap.targetTag, distance: snap.distance };
+              coord = { x: snap.x, y: snap.y };
+            }
+          } catch {}
+        }
+
         {
           const stale = params.coordinates
             ? screenshotOriginViolation(tab.id!, tab.url, params.action)
@@ -649,6 +694,7 @@ class ComputerTool extends BaseBrowserToolExecutor {
                   success: true,
                   action: params.action,
                   coordinates: coord,
+                  ...(doubleSnapResult ? { autoSnap: doubleSnapResult } : {}),
                 }),
               },
             ],
@@ -690,6 +736,15 @@ class ComputerTool extends BaseBrowserToolExecutor {
           } catch {
             // ignore
           }
+        } else if (params.autoSnap !== false && start) {
+          try {
+            const snap = (
+              await executeInPage({ tabId }, 'inPageSnapCoordinate', [start.x, start.y, 24])
+            )?.[0]?.result;
+            if (snap?.snapped) {
+              start = { x: snap.x, y: snap.y };
+            }
+          } catch {}
         }
         if (params.ref) {
           try {
@@ -1201,6 +1256,8 @@ class ComputerTool extends BaseBrowserToolExecutor {
         if (stale) return createErrorResponse(stale);
 
         try {
+          let vw = 800;
+          let vh = 600;
           const shot: any = await cdpSessionManager.withSession(tabId, 'computer', async () => {
             const metrics: any = await CDPHelper.send(tabId, 'Page.getLayoutMetrics', {});
             const viewport = metrics?.layoutViewport ||
@@ -1210,8 +1267,8 @@ class ComputerTool extends BaseBrowserToolExecutor {
                 pageX: 0,
                 pageY: 0,
               };
-            const vw = Math.round(Number(viewport.clientWidth || 800));
-            const vh = Math.round(Number(viewport.clientHeight || 600));
+            vw = Math.round(Number(viewport.clientWidth || 800));
+            vh = Math.round(Number(viewport.clientHeight || 600));
             if (rx1 > vw || ry1 > vh) {
               throw new Error(
                 `Region exceeds viewport boundaries (${vw}x${vh}). Choose a region within the visible viewport.`,
@@ -1239,6 +1296,39 @@ class ComputerTool extends BaseBrowserToolExecutor {
             return createErrorResponse('Failed to capture zoom screenshot via CDP');
           }
 
+          // Enforce DPR 1:1 Normalization: resample from physical pixels to exact CSS viewport dimensions
+          let normalizedBase64 = base64Data;
+          try {
+            const normalizedDataUrl = await normalizeImageToCssDimensions(
+              `data:image/png;base64,${base64Data}`,
+              Math.round(w),
+              Math.round(h),
+              'image/png',
+              1.0,
+            );
+            normalizedBase64 = normalizedDataUrl.replace(/^data:[^;]+;base64,/, '');
+
+            if (params.grid) {
+              const gridStyle = typeof params.grid === 'string' ? params.grid : 'crosshair';
+              const griddedDataUrl = await overlayCoordinateGrid(
+                normalizedDataUrl,
+                1,
+                50,
+                'image/png',
+                1.0,
+                {
+                  style: gridStyle === 'classic' ? 'classic' : gridStyle === 'crosshair' ? 'crosshair' : 'ruler',
+                  originX: rx0,
+                  originY: ry0,
+                  normalized1000: gridStyle === '1000',
+                },
+              );
+              normalizedBase64 = griddedDataUrl.replace(/^data:[^;]+;base64,/, '');
+            }
+          } catch (normErr) {
+            console.warn('Failed to normalize or overlay grid on zoom image:', normErr);
+          }
+
           const currentHostname = ((): string => {
             try {
               return new URL(tab.url || '').hostname;
@@ -1251,8 +1341,10 @@ class ComputerTool extends BaseBrowserToolExecutor {
           screenshotContextManager.setContext(tabId, {
             screenshotWidth: Math.round(w),
             screenshotHeight: Math.round(h),
-            viewportWidth: Math.round(w),
-            viewportHeight: Math.round(h),
+            viewportWidth: vw,
+            viewportHeight: vh,
+            cropWidth: Math.round(w),
+            cropHeight: Math.round(h),
             originX: rx0,
             originY: ry0,
             hostname: currentHostname,
@@ -1264,36 +1356,42 @@ class ComputerTool extends BaseBrowserToolExecutor {
             mimeType: 'image/png',
             width: Math.round(w),
             height: Math.round(h),
-            dataBase64: base64Data,
+            dataBase64: normalizedBase64,
           });
 
-          let finalBase64 = base64Data;
+          let finalBase64 = normalizedBase64;
           let finalMimeType = 'image/png';
           let isThumbnail = false;
           let warning: string | undefined;
 
           // Anti-blinding safety budget: if payload exceeds 450KB, save to disk and return high-quality thumbnail
-          if (base64Data.length > 450 * 1024) {
-            // Nothing written to disk: agent operations must not leave files in
-            // the user Downloads folder. Inline thumbnail only.
-
+          if (finalBase64.length > 450 * 1024) {
             try {
-              const scaleRatio = Math.min(
-                0.75,
-                Math.max(0.2, Math.sqrt((350 * 1024) / base64Data.length)),
+              const compressed = await smartCompressForTransport(
+                `data:image/png;base64,${finalBase64}`,
+                {
+                  maxBytes: 450 * 1024,
+                  preferredFormat: 'image/webp',
+                  quality: 0.82,
+                },
               );
-              const thumb = await compressImage(`data:image/png;base64,${base64Data}`, {
-                scale: scaleRatio,
-                quality: 0.75,
-                format: 'image/webp',
-              });
-              const thumbBase64 = thumb.dataUrl.replace(/^data:image\/[^;]+;base64,/, '');
-              if (thumbBase64.length < 800 * 1024) {
-                finalBase64 = thumbBase64;
-                finalMimeType = thumb.mimeType;
+              finalBase64 = compressed.dataUrl.replace(/^data:[^;]+;base64,/, '');
+              finalMimeType = compressed.mimeType;
+              if (compressed.wasDownscaled) {
                 isThumbnail = true;
                 warning =
                   'Zoom screenshot payload exceeded 450KB safety budget. Full image saved to disk. High-quality preview thumbnail returned to maintain visual perception.';
+                screenshotContextManager.setContext(tabId, {
+                  screenshotWidth: compressed.width,
+                  screenshotHeight: compressed.height,
+                  viewportWidth: vw,
+                  viewportHeight: vh,
+                  cropWidth: Math.round(w),
+                  cropHeight: Math.round(h),
+                  originX: rx0,
+                  originY: ry0,
+                  hostname: currentHostname,
+                });
               }
             } catch (thumbErr) {
               console.warn('Failed to generate preview thumbnail for zoom:', thumbErr);
@@ -1325,11 +1423,19 @@ class ComputerTool extends BaseBrowserToolExecutor {
         }
       }
       case 'screenshot': {
-        // Reuse existing screenshot tool; it already supports base64 save option
+        // Reuse existing screenshot tool; forward grid, region, crop, quality, highClarity
         const result = await screenshotTool.execute({
           name: 'computer',
           storeBase64: true,
           fullPage: false,
+          tabId,
+          grid: (params as any).grid,
+          region: (params as any).region,
+          crop: (params as any).crop,
+          highClarity: (params as any).highClarity,
+          quality: (params as any).quality,
+          format: (params as any).format || 'webp',
+          sessionId: params.sessionId || params.sessionContext,
         });
         return result;
       }

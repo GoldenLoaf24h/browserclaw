@@ -27,6 +27,8 @@ export interface UnifiedCoordinateOptions {
   viewportHeight?: number;
   screenshotWidth?: number;
   screenshotHeight?: number;
+  cropWidth?: number;
+  cropHeight?: number;
   originX?: number; // ROI origin offset X
   originY?: number; // ROI origin offset Y
   pointFormat?: 'xy' | 'yx' | 'gemini' | 'openai' | 'auto';
@@ -69,6 +71,10 @@ export function parseUnifiedCoordinate(
   const vh = (typeof options?.viewportHeight === 'number' && options.viewportHeight > 0) ? options.viewportHeight : 800;
   const ox = options?.originX || 0;
   const oy = options?.originY || 0;
+  const isCropped = Boolean(options?.originX || options?.originY || options?.cropWidth || options?.cropHeight);
+  const targetW = options?.cropWidth ?? (isCropped ? (options?.cropWidth ?? options?.screenshotWidth ?? vw) : vw);
+  const targetH = options?.cropHeight ?? (isCropped ? (options?.cropHeight ?? options?.screenshotHeight ?? vh) : vh);
+  const pointFormat = options?.pointFormat || 'auto';
 
   // Handle nested wrapper objects
   if (typeof raw === 'object' && !Array.isArray(raw)) {
@@ -128,19 +134,26 @@ export function parseUnifiedCoordinate(
 
       if (
         options?.scale === 'fraction' ||
-        (options?.scale !== 'pixel' && options?.scale !== '1000' && rawX <= 1.0 && rawY <= 1.0 && (rawX > 0 || rawY > 0) && vw > 1)
+        (options?.scale !== 'pixel' && options?.scale !== '1000' && rawX <= 1.0 && rawY <= 1.0 && (rawX > 0 || rawY > 0) && targetW > 1)
       ) {
-        finalX = rawX * vw;
-        finalY = rawY * vh;
-      } else if (options?.scale === '1000') {
-        finalX = (rawX / 1000) * vw;
-        finalY = (rawY / 1000) * vh;
+        finalX = rawX * targetW;
+        finalY = rawY * targetH;
+      } else if (
+        options?.scale === '1000' ||
+        (options?.scale !== 'pixel' &&
+          (rawX > 1 || rawY > 1) &&
+          rawX <= 1000 &&
+          rawY <= 1000 &&
+          (pointFormat === 'gemini' || rawX > targetW || rawY > targetH))
+      ) {
+        finalX = (rawX / 1000) * targetW;
+        finalY = (rawY / 1000) * targetH;
       } else {
-        if (options?.screenshotWidth && options.screenshotWidth > 0 && options.screenshotWidth !== vw) {
-          finalX = (rawX / options.screenshotWidth) * vw;
+        if (options?.screenshotWidth && options.screenshotWidth > 0 && options.screenshotWidth !== targetW) {
+          finalX = (rawX / options.screenshotWidth) * targetW;
         }
-        if (options?.screenshotHeight && options.screenshotHeight > 0 && options.screenshotHeight !== vh) {
-          finalY = (rawY / options.screenshotHeight) * vh;
+        if (options?.screenshotHeight && options.screenshotHeight > 0 && options.screenshotHeight !== targetH) {
+          finalY = (rawY / options.screenshotHeight) * targetH;
         }
       }
 
@@ -160,7 +173,6 @@ export function parseUnifiedCoordinate(
 
     // Detect orientation: Row-first [ymin, xmin, ymax, xmax] vs Cartesian [xmin, ymin, xmax, ymax]
     let isYminFirst = true;
-    const pointFormat = options?.pointFormat || 'auto';
     if (pointFormat === 'openai' || pointFormat === 'xy') {
       isYminFirst = false;
     } else if (pointFormat === 'gemini' || pointFormat === 'yx') {
@@ -187,24 +199,24 @@ export function parseUnifiedCoordinate(
 
     if (options?.scale === 'fraction' || (options?.scale !== 'pixel' && options?.scale !== '1000' && maxVal <= 1.0 && maxVal > 0)) {
       // 0~1.0 normalized
-      finalX = cx * vw;
-      finalY = cy * vh;
+      finalX = cx * targetW;
+      finalY = cy * targetH;
     } else if (
       options?.scale === '1000' ||
-      (options?.scale !== 'pixel' && (pointFormat === 'gemini' || (maxVal <= 1000 && (ymax > vh || xmax > vw))))
+      (options?.scale !== 'pixel' && (pointFormat === 'gemini' || (maxVal <= 1000 && (ymax > targetH || xmax > targetW))))
     ) {
       // 0~1000 per-mille
-      finalX = (cx / 1000) * vw;
-      finalY = (cy / 1000) * vh;
+      finalX = (cx / 1000) * targetW;
+      finalY = (cy / 1000) * targetH;
     } else {
       // Absolute pixels
-      if (options?.screenshotWidth && options.screenshotWidth > 0 && options.screenshotWidth !== vw) {
-        finalX = (cx / options.screenshotWidth) * vw;
+      if (options?.screenshotWidth && options.screenshotWidth > 0 && options.screenshotWidth !== targetW) {
+        finalX = (cx / options.screenshotWidth) * targetW;
       } else {
         finalX = cx;
       }
-      if (options?.screenshotHeight && options.screenshotHeight > 0 && options.screenshotHeight !== vh) {
-        finalY = (cy / options.screenshotHeight) * vh;
+      if (options?.screenshotHeight && options.screenshotHeight > 0 && options.screenshotHeight !== targetH) {
+        finalY = (cy / options.screenshotHeight) * targetH;
       } else {
         finalY = cy;
       }
@@ -260,20 +272,24 @@ export function parseUnifiedCoordinate(
     let finalY = rawY;
 
     if (options?.scale === 'fraction' || (options?.scale !== 'pixel' && options?.scale !== '1000' && rawX <= 1.0 && rawY <= 1.0 && (rawX > 0 || rawY > 0))) {
-      finalX = rawX * vw;
-      finalY = rawY * vh;
+      finalX = rawX * targetW;
+      finalY = rawY * targetH;
     } else if (
       options?.scale === '1000' ||
-      (options?.scale !== 'pixel' && (pointFormat === 'gemini' || pointFormat === 'yx') && (rawX > 1 || rawY > 1) && rawX <= 1000 && rawY <= 1000 && options?.scale !== undefined)
+      (options?.scale !== 'pixel' &&
+        (rawX > 1 || rawY > 1) &&
+        rawX <= 1000 &&
+        rawY <= 1000 &&
+        (pointFormat === 'gemini' || rawX > targetW || rawY > targetH))
     ) {
-      finalX = (rawX / 1000) * vw;
-      finalY = (rawY / 1000) * vh;
+      finalX = (rawX / 1000) * targetW;
+      finalY = (rawY / 1000) * targetH;
     } else {
-      if (options?.screenshotWidth && options.screenshotWidth > 0 && options.screenshotWidth !== vw) {
-        finalX = (rawX / options.screenshotWidth) * vw;
+      if (options?.screenshotWidth && options.screenshotWidth > 0 && options.screenshotWidth !== targetW) {
+        finalX = (rawX / options.screenshotWidth) * targetW;
       }
-      if (options?.screenshotHeight && options.screenshotHeight > 0 && options.screenshotHeight !== vh) {
-        finalY = (rawY / options.screenshotHeight) * vh;
+      if (options?.screenshotHeight && options.screenshotHeight > 0 && options.screenshotHeight !== targetH) {
+        finalY = (rawY / options.screenshotHeight) * targetH;
       }
     }
 

@@ -150,10 +150,11 @@ export function describeHitTarget(element: Element): string {
  * Prevents non-standard interactive SVG elements from being pruned as decorative.
  */
 export function isInteractiveSvgNode(el: Element, style?: CSSStyleDeclaration): boolean {
-  if (!el || (typeof Element !== 'undefined' && !(el instanceof Element))) return false;
+  if (!el || (typeof Element !== 'undefined' && !(el instanceof Element) && !(el as any).tagName)) return false;
   const tag = (el.tagName || '').toLowerCase();
   const isSvg =
     tag === 'svg' ||
+    /^(path|g|rect|circle|line|polygon|polyline|ellipse|text|tspan|use|image)$/i.test(tag) ||
     el.namespaceURI === 'http://www.w3.org/2000/svg' ||
     (typeof el.closest === 'function' && Boolean(el.closest('svg')));
   if (!isSvg) return false;
@@ -2342,6 +2343,166 @@ export function inPageGetElementCoordinates(refOrIndex: number | string): {
   }
 
   return extractElementLocationDetails(el);
+}
+
+/**
+ * Bounding box / interactive element auto-snapping.
+ * If model eye measurement clicked slightly off-target (e.g. 10-25px outside a dice/button onto whitespace),
+ * magnetically snap the coordinate to the closest interactive element.
+ */
+export function inPageSnapCoordinate(
+  x: number,
+  y: number,
+  snapRadius = 24,
+): {
+  snapped: boolean;
+  x: number;
+  y: number;
+  originalX: number;
+  originalY: number;
+  targetIndex?: number;
+  targetTag?: string;
+  distance?: number;
+} {
+  const origX = Math.round(x);
+  const origY = Math.round(y);
+  const defaultRes = { snapped: false, x: origX, y: origY, originalX: origX, originalY: origY };
+
+  if (typeof document === 'undefined') return defaultRes;
+
+  const vw = window.innerWidth || document.documentElement?.clientWidth || 1280;
+  const vh = window.innerHeight || document.documentElement?.clientHeight || 800;
+  if (origX < 0 || origY < 0 || origX > vw || origY > vh) return defaultRes;
+
+  // 1. Direct hit test at (origX, origY)
+  let hitEl: Element | null = null;
+  try {
+    hitEl = document.elementFromPoint(origX, origY);
+  } catch {}
+
+  const isInteractiveNode = (el: Element | null): boolean => {
+    if (!el || (typeof Element !== 'undefined' && !(el instanceof Element))) return false;
+    const tag = el.tagName.toLowerCase();
+    if (/^(button|input|select|textarea|a|canvas|video|audio|summary)$/.test(tag)) return true;
+    const role = el.getAttribute('role')?.toLowerCase();
+    if (role && /^(button|link|checkbox|radio|menuitem|tab|switch|option|combobox|treeitem)$/.test(role)) return true;
+    if (el.hasAttribute('onclick') || el.hasAttribute('data-action') || (el as any).onclick) return true;
+    const tabIndex = typeof (el as HTMLElement).tabIndex === 'number' ? (el as HTMLElement).tabIndex : -1;
+    if (tabIndex >= 0) return true;
+    if (tag === 'svg' || (el as any).ownerSVGElement) {
+      const svgRoot = tag === 'svg' ? el : (el as any).ownerSVGElement;
+      if (svgRoot && (svgRoot.hasAttribute('onclick') || svgRoot.getAttribute('role') === 'button')) return true;
+    }
+    if (typeof (el as any).closest === 'function') {
+      try {
+        if ((el as any).closest('button, a, [role="button"], [onclick]')) return true;
+      } catch {}
+    }
+    try {
+      const style = window.getComputedStyle(el);
+      if (style.cursor === 'pointer' || /grab|grabbing/i.test(style.cursor)) return true;
+    } catch {}
+    return false;
+  };
+
+  // If already directly hitting an interactive element or inside one, no snap needed
+  let cur: Element | null = hitEl;
+  while (cur && cur !== document.body && cur !== document.documentElement) {
+    if (isInteractiveNode(cur)) {
+      return defaultRes;
+    }
+    cur = cur.parentElement;
+  }
+
+  // 2. Search candidate elements in isolatedIndexMap within snapRadius
+  const isolatedMap = getIsolatedIndexMap();
+  let bestEl: Element | null = null;
+  let bestDist = Infinity;
+  let bestIndex: number | undefined;
+  let bestRect: DOMRect | undefined;
+
+  for (const [idx, wrapped] of isolatedMap.entries()) {
+    const el = derefElement(wrapped);
+    if (!el || (typeof Element !== 'undefined' && !(el instanceof Element))) continue;
+    try {
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      // Clamped point in rect closest to (origX, origY)
+      const cx = Math.max(rect.left, Math.min(rect.right, origX));
+      const cy = Math.max(rect.top, Math.min(rect.bottom, origY));
+      const dist = Math.hypot(origX - cx, origY - cy);
+      if (dist < bestDist && dist <= snapRadius) {
+        bestDist = dist;
+        bestEl = el;
+        bestIndex = idx;
+        bestRect = rect;
+      }
+    } catch {}
+  }
+
+  // 3. Fallback: Radial search if isolatedIndexMap had no candidates
+  if (!bestEl) {
+    const searchDistances = [8, 16, snapRadius];
+    const angles = [0, 45, 90, 135, 180, 225, 270, 315];
+    for (const r of searchDistances) {
+      if (bestEl) break;
+      for (const a of angles) {
+        const rad = (a * Math.PI) / 180;
+        const px = Math.round(origX + r * Math.cos(rad));
+        const py = Math.round(origY + r * Math.sin(rad));
+        if (px < 0 || py < 0 || px > vw || py > vh) continue;
+        try {
+          const sampleEl = document.elementFromPoint(px, py);
+          let candidate: Element | null = sampleEl;
+          while (candidate && candidate !== document.body && candidate !== document.documentElement) {
+            if (isInteractiveNode(candidate)) {
+              const b = candidate.getBoundingClientRect();
+              const cx = Math.max(b.left, Math.min(b.right, origX));
+              const cy = Math.max(b.top, Math.min(b.bottom, origY));
+              const d = Math.hypot(origX - cx, origY - cy);
+              if (d <= snapRadius) {
+                bestDist = d;
+                bestEl = candidate;
+                bestRect = b;
+                break;
+              }
+            }
+            candidate = candidate.parentElement;
+          }
+        } catch {}
+      }
+    }
+  }
+
+  if (bestEl && bestRect) {
+    // For small/medium elements (<= 120px in width/height), snap to geometric center.
+    // For large elements (> 120px), clamp within the element with a safe margin to avoid jumping hundreds of pixels.
+    const isSmallOrMedium = bestRect.width <= 120 && bestRect.height <= 120;
+    let safeX: number;
+    let safeY: number;
+
+    if (isSmallOrMedium) {
+      safeX = Math.round((bestRect.left + bestRect.right) / 2);
+      safeY = Math.round((bestRect.top + bestRect.bottom) / 2);
+    } else {
+      const marginX = Math.min(12, Math.floor(bestRect.width * 0.1));
+      const marginY = Math.min(12, Math.floor(bestRect.height * 0.1));
+      safeX = Math.round(Math.max(bestRect.left + marginX, Math.min(bestRect.right - marginX, origX)));
+      safeY = Math.round(Math.max(bestRect.top + marginY, Math.min(bestRect.bottom - marginY, origY)));
+    }
+    return {
+      snapped: true,
+      x: safeX,
+      y: safeY,
+      originalX: origX,
+      originalY: origY,
+      targetIndex: bestIndex,
+      targetTag: bestEl.tagName.toLowerCase(),
+      distance: Math.round(bestDist),
+    };
+  }
+
+  return defaultRes;
 }
 
 /**

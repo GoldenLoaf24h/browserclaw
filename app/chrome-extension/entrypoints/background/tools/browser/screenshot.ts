@@ -9,6 +9,7 @@ import {
   stitchImages,
   compressImage,
   overlayCoordinateGrid,
+  smartCompressForTransport,
 } from '../../../../utils/image-utils';
 import { screenshotContextManager } from '@/utils/screenshot-context';
 import { executeInPage } from './in-page-engine';
@@ -63,7 +64,7 @@ interface ScreenshotToolParams {
   fullPage?: boolean;
   savePng?: boolean;
   maxHeight?: number; // Maximum height to capture in pixels (for infinite scroll pages)
-  grid?: boolean; // Overlay semi-transparent coordinate reference grid
+  grid?: boolean | string; // Overlay coordinate reference grid ('ruler' | 'crosshair' | 'classic' | '1000' | true)
   expandSearchArea?: boolean; // Adaptively expand crop box for small elements (<100x100)
   autoExpand?: boolean;
   som?: boolean; // Overlay Set-of-Mark numbered badges on interactive elements before capture
@@ -71,6 +72,10 @@ interface ScreenshotToolParams {
   setOfMark?: boolean; // Alias for som
   /** View a single visual asset listed by chrome_read_dom (1-based asset index). Bytes first, viewport-crop fallback */
   assetIndex?: number;
+  /** Sub-region ROI crop (lossless zoom into specified bounding box [ymin, xmin, ymax, xmax] or { x0, y0, x1, y1 }) */
+  region?: { x0?: number; y0?: number; x1?: number; y1?: number; xmin?: number; ymin?: number; xmax?: number; ymax?: number } | [number, number, number, number] | any;
+  crop?: { x0?: number; y0?: number; x1?: number; y1?: number; xmin?: number; ymin?: number; xmax?: number; ymax?: number } | [number, number, number, number] | any;
+  highClarity?: boolean; // Prioritize 100% full-resolution clarity without downsampling
   sessionId?: string;
   sessionContext?: string;
 }
@@ -121,10 +126,10 @@ function assertValidPageDetails(details: unknown): ScreenshotPageDetails {
 }
 
 /**
- * Enforce DPR 1:1 geometric alignment by resampling captured image to exact CSS viewport dimensions.
+ * Normalizes an image data URL to exact CSS dimensions by scaling onto an OffscreenCanvas.
  * Eliminates physical coordinate drift across arbitrary display scaling (125%, 150%, 200%).
  */
-async function normalizeImageToCssDimensions(
+export async function normalizeImageToCssDimensions(
   dataUrl: string,
   targetWidthCss: number,
   targetHeightCss: number,
@@ -225,6 +230,8 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
     let pageDetails: ScreenshotPageDetails | undefined;
 
     let elementCropOrigin: { x: number; y: number } | undefined;
+    const qualityFraction =
+      typeof args.quality === 'number' ? Math.max(0, Math.min(1, args.quality / 100)) : 0.8;
 
     try {
       const enableSoM = args.som === true || args.highlight === true || args.setOfMark === true;
@@ -271,8 +278,6 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
       const background = args.background === true;
       const targetMimeType =
         format === 'webp' ? 'image/webp' : format === 'jpeg' ? 'image/jpeg' : 'image/png';
-      const qualityFraction =
-        typeof args.quality === 'number' ? Math.max(0, Math.min(1, args.quality / 100)) : 0.8;
 
       // === Path 0: named asset (from chrome_read_dom assets[]) ===
       // Primary: fetch real bytes in page (canvas toDataURL / img+bg fetch).
@@ -330,6 +335,104 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
           results.assetSrc = asset.src;
           results.assetSource = 'viewport-crop';
           results.assetFallbackReason = asset.reason;
+        }
+      }
+
+      // === Path -1: Sub-region ROI crop (lossless zoom / crop) ===
+      const roiInput = args.region || (args as any).crop;
+      if (!assetHandled && roiInput) {
+        try {
+          const tabId = tab.id!;
+          const { cdpSessionManager } = await import('@/utils/cdp-session-manager');
+          await cdpSessionManager.withSession(tabId, 'screenshot-roi', async () => {
+            const metrics: any = await cdpSessionManager.sendCommand(tabId, 'Page.getLayoutMetrics', {});
+            const viewport =
+              metrics?.cssVisualViewport ||
+              metrics?.cssLayoutViewport ||
+              metrics?.layoutViewport ||
+              metrics?.visualViewport || {
+                clientWidth: 1280,
+                clientHeight: 800,
+                pageX: 0,
+                pageY: 0,
+              };
+            const vw = Math.round(viewport.clientWidth || 1280);
+            const vh = Math.round(viewport.clientHeight || 800);
+            const pageX = Number(viewport.pageX || 0);
+            const pageY = Number(viewport.pageY || 0);
+
+            let rx0 = 0, ry0 = 0, rx1 = vw, ry1 = vh;
+            if (Array.isArray(roiInput) && roiInput.length === 4) {
+              const [a, b, c, d] = roiInput.map(Number);
+              let isYminFirst = true;
+              if ((a > vh || c > vh) && a <= vw && c <= vw) isYminFirst = false;
+              else if ((b > vh || d > vh) && b <= vw && d <= vw) isYminFirst = true;
+              const ymin = isYminFirst ? Math.min(a, c) : Math.min(b, d);
+              const ymax = isYminFirst ? Math.max(a, c) : Math.max(b, d);
+              const xmin = isYminFirst ? Math.min(b, d) : Math.min(a, c);
+              const xmax = isYminFirst ? Math.max(b, d) : Math.max(a, c);
+              const maxVal = Math.max(a, b, c, d);
+              if (maxVal <= 1.0 && maxVal > 0) {
+                rx0 = Math.round(xmin * vw); rx1 = Math.round(xmax * vw);
+                ry0 = Math.round(ymin * vh); ry1 = Math.round(ymax * vh);
+              } else if (maxVal <= 1000 && (ymax > vh || xmax > vw)) {
+                rx0 = Math.round((xmin / 1000) * vw); rx1 = Math.round((xmax / 1000) * vw);
+                ry0 = Math.round((ymin / 1000) * vh); ry1 = Math.round((ymax / 1000) * vh);
+              } else {
+                rx0 = Math.round(xmin); rx1 = Math.round(xmax);
+                ry0 = Math.round(ymin); ry1 = Math.round(ymax);
+              }
+            } else if (typeof roiInput === 'object' && roiInput !== null) {
+              const rawX0 = roiInput.x0 ?? roiInput.xmin ?? roiInput.left ?? 0;
+              const rawY0 = roiInput.y0 ?? roiInput.ymin ?? roiInput.top ?? 0;
+              const rawX1 = roiInput.x1 ?? roiInput.xmax ?? (typeof roiInput.width === 'number' ? rawX0 + roiInput.width : vw);
+              const rawY1 = roiInput.y1 ?? roiInput.ymax ?? (typeof roiInput.height === 'number' ? rawY0 + roiInput.height : vh);
+              rx0 = Math.round(Number(rawX0)); rx1 = Math.round(Number(rawX1));
+              ry0 = Math.round(Number(rawY0)); ry1 = Math.round(Number(rawY1));
+            }
+            rx0 = Math.max(0, Math.min(vw - 1, rx0));
+            ry0 = Math.max(0, Math.min(vh - 1, ry0));
+            rx1 = Math.max(rx0 + 1, Math.min(vw, rx1));
+            ry1 = Math.max(ry0 + 1, Math.min(vh, ry1));
+            const w = rx1 - rx0;
+            const h = ry1 - ry0;
+
+            const cdpFormat = format === 'webp' ? 'webp' : format === 'png' ? 'png' : 'jpeg';
+            const cdpQuality = (cdpFormat === 'jpeg' || cdpFormat === 'webp') && typeof args.quality === 'number'
+              ? Math.max(0, Math.min(100, Math.round(args.quality)))
+              : 85;
+
+            const shot: any = await cdpSessionManager.sendCommand(tabId, 'Page.captureScreenshot', {
+              format: cdpFormat,
+              quality: cdpQuality,
+              captureBeyondViewport: false,
+              fromSurface: true,
+              clip: {
+                x: pageX + rx0,
+                y: pageY + ry0,
+                width: w,
+                height: h,
+                scale: 1,
+              },
+            });
+            if (shot?.data) {
+              const rawDataUrl = `data:${shot.mimeType || targetMimeType};base64,${shot.data}`;
+              finalImageDataUrl = await normalizeImageToCssDimensions(
+                rawDataUrl,
+                w,
+                h,
+                targetMimeType,
+                qualityFraction,
+              );
+              finalImageWidthCss = w;
+              finalImageHeightCss = h;
+              elementCropOrigin = { x: rx0, y: ry0 };
+              assetHandled = true;
+              results.roi = { x0: rx0, y0: ry0, x1: rx1, y1: ry1, width: w, height: h };
+            }
+          });
+        } catch (roiErr) {
+          console.warn('ROI crop capture failed, falling through:', roiErr);
         }
       }
 
@@ -552,8 +655,9 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
       }
 
       // 1.5. Coordinate reference grid overlay
-      if (args.grid === true && finalImageDataUrl) {
+      if ((args.grid === true || typeof args.grid === 'string') && finalImageDataUrl) {
         try {
+          const gridStyle = typeof args.grid === 'string' ? (args.grid as any) : 'ruler';
           // Output canvas is 1:1 normalized to CSS pixels, so effective DPR is 1
           finalImageDataUrl = await overlayCoordinateGrid(
             finalImageDataUrl,
@@ -561,6 +665,12 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
             100,
             targetMimeType,
             qualityFraction,
+            {
+              style: gridStyle === 'classic' ? 'classic' : gridStyle === 'crosshair' ? 'crosshair' : 'ruler',
+              originX: elementCropOrigin?.x,
+              originY: elementCropOrigin?.y,
+              normalized1000: gridStyle === '1000',
+            },
           );
         } catch (gridErr) {
           console.warn('Failed to overlay coordinate reference grid on screenshot:', gridErr);
@@ -577,18 +687,19 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
           } catch {
             // ignore
           }
-          // For element captures, keep viewport bounds localized to element dimensions with origin offset
-          const viewportWidth = elementCropOrigin
-            ? finalImageWidthCss
-            : (pageDetails?.viewportWidth ?? finalImageWidthCss);
-          const viewportHeight = elementCropOrigin
-            ? finalImageHeightCss
-            : (pageDetails?.viewportHeight ?? finalImageHeightCss);
+          // For element captures or ROI crops, keep crop bounds and origin offset
+          const isRoiOrElement = Boolean(elementCropOrigin);
+          const cropW = isRoiOrElement ? finalImageWidthCss : undefined;
+          const cropH = isRoiOrElement ? finalImageHeightCss : undefined;
+          const viewportWidth = pageDetails?.viewportWidth ?? finalImageWidthCss;
+          const viewportHeight = pageDetails?.viewportHeight ?? finalImageHeightCss;
           screenshotContextManager.setContext(tab.id!, {
             screenshotWidth: finalImageWidthCss,
             screenshotHeight: finalImageHeightCss,
             viewportWidth,
             viewportHeight,
+            cropWidth: cropW,
+            cropHeight: cropH,
             originX: elementCropOrigin?.x,
             originY: elementCropOrigin?.y,
             devicePixelRatio: pageDetails?.devicePixelRatio,
@@ -686,23 +797,51 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
 
     if (finalBase64 && finalBase64.length > 450 * 1024 && finalImageDataUrl) {
       try {
-        const scaleRatio = Math.min(
-          0.75,
-          Math.max(0.2, Math.sqrt((350 * 1024) / finalBase64.length)),
-        );
-        const thumb = await compressImage(finalImageDataUrl, {
-          scale: scaleRatio,
-          quality: 0.75,
-          format: finalMime,
+        const isHighClarity = args.highClarity === true;
+        const compressed = await smartCompressForTransport(finalImageDataUrl, {
+          maxBytes: isHighClarity ? 800 * 1024 : 450 * 1024,
+          preferredFormat: finalMime,
+          quality: isHighClarity ? 0.92 : qualityFraction,
+          allowDimensionScaling: !isHighClarity,
         });
-        const thumbBase64 = thumb.dataUrl.replace(/^data:image\/[^;]+;base64,/, '');
-        if (thumbBase64.length < 800 * 1024) {
-          finalBase64 = thumbBase64;
-          finalMime = thumb.mimeType as 'image/png' | 'image/jpeg' | 'image/webp';
+        finalBase64 = compressed.dataUrl.replace(/^data:[^;]+;base64,/, '');
+        finalMime = compressed.mimeType as any;
+        if (compressed.wasDownscaled) {
           isThumbnailFinal = true;
+          finalImageWidthCss = compressed.width;
+          finalImageHeightCss = compressed.height;
+          if (tab.id) {
+            const curCtx = screenshotContextManager.getContext(tab.id);
+            if (curCtx) {
+              screenshotContextManager.setContext(tab.id, {
+                ...curCtx,
+                screenshotWidth: compressed.width,
+                screenshotHeight: compressed.height,
+              });
+            }
+          }
         }
-      } catch (thumbErr) {
-        console.warn('Failed to generate preview thumbnail in final return:', thumbErr);
+      } catch (smartErr) {
+        // Fallback to legacy compressImage if smart transport compression encountered error
+        try {
+          const scaleRatio = Math.min(
+            0.75,
+            Math.max(0.2, Math.sqrt((350 * 1024) / finalBase64.length)),
+          );
+          const thumb = await compressImage(finalImageDataUrl, {
+            scale: scaleRatio,
+            quality: 0.75,
+            format: finalMime,
+          });
+          const thumbBase64 = thumb.dataUrl.replace(/^data:image\/[^;]+;base64,/, '');
+          if (thumbBase64.length < 800 * 1024) {
+            finalBase64 = thumbBase64;
+            finalMime = thumb.mimeType as 'image/png' | 'image/jpeg' | 'image/webp';
+            isThumbnailFinal = true;
+          }
+        } catch (thumbErr) {
+          console.warn('Failed to generate preview thumbnail in final return:', thumbErr);
+        }
       }
     }
 
@@ -720,6 +859,13 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
           name: name,
           format,
           quality: args.quality ?? (format === 'png' ? undefined : 80),
+          imageWidth: finalImageWidthCss,
+          imageHeight: finalImageHeightCss,
+          viewportWidth: pageDetails?.viewportWidth ?? finalImageWidthCss,
+          viewportHeight: pageDetails?.viewportHeight ?? finalImageHeightCss,
+          originX: elementCropOrigin?.x ?? 0,
+          originY: elementCropOrigin?.y ?? 0,
+          scaleFactor: isThumbnailFinal && pageDetails?.viewportWidth ? (finalImageWidthCss! / pageDetails.viewportWidth) : 1.0,
           targetIndex: args.targetIndex,
           padding: args.padding,
           selector: args.selector,

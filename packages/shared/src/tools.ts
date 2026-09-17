@@ -257,6 +257,11 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           description:
             'Space of coordinates: viewport (default, absolute CSS pixels) or screenshot (mapped through the most recent screenshot context for this tab).',
         },
+        autoSnap: {
+          type: 'boolean',
+          description:
+            'Magnetically snap coordinate clicks to the closest interactive element if clicked within 24px of whitespace. Default: true.',
+        },
         startCoordinates: {
           oneOf: [
             {
@@ -312,16 +317,57 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           },
         },
         region: {
-          type: 'object',
+          oneOf: [
+            {
+              type: 'object',
+              properties: {
+                x0: { type: 'number' },
+                y0: { type: 'number' },
+                x1: { type: 'number' },
+                y1: { type: 'number' },
+              },
+              required: ['x0', 'y0', 'x1', 'y1'],
+              description: 'Rectangular region object { x0, y0, x1, y1 }',
+            },
+            {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Row-first bounding box [ymin, xmin, ymax, xmax]',
+            },
+          ],
           description:
-            'For action=zoom: rectangular region to capture (x0,y0)-(x1,y1) in viewport pixels (or screenshot-space if a recent screenshot context exists).',
-          properties: {
-            x0: { type: 'number' },
-            y0: { type: 'number' },
-            x1: { type: 'number' },
-            y1: { type: 'number' },
-          },
-          required: ['x0', 'y0', 'x1', 'y1'],
+            'For action=zoom: rectangular region to capture (x0,y0)-(x1,y1) in viewport pixels or row-first bounding box [ymin, xmin, ymax, xmax].',
+        },
+        crop: {
+          type: 'object',
+          description: 'Alias for region: { x, y, width, height } or { x0, y0, x1, y1 }.',
+        },
+        grid: {
+          oneOf: [
+            { type: 'boolean' },
+            {
+              type: 'string',
+              enum: ['ruler', 'crosshair', 'classic', '1000'],
+              description:
+                'Grid style: "ruler" (perimeter tape measure rulers), "crosshair" (reticle + markers without screen-crossing lines), "classic" (dashed red lines), or "1000" (normalized 0-1000 coordinates).',
+            },
+          ],
+          description:
+            'For action=zoom or action=screenshot: overlay coordinate reference grid or reticle crosshairs.',
+        },
+        highClarity: {
+          type: 'boolean',
+          description:
+            'For action=screenshot or action=zoom: preserve 100% full-resolution sharpness without downsampling.',
+        },
+        format: {
+          type: 'string',
+          enum: ['png', 'jpeg', 'webp'],
+          description: 'Image format for action=screenshot or action=zoom.',
+        },
+        quality: {
+          type: 'number',
+          description: 'Image compression quality from 0 to 100.',
         },
         // For action=fill
         selector: {
@@ -522,10 +568,33 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           type: 'number',
           description: 'Padding in pixels to expand around targetIndex crop area (default: 0)',
         },
-        grid: {
-          type: 'boolean',
+        region: {
+          type: 'object',
           description:
-            'Overlay semi-transparent coordinate reference grid with dashed lines and (x, y) markers to eliminate visual estimation hallucination (default: false)',
+            'Lossless high-density ROI crop: capture only a specific sub-region { x0, y0, x1, y1 } in CSS pixels or polymorphic [ymin, xmin, ymax, xmax]. Completely avoids downscaling and preserves full pixel clarity for fine details like small text or dice dots.',
+          properties: {
+            x0: { type: 'number' },
+            y0: { type: 'number' },
+            x1: { type: 'number' },
+            y1: { type: 'number' },
+          },
+        },
+        crop: {
+          type: 'object',
+          description: 'Alias for region: { x, y, width, height } or { x0, y0, x1, y1 }.',
+        },
+        grid: {
+          oneOf: [
+            { type: 'boolean' },
+            {
+              type: 'string',
+              enum: ['ruler', 'crosshair', 'classic', '1000'],
+              description:
+                'Grid style: "ruler" (perimeter tape measure rulers), "crosshair" (unobtrusive reticle + markers without screen-crossing lines), "classic" (dashed red lines), or "1000" (normalized 0-1000 coordinates).',
+            },
+          ],
+          description:
+            'Overlay semi-transparent coordinate reference grid with perimeter tape measure rulers (20/50/100px ticks) and interior reticle crosshairs (+) to eliminate visual estimation hallucination (default: false)',
         },
         expandSearchArea: {
           type: 'boolean',
@@ -542,6 +611,11 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           type: 'number',
           description:
             'Image compression quality from 0 to 100 for webp/jpeg formats (default: 80)',
+        },
+        highClarity: {
+          type: 'boolean',
+          description:
+            'Prioritize 100% full-resolution clarity without downsampling (disables dimension scaling, keeps 1:1 CSS pixel sharpness for reading fine details or dice dots).',
         },
         sessionId: {
           type: 'string',
@@ -1532,6 +1606,11 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           enum: ['viewport', 'screenshot'],
           description:
             'Coordinate reference space. "viewport" (default) assumes standard CSS viewport pixels. "screenshot" scales coordinates based on the latest screenshot capture resolution.',
+        },
+        autoSnap: {
+          type: 'boolean',
+          description:
+            'When clicking via coordinates or visual fallback, magnetically snap to the closest interactive element if clicked within 24px of whitespace. Default: true.',
         },
         points: {
           type: 'array',

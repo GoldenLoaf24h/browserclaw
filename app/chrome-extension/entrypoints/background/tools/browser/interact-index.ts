@@ -43,6 +43,7 @@ export interface InteractIndexParams {
   includeDelta?: boolean;
   sessionId?: string;
   sessionContext?: string;
+  autoSnap?: boolean;
 }
 
 /**
@@ -465,6 +466,18 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         tagName = 'visual_target';
         text = undefined;
         targetFrameId = 0;
+        if (args.autoSnap !== false) {
+          try {
+            const snap = (
+              await executeInPage({ tabId }, 'inPageSnapCoordinate', [x, y, 24])
+            )?.[0]?.result;
+            if (snap?.snapped) {
+              x = snap.x;
+              y = snap.y;
+              if (snap.targetTag) tagName = `visual_target_snapped_${snap.targetTag}`;
+            }
+          } catch {}
+        }
       } else {
         coordResult = (
           await executeInPage({ tabId }, 'inPageGetElementCoordinates', [args.index!])
@@ -493,6 +506,18 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             tagName = 'visual_fallback';
             targetFrameId = 0;
             isFallback = true;
+            if (args.autoSnap !== false) {
+              try {
+                const snap = (
+                  await executeInPage({ tabId }, 'inPageSnapCoordinate', [x, y, 24])
+                )?.[0]?.result;
+                if (snap?.snapped) {
+                  x = snap.x;
+                  y = snap.y;
+                  if (snap.targetTag) tagName = `visual_fallback_snapped_${snap.targetTag}`;
+                }
+              } catch {}
+            }
           } else {
             return createErrorResponse(
               (coordResult?.error ||
