@@ -9,7 +9,17 @@ Use this skill when interacting with the user's real local Chrome browser throug
 
 ---
 
-## 1. Dual-Engine Operating Architecture
+## 1. Canonical Tool Contract & Zero-Redundancy Standards
+
+BrowserClaw strictly enforces **Canonical High-Reliability Tools**. All legacy, brittle selector-based and redundant tools have been permanently purged:
+- **Clicking**: Exclusively use `chrome_interact_index` (1-based index, Shadow DOM pierced, humanized micro-jitter curve). Legacy `click_element` and `burst_interact` are removed.
+- **Filling**: Exclusively use `chrome_fill_index` (handles text, passwords, checkboxes, and dates automatically) or `chrome_batch_actions` (pipelined). Legacy `fill_or_select` and `fill_form` are removed.
+- **Scrolling**: Exclusively use `chrome_smart_scroll` (overflow-aware, returns remaining pages). Legacy `scroll` and `scroll_to_text` are removed.
+- **Reading Content**: Exclusively use `chrome_get_markdown` for articles/summaries, and `chrome_read_dom` for UI interaction. Legacy `get_web_content` and `get_links` are removed.
+
+---
+
+## 2. Dual-Engine Operating Architecture
 
 BrowserClaw operates on a **Dual-Engine** paradigm designed for 100% determinism and minimal token overhead:
 
@@ -358,7 +368,7 @@ Reads localStorage, sessionStorage, and cookies for the current tab in one call:
 
 ---
 
-## 5. Configuration & Self-Healing Diagnostics
+## 6. Configuration & Self-Healing Diagnostics
 
 For complete client configuration files, self-repair diagnostics, and version upgrades:
 
@@ -396,7 +406,7 @@ BrowserClaw supports persisting and reusing proven interaction patterns for spec
 
 ---
 
-## 6. The 5-Tier Escalation Protocol (Anti-Confusion & Self-Healing Protocol)
+## 7. The Escalation Protocol Reference (Anti-Confusion & Self-Healing Protocol)
 
 To eliminate agent decision confusion and guarantee self-healing across complex web apps, adhere strictly to the **5-Tier Escalation Protocol**:
 
@@ -424,7 +434,7 @@ To eliminate agent decision confusion and guarantee self-healing across complex 
 
 ---
 
-## 7. High-Efficiency Agent Patterns & Best Practices
+## 8. High-Efficiency Agent Patterns & Best Practices
 
 ### 6.1 Targeted Search Over Full DOM Dump (`chrome_grep`)
 

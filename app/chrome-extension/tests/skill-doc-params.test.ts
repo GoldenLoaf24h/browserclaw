@@ -14,10 +14,7 @@ import { TOOL_SCHEMAS } from 'chrome-mcp-shared';
 const SKILL_EXAMPLES: Array<[string, Record<string, unknown>]> = [
   ['chrome_interact_index', { index: 1, action: 'click' }],
   ['chrome_fill_index', { index: 2, text: 'developer@example.com', clear: true }],
-  [
-    'chrome_burst_interact',
-    { burstClicks: { center: { x: 420, y: 280 }, count: 3, intervalMs: 30 } },
-  ],
+
   ['chrome_screenshot', { grid: true, format: 'webp' }],
   ['chrome_upload_file', { index: 5, filePath: 'D:/data/document.pdf' }],
   ['chrome_upload_file', { clickTargetIndex: 5, filePath: 'D:/data/document.pdf' }],

@@ -63,7 +63,7 @@ export const TOOL_NAMES = {
   },
 };
 
-export const TOOL_SCHEMAS: Tool[] = [
+const RAW_TOOL_SCHEMAS: Tool[] = [
   {
     name: TOOL_NAMES.BROWSER.GET_WINDOWS_AND_TABS,
     annotations: {
@@ -2767,3 +2767,18 @@ export const TOOL_SCHEMAS: Tool[] = [
     },
   },
 ];
+
+export const PURGED_TOOL_NAMES = new Set([
+  'chrome_click_element',
+  'chrome_burst_interact',
+  'chrome_fill_or_select',
+  'chrome_fill_form',
+  'chrome_scroll',
+  'chrome_scroll_to_text',
+  'chrome_get_web_content',
+  'chrome_get_links',
+]);
+
+export const TOOL_SCHEMAS: Tool[] = RAW_TOOL_SCHEMAS.filter(
+  (tool) => !PURGED_TOOL_NAMES.has(tool.name),
+);

@@ -79,10 +79,7 @@ describe('tool schema contract', () => {
       const tools = [
         { tool: 'chrome_computer', prop: 'coordinates' },
         { tool: 'chrome_computer', prop: 'startCoordinates' },
-        { tool: 'chrome_click_element', prop: 'coordinate' },
-        { tool: 'chrome_click_element', prop: 'coordinates' },
         { tool: 'chrome_interact_index', prop: 'coordinate' },
-        { tool: 'chrome_scroll', prop: 'coordinate' },
         { tool: 'chrome_smart_scroll', prop: 'coordinate' },
       ];
 
@@ -94,9 +91,7 @@ describe('tool schema contract', () => {
         expect(hasArrayBranch, `${tool}.${prop} must support array in oneOf`).toBe(true);
       }
 
-      const burstCenter = propsOf('chrome_burst_interact').burstClicks.properties.center;
-      expect(burstCenter.type).toBeUndefined();
-      expect(burstCenter.oneOf.some((b: any) => b.type === 'array')).toBe(true);
+      // Verified polymorphic coordinate schemas across active tools
     });
   });
 

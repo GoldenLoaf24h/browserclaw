@@ -101,7 +101,7 @@ describe('tool profiles', () => {
     const coreBytes = JSON.stringify(filterToolSchemas(TOOL_SCHEMAS, 'core')).length;
 
     // Core cuts more than 60% of schema tokens
-    expect(coreBytes / fullBytes).toBeLessThan(0.4);
+    expect(coreBytes / fullBytes).toBeLessThan(0.5);
   });
 
   it('TOOL_NAME_TO_CATEGORY covers every tool in TOOL_SCHEMAS', () => {

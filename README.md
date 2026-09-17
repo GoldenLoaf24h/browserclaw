@@ -4,7 +4,7 @@
   <p><b>Take full control of everything in your own browser.</b></p>
   <p>
     <a href="./docs/MAP.md">🗺️ Project Map</a> ·
-    <a href="./docs/TOOLS.md">Tool Reference (53)</a> ·
+    <a href="./docs/TOOLS.md">Tool Reference (45)</a> ·
     <a href="./AGENT_CONFIG_GUIDE.md">Client Config</a> ·
     <a href="./README.zh-CN.md">📖 简体中文</a> ·
     <a href="https://github.com/GoldenLoaf24h/browserclaw/releases">Releases</a>
@@ -107,13 +107,13 @@ Every tool in the browser automation ecosystem has distinct architectural tradeo
 
 ---
 
-## 🛠️ Complete Tool Catalog (53 MCP Tools)
+## 🛠️ Complete Tool Catalog (45 MCP Tools)
 
-All 53 schema-validated tools are grouped into 6 logical categories below. **Click any category to expand its tool listing.**
+All 45 schema-validated tools are grouped into 6 logical categories below. **Click any category to expand its tool listing.**
 For machine-readable JSON schemas and detailed option flags, consult **[docs/TOOLS.md](./docs/TOOLS.md)**.
 
 <details>
-<summary><b>🌐 1. Navigation & Tab Management (7 Tools)</b></summary>
+<summary><b>🌐 1. Navigation & Tab Management (5 Tools)</b></summary>
 
 <br/>
 
@@ -128,7 +128,7 @@ For machine-readable JSON schemas and detailed option flags, consult **[docs/TOO
 </details>
 
 <details>
-<summary><b>📄 2. Content Perception & Data Extraction (7 Tools)</b></summary>
+<summary><b>📄 2. Content Perception & Data Extraction (5 Tools)</b></summary>
 
 <br/>
 
@@ -143,7 +143,7 @@ For machine-readable JSON schemas and detailed option flags, consult **[docs/TOO
 </details>
 
 <details>
-<summary><b>🖱️ 3. Action Execution & Pipeline (15 Tools)</b></summary>
+<summary><b>🖱️ 3. Action Execution & Pipeline (11 Tools)</b></summary>
 
 <br/>
 
@@ -166,7 +166,7 @@ For machine-readable JSON schemas and detailed option flags, consult **[docs/TOO
 </details>
 
 <details>
-<summary><b>👁️ 4. Vision & Viewport Control (3 Tools)</b></summary>
+<summary><b>👁️ 4. Vision & Viewport Control (2 Tools)</b></summary>
 
 <br/>
 
@@ -230,7 +230,7 @@ See **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** for detailed topology and
 ## 📚 Documentation Map
 
 - **[Project Map & Index](./docs/MAP.md)**: 🗺️ Master navigation hub, reading paths by role, and code topology.
-- **[Tool Reference](./docs/TOOLS.md)**: Auto-generated parameter dictionary for all 53 tools.
+- **[Tool Reference](./docs/TOOLS.md)**: Auto-generated parameter dictionary for all 45 tools.
 - **[Agent Integration Guide](./AGENT_CONFIG_GUIDE.md)**: 6 core interaction rules and client configurations.
 - **[Architecture Deep-Dive](./docs/ARCHITECTURE.md)**: Monorepo design, security boundaries, and ADR records.
 - **[Troubleshooting](./docs/TROUBLESHOOTING.md)**: Instant diagnosis checklist for connection or execution errors.

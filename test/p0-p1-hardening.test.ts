@@ -336,11 +336,10 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
   });
 
   describe('P1-6: Batch Form Filling & Snapshot Cache Manager', () => {
-    it('registers FILL_FORM in TOOL_NAMES and TOOL_SCHEMAS', () => {
-      assert.strictEqual(TOOL_NAMES.BROWSER.FILL_FORM, 'chrome_fill_form');
-      const fillFormSchema = TOOL_SCHEMAS.find((t) => t.name === 'chrome_fill_form');
-      assert.ok(fillFormSchema, 'chrome_fill_form schema must exist');
-      assert.ok(fillFormSchema.inputSchema.properties.fields, 'fields property must exist');
+    it('registers FILL_INDEX and BATCH_ACTIONS in TOOL_NAMES and TOOL_SCHEMAS', () => {
+      assert.strictEqual(TOOL_NAMES.BROWSER.FILL_INDEX, 'chrome_fill_index');
+      const fillSchema = TOOL_SCHEMAS.find((t) => t.name === 'chrome_fill_index');
+      assert.ok(fillSchema, 'chrome_fill_index schema must exist');
     });
 
     it('SnapshotCacheManager caches snapshots and invalidates on navigation', () => {
