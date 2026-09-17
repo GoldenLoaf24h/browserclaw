@@ -348,7 +348,7 @@ Reads localStorage, sessionStorage, and cookies for the current tab in one call:
 - `includeHttpOnly: false` hides them; `filter` matches key or value case-insensitively; values are capped at 2000 chars with a `truncated` flag.
 - WebSocket frames are captured by `chrome_network_capture` (text payloads up to 4000 chars, binary recorded by size, max 200 frames per connection).
 
-### F. Link Graph Extraction (`chrome_get_links`) & On-Demand Tool Docs (`chrome_tool_docs`)
+### G. Link Graph Extraction (`chrome_get_links`) & On-Demand Tool Docs (`chrome_tool_docs`)
 
 - `chrome_get_links { sameOriginOnly?: true, selector?: "main" }` returns every unique absolute URL with anchor text, internal/external flag, and `rel=nofollow` — the input for any multi-page crawl. Pair with `chrome_navigate` + `chrome_get_markdown { fit: true }` per page.
 - **Streamlined Core Profile (14 tools default)**: BrowserClaw defaults to 14 high-frequency tools (`chrome_read_dom`, `chrome_get_markdown`, `chrome_inspect_media`, `chrome_grep`, `chrome_interact_index`, `chrome_fill_index`, `chrome_batch_actions`, `chrome_screenshot`, `chrome_smart_scroll`, `chrome_navigate`, `chrome_switch_tab`, `chrome_close_tabs`, `get_windows_and_tabs`, `chrome_tool_docs`), reducing token overhead by >65%.
@@ -363,12 +363,12 @@ Reads localStorage, sessionStorage, and cookies for the current tab in one call:
 For complete client configuration files and self-repair diagnostics:
 
 - **Client Configs**: See [`config/mcp-config.json`](./config/mcp-config.json) for Claude Desktop, Cursor, Windsurf, Cline, Roo Code, and Antigravity.
-- **Diagnostic Tool**: Run `node skill/config/doctor.mjs` to run a comprehensive health check on port `12306`, bridge token, Chrome extension connection, and Native Messaging Host registration.
+- **Diagnostic Tool**: Run `chrome_doctor or browserclaw doctor` to run a comprehensive health check on port `12306`, bridge token, Chrome extension connection, and Native Messaging Host registration.
 - **Troubleshooting Guide**: See [`config/TROUBLESHOOTING.md`](./config/TROUBLESHOOTING.md) for quick solutions to common connection or state issues.
 
 ---
 
-## 3. The Escalation Ladder (Anti-Confusion & Self-Healing Protocol)
+## 6. The 5-Tier Escalation Protocol (Anti-Confusion & Self-Healing Protocol)
 
 To eliminate agent decision confusion and guarantee self-healing across complex web apps, adhere strictly to the **5-Tier Escalation Protocol**:
 
@@ -396,7 +396,7 @@ To eliminate agent decision confusion and guarantee self-healing across complex 
 
 ---
 
-## 6. High-Efficiency Agent Patterns & Best Practices
+## 7. High-Efficiency Agent Patterns & Best Practices
 
 ### 6.1 Targeted Search Over Full DOM Dump (`chrome_grep`)
 
