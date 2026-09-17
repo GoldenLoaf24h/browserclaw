@@ -1,6 +1,6 @@
 {
   "name": "browserclaw",
-  "version": "2.5.2",
+  "version": "2.6.0",
   "description": "Control your own browser with Agent. High-efficiency Chrome browser automation MCP server and AI agent skill.",
   "author": {
     "name": "BrowserClaw Team",
@@ -9,7 +9,14 @@
   "homepage": "https://github.com/GoldenLoaf24h/browserclaw",
   "repository": "https://github.com/GoldenLoaf24h/browserclaw",
   "license": "MIT",
-  "keywords": ["browser", "chrome", "automation", "mcp", "agent", "cdp"],
+  "keywords": [
+    "browser",
+    "chrome",
+    "automation",
+    "mcp",
+    "agent",
+    "cdp"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "BrowserClaw",
