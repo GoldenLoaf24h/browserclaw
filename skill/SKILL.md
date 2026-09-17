@@ -387,6 +387,13 @@ When a user asks how to upgrade BrowserClaw, or when diagnosing outdated version
    - Run `browserclaw doctor` in the terminal or call `chrome_doctor {}` via MCP.
    - Verify that all core components show `pass` and report the updated version.
 
+### 5.2 Site Automation Recipes & DIY Playbook Caching (`recipes/`)
+
+BrowserClaw supports persisting and reusing proven interaction patterns for specific websites under `recipes/`:
+- **Checking Existing Recipes**: Before exploring complex or repetitive sites from scratch, check if a matching playbook exists in `recipes/<site-name>.md`.
+- **Authoring Reusable Recipes**: When an agent successfully solves a complex multi-step workflow (e.g. specialized ERPs, dev portals, or custom web forms), it can distill the key selectors, fast-path pipelines (`chrome_batch_actions`), and timing gotchas into `recipes/<service>.md` following `recipes/template.md`.
+- **Benefits**: Subsequent runs can bypass redundant full-DOM exploration, saving 80%+ tokens and accelerating execution by 3x~5x.
+
 ---
 
 ## 6. The 5-Tier Escalation Protocol (Anti-Confusion & Self-Healing Protocol)
