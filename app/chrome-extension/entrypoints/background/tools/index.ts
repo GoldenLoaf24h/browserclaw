@@ -51,6 +51,29 @@ export const handleCallTool = async (param: ToolCallParam) => {
 
   try {
     const args = param.args ?? {};
+    // Smart argument coercion for LLMs (string numbers, booleans, trimmed keys)
+    for (const key of Object.keys(args)) {
+      const val = args[key];
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        // Coerce string numeric indices to integers
+        if (
+          (key === 'index' || key === 'targetIndex' || key === 'tabId' || key === 'windowId') &&
+          /^-?\d+$/.test(trimmed)
+        ) {
+          args[key] = parseInt(trimmed, 10);
+        } else if (
+          (key === 'deltaOnly' ||
+            key === 'includeDelta' ||
+            key === 'fullPage' ||
+            key === 'verbose') &&
+          (trimmed === 'true' || trimmed === 'false')
+        ) {
+          args[key] = trimmed === 'true';
+        }
+      }
+    }
+
     if (param.sessionId && !args.sessionId) {
       args.sessionId = param.sessionId;
     }

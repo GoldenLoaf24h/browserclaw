@@ -142,6 +142,7 @@ export const TOOL_CATEGORIES: Record<string, string> = {
     'chrome_tab_group_close',
   ].join(' '),
   diagnose: [
+    'chrome_doctor',
     'chrome_javascript',
     'chrome_storage',
     'chrome_intercept_api',

@@ -45,6 +45,21 @@ export function inPageWaitForDOMSettle(
       resolve({ settled, durationMs, mutationsObserved: mutationCount });
     };
 
+    // Wait for modern framework hydration (React/Vue/Angular) & idle callback
+    const checkHydrationAndIdle = () => {
+      try {
+        const win = window as any;
+        // React 18/19 root hydration check
+        const hasPendingReact =
+          !!document.querySelector('[data-reactroot], #root, #app, body') &&
+          typeof win.requestIdleCallback === 'function';
+        if (hasPendingReact) {
+          win.requestIdleCallback(() => {}, { timeout: Math.min(timeoutMs, 100) });
+        }
+      } catch {}
+    };
+    checkHydrationAndIdle();
+
     timeoutTimer = setTimeout(() => {
       done(false); // Reached max settle timeout
     }, timeoutMs);
@@ -120,14 +135,13 @@ export async function waitForPageSettle(
   }
 
   try {
-    const { executeInPage } = await import(
-      '@/entrypoints/background/tools/browser/in-page-engine'
-    );
-    const results = await executeInPage<PageSettleResult>(
-      { tabId },
-      'inPageWaitForDOMSettle',
-      [timeoutMs, quietPeriodMs, adaptiveMs, hasActiveNet],
-    );
+    const { executeInPage } = await import('@/entrypoints/background/tools/browser/in-page-engine');
+    const results = await executeInPage<PageSettleResult>({ tabId }, 'inPageWaitForDOMSettle', [
+      timeoutMs,
+      quietPeriodMs,
+      adaptiveMs,
+      hasActiveNet,
+    ]);
     return results?.[0]?.result ?? { settled: true, durationMs: 0, mutationsObserved: 0 };
   } catch {
     // If navigation happened or scripting was blocked, return gracefully
@@ -141,22 +155,29 @@ export async function waitForPageSettle(
  */
 export async function waitForNetworkQuiescence(
   tabId: number,
-  maxWaitMs = 1000,
+  maxWaitMs = 1500,
   pollIntervalMs = 25,
+  quietSlidingWindowMs = 100,
 ): Promise<boolean> {
   try {
     const { cdpSessionManager } = await import('@/utils/cdp-session-manager');
-    if (!cdpSessionManager.hasInFlightRequests(tabId)) {
-      return true;
-    }
     const deadline = Date.now() + maxWaitMs;
+    let consecutiveQuietStart = cdpSessionManager.hasInFlightRequests(tabId) ? 0 : Date.now();
+
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, pollIntervalMs));
-      if (!cdpSessionManager.hasInFlightRequests(tabId)) {
-        return true;
+      const hasReq = cdpSessionManager.hasInFlightRequests(tabId);
+      if (hasReq) {
+        consecutiveQuietStart = 0;
+      } else {
+        if (consecutiveQuietStart === 0) {
+          consecutiveQuietStart = Date.now();
+        } else if (Date.now() - consecutiveQuietStart >= quietSlidingWindowMs) {
+          return true; // Successfully sustained zero active requests for quietSlidingWindowMs
+        }
       }
     }
-    return false;
+    return !cdpSessionManager.hasInFlightRequests(tabId);
   } catch {
     return true;
   }

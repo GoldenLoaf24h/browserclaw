@@ -18,6 +18,7 @@ export interface ReadDOMParams {
   deltaOnly?: boolean;
   maxTextLength?: number;
   format?: 'compact' | 'html';
+  viewportOnly?: boolean;
   /**
    * Opt in to the bulky per-element detail blocks (indexedElements + indexMap).
    * Off by default: the pruned tree already carries index/tag/attributes/text

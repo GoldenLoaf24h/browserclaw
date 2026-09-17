@@ -56,6 +56,7 @@ export const TOOL_NAMES = {
     INSPECT_MEDIA: 'chrome_inspect_media',
     REQUEST_HUMAN_INTERVENTION: 'chrome_request_human_intervention',
     UNDO_LAST_ACTION: 'chrome_undo_last_action',
+    DOCTOR: 'chrome_doctor',
     INTERCEPT_API: 'chrome_intercept_api',
     CDP_EXECUTE: 'chrome_cdp_execute',
     GREP: 'chrome_grep',
@@ -1450,6 +1451,11 @@ export const TOOL_SCHEMAS: Tool[] = [
           description:
             'Also return the bulky indexedElements/indexMap detail blocks (geometry, occlusion flags, safe click points). Off by default because the tree already carries index/tag/attributes/text; enable only when you need per-element rects or visibility flags.',
         },
+        viewportOnly: {
+          type: 'boolean',
+          description:
+            'When true, only index elements inside or immediately near the visible viewport (default: false)',
+        },
         format: {
           type: 'string',
           enum: ['compact', 'html'],
@@ -2653,6 +2659,28 @@ export const TOOL_SCHEMAS: Tool[] = [
         tabId: { type: 'number', description: 'Target tab ID' },
       },
       required: ['reason'],
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.DOCTOR,
+    annotations: {
+      title: 'Environment Doctor',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+    },
+    description:
+      'Diagnose BrowserClaw environment, Native Host connectivity, Chrome silent-debugger flags, port availability, and token security.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        verbose: {
+          type: 'boolean',
+          description: 'Return full path and configuration details (default: false)',
+        },
+      },
+      required: [],
+      additionalProperties: false,
     },
   },
   {

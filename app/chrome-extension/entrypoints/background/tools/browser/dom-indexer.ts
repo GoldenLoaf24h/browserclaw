@@ -697,8 +697,10 @@ export function inPageDOMPruner(options?: {
   frameId?: string;
   maxTextLength?: number;
   format?: 'compact' | 'html';
+  viewportOnly?: boolean;
 }): PrunedDOMTreeResult {
-  const threshold = options?.viewportThreshold ?? 1000;
+  const isViewportOnly = options?.viewportOnly === true;
+  const threshold = isViewportOnly ? 150 : (options?.viewportThreshold ?? 1000);
   const startingIndex = options?.startingIndex ?? 1;
   const frameId = options?.frameId;
   const maxTextLength =

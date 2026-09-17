@@ -54,3 +54,4 @@ export { humanInterventionTool } from './human-intervention';
 export { undoLastActionTool } from './undo-action';
 export { interceptApiTool } from './intercept-api';
 export { grepTool } from './grep';
+export { doctorTool } from './doctor';

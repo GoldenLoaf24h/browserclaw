@@ -5,6 +5,7 @@ import { DIAGNOSTIC_REFRESH_GUIDANCE } from './dom-indexer';
 import { executeInPage } from './in-page-engine';
 import { waitForPageSettle } from '@/utils/action-watchdog';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
+import { computeHumanizedPoints } from '@/utils/mouse-trajectory';
 import {
   raceCdp as raceCdpBatch,
   DialogOpenedError,
@@ -270,11 +271,18 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 void animateAgentCursorClick(tabId, targetX, targetY);
               }
               await cdpSessionManager.withSession(tabId, 'batch-actions-mouse', async () => {
-                await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                  type: 'mouseMoved',
-                  x: targetX,
-                  y: targetY,
-                });
+                // Humanized micro-trajectory to bypass anti-bot path listeners
+                const startX = Math.max(0, targetX - (40 + Math.floor(Math.random() * 50)));
+                const startY = Math.max(0, targetY - (25 + Math.floor(Math.random() * 40)));
+                const points = computeHumanizedPoints(startX, startY, targetX, targetY, 3);
+                for (const pt of points) {
+                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mouseMoved',
+                    x: pt.x,
+                    y: pt.y,
+                  });
+                  await new Promise((r) => setTimeout(r, 10));
+                }
 
                 if (item.type === 'click') {
                   await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
