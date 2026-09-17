@@ -76,7 +76,6 @@
               "chrome_fill_index",
               "chrome_batch_actions",
               "chrome_screenshot",
-              "chrome_scroll",
               "chrome_smart_scroll"
             ]
           }

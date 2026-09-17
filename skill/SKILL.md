@@ -12,7 +12,6 @@ Use this skill when interacting with the user's real local Chrome browser throug
 ## 1. Canonical Tool Contract & Zero-Redundancy Standards
 
 BrowserClaw strictly enforces **Canonical High-Reliability Tools (45 tools total)**. All legacy, brittle selector-based and redundant tools have been permanently purged:
-
 - **Clicking**: Exclusively use `chrome_interact_index` (1-based index, Shadow DOM pierced, humanized micro-jitter curve). Legacy `click_element` and `burst_interact` are removed.
 - **Filling**: Exclusively use `chrome_fill_index` (handles text, passwords, checkboxes, and dates automatically, with optional `pressEnter: true` to trigger immediate submission) or `chrome_batch_actions` (pipelined). Legacy `fill_or_select` and `fill_form` are removed.
 - **Scrolling**: Exclusively use `chrome_smart_scroll` (overflow-aware, returns remaining pages). Legacy `scroll` and `scroll_to_text` are removed.
@@ -64,7 +63,7 @@ Mouse and keyboard input dispatched through the CDP path (`chrome_interact_index
 
 ---
 
-## 2. Standard Agent Interaction Workflow
+## 3. Standard Agent Interaction Workflow
 
 ### Phase 1: Perceive (`chrome_read_dom`)
 
@@ -220,7 +219,7 @@ For dynamic UI targets, fast animations, canvas items, or rapid sequential click
 
 ---
 
-## 3. Visual Fallback Mode & Multimodal Coordination (PCIE)
+## 4. Visual Fallback Mode & Multimodal Coordination (PCIE)
 
 When an element cannot be targeted via DOM index (e.g. Canvas games, WebGL charts, image CAPTCHAs, unlabeled SVGs):
 
@@ -270,7 +269,7 @@ BrowserClaw centers and magnifies the region into a crisp 400×400 high-res imag
 
 ---
 
-## 4. Specialized Capabilities
+## 5. Specialized Capabilities
 
 ### A. Local File Upload (`chrome_upload_file`)
 
@@ -340,7 +339,7 @@ BrowserClaw is specifically engineered to let agents work completely in the back
 1. **Never switch the user's active tab**: In multi-tab workflows, **DO NOT call `chrome_switch_tab`** unless the user explicitly requested to switch their active tab view. Calling `chrome_switch_tab` forces Chrome to switch active tabs and steal focus from the user!
 2. **Direct `tabId` Targeting**: All core tools (`chrome_read_dom`, `chrome_interact_index`, `chrome_fill_index`, `chrome_screenshot`, `chrome_smart_scroll`, `chrome_batch_actions`, `chrome_computer`, `chrome_get_markdown`, etc.) accept an explicit `tabId`. Always pass the target `tabId` directly. BrowserClaw uses out-of-band CDP sessions to interact with background tabs without bringing them to the front or moving the user's cursor.
 3. **Background Navigation & Task-Aligned Tab Grouping**:
-   - `chrome_navigate` opens new tabs in the background (`active: false`) by default. Never pass `background: false` unless the user explicitly asked to bring the tab into the foreground.
+   - `chrome_navigate` opens new tabs in the background (`background: true` by default). Never pass `background: false` unless the user explicitly asked to bring the tab into the foreground.
    - **Custom Tab Group**: Always generate a short, task-aligned `groupTitle` in the user's language (e.g. `"知乎调研"`, `"GitHub 搜索"`, `"Flight Tracker"`) and pick an appropriate `groupColor` (e.g. `"purple"`, `"cyan"`, `"orange"`). If omitted, it falls back to `"Agent"` and `"blue"`. This gives the user clear visual context of what the agent is currently working on.
 4. **Session Tab Affinity**: When working across multiple turns, pass `sessionId` to bind your agent session to its target tab, preventing accidental fallback to the user's active tab.
 
@@ -379,7 +378,7 @@ For complete client configuration files, self-repair diagnostics, and version up
 - **Diagnostic Tool**: Run `chrome_doctor` or `browserclaw doctor` to run a comprehensive health check on port `12306`, bridge token, Chrome extension connection, and Native Messaging Host registration.
 - **Troubleshooting Guide**: See [`config/TROUBLESHOOTING.md`](./config/TROUBLESHOOTING.md) for quick solutions to common connection or state issues.
 
-### 5.1 Extension & Native Host Upgrade Procedure
+### 6.1 Extension & Native Host Upgrade Procedure
 
 When a user asks how to upgrade BrowserClaw, or when diagnosing outdated version mismatches:
 
@@ -389,7 +388,6 @@ When a user asks how to upgrade BrowserClaw, or when diagnosing outdated version
    - Open `chrome://extensions/` and click the **"Reload" (重新载入)** icon on the BrowserClaw card.
 
 2. **Source Code / Git Pull Upgrade**:
-
    ```bash
    git pull origin main
    pnpm install
@@ -401,10 +399,9 @@ When a user asks how to upgrade BrowserClaw, or when diagnosing outdated version
    - Run `browserclaw doctor` in the terminal or call `chrome_doctor {}` via MCP.
    - Verify that all core components show `pass` and report the updated version.
 
-### 5.2 Site Automation Recipes & DIY Playbook Caching (`recipes/`)
+### 6.2 Site Automation Recipes & DIY Playbook Caching (`recipes/`)
 
 BrowserClaw supports persisting and reusing proven interaction patterns for specific websites under `recipes/`:
-
 - **Checking Existing Recipes**: Before exploring complex or repetitive sites from scratch, check if a matching playbook exists in `recipes/<site-name>.md`.
 - **Authoring Reusable Recipes**: When an agent successfully solves a complex multi-step workflow (e.g. specialized ERPs, dev portals, or custom web forms), it can distill the key selectors, fast-path pipelines (`chrome_batch_actions`), and timing gotchas into `recipes/<service>.md` following `recipes/template.md`.
 - **Benefits**: Subsequent runs can bypass redundant full-DOM exploration, saving 80%+ tokens and accelerating execution by 3x~5x.
@@ -435,13 +432,13 @@ To eliminate agent decision confusion and guarantee self-healing across complex 
 5. **Tier 5 (Raw CDP Escape Hatch - <1%)**:
    - chrome_cdp_execute (Target polymorphic, auto-detach timeout guard)
    - Never call for standard clicks, text inputs, or basic reading.
-   - Use ONLY when high-level tools repeatedly fail twice, or when low-level browser primitives are required (e.g. Network.getCookies, Emulation.setDeviceMetricsOverride, Page.printToPDF, or out-of-process iframe arget: { targetId }).
+   - Use ONLY when high-level tools repeatedly fail twice, or when low-level browser primitives are required (e.g. Network.getCookies, Emulation.setDeviceMetricsOverride, Page.printToPDF, or out-of-process iframe target: { targetId }).
 
 ---
 
 ## 8. High-Efficiency Agent Patterns & Best Practices
 
-### 6.1 Targeted Search Over Full DOM Dump (`chrome_grep`)
+### 8.1 Targeted Search Over Full DOM Dump (`chrome_grep`)
 
 When hunting for a specific button, link, or keyword in huge pages (> 5,000 tokens):
 
@@ -450,7 +447,7 @@ When hunting for a specific button, link, or keyword in huge pages (> 5,000 toke
 - It returns matching 1-based indices and selectors immediately for < 100 tokens, ready for direct `chrome_interact_index`.
 - Supports multi-frame traversal across nested iframes with hierarchical index remapping, and matches against element text, roles, `placeholder`, `aria-label`, and `value` attributes.
 
-### 6.2 Self-Driven Diff Piggybacking (`includeDelta: true`)
+### 8.2 Self-Driven Diff Piggybacking (`includeDelta: true`)
 
 To avoid double-roundtrip latency ("click -> wait -> read_dom -> wait"):
 
@@ -458,7 +455,7 @@ To avoid double-roundtrip latency ("click -> wait -> read_dom -> wait"):
 - The response includes a `delta` object detailing newly added, modified, or removed DOM elements and the new revision.
 - If `delta.unchanged === true`, the page experienced zero DOM mutations, saving a full inspection turn.
 
-### 6.3 Closed-Loop Pipeline with Assert & Extract (`chrome_batch_actions`)
+### 8.3 Closed-Loop Pipeline with Assert & Extract (`chrome_batch_actions`)
 
 For multi-step flows (e.g. filling search forms and collecting results):
 
@@ -487,7 +484,7 @@ For multi-step flows (e.g. filling search forms and collecting results):
 
 Executes with zero intermediate roundtrip lag and returns extracted values under `extractedData`. Automatically handles cross-origin iframe coordinate translation and subframe probe routing across nested browsing contexts.
 
-### 6.4 Handling Captchas & 2FA (`chrome_request_human_intervention`)
+### 8.4 Handling Captchas & 2FA (`chrome_request_human_intervention`)
 
 When encountering slider captchas, SMS codes, or payment prompts:
 
@@ -495,45 +492,45 @@ When encountering slider captchas, SMS codes, or payment prompts:
 - Automatically dims page, displays an Apple/OpenAI styled frosted glass top banner constructed with safe DOM APIs (immune to DOM XSS), parks the virtual mouse, and yields control to the user.
 - Resumes seamlessly once the user clicks "Continue" or presses `Enter`.
 
-### 6.5 Inspecting Hard-to-Read Captchas & Charts (`chrome_inspect_media`)
+### 8.5 Inspecting Hard-to-Read Captchas & Charts (`chrome_inspect_media`)
 
 - Call `chrome_inspect_media { index: 12 }` to extract the lossless native bitmap of an `<img>` or `<canvas>`.
 - Complex noisy captchas automatically trigger a 200%+ super-sampling close-up crop.
 
-### 6.6 Silent Debugger Setup Support
+### 8.6 Silent Debugger Setup Support
 
 - When helping a user install or configure BrowserClaw, always offer to configure Chrome with `--silent-debugger-extension-api`.
 - This suppresses the native top warning bar ("BrowserClaw is debugging this browser") and prevents page-height jitter.
 
-### 6.7 Safe Tab Closure (`chrome_close_tabs`)
+### 8.7 Safe Tab Closure (`chrome_close_tabs`)
 
 - When closing specific tabs, pass `tabIds` or `url`.
 - When closing without `tabIds` or `url`, pass `confirm: true` (or provide `sessionId` for session affinity). This prevents accidental destruction of the human user's active foreground tab.
 
-### 6.8 In-Page JavaScript Evaluation (`chrome_javascript`)
+### 8.8 In-Page JavaScript Evaluation (`chrome_javascript`)
 
 - Supports top-level `await` and automatic single-expression `return (...)` wrapping. You can pass raw expressions such as `document.title` or `window.location.href` directly without manually prepending `return`.
 
-### 6.9 Viewport-Only Token Pruning (`chrome_read_dom` with `viewportOnly: true`)
+### 8.9 Viewport-Only Token Pruning (`chrome_read_dom` with `viewportOnly: true`)
 
 When inspecting long-scroll pages (e.g. social feeds, search results, large data tables):
 
 - Call `chrome_read_dom { viewportOnly: true }` to constrain extraction to elements within or immediately adjacent (150px) to the current viewport.
 - Eliminates distant off-screen DOM nodes and reduces token consumption by an additional 50%~70%.
 
-### 6.10 VOM Geometric Coverage & Modal Focus Guidance
+### 8.10 VOM Geometric Coverage & Modal Focus Guidance
 
 - BrowserClaw calculates exact geometric viewport overlap: `overlap / (vp.width * vp.height)`.
 - When an overlay covers $\ge 60\%$ of the screen or a modal covers $\ge 12\%$, the compact AX tree prefixes:
   `[Modal Guidance: Active modal focus trap (<element>). Prioritize interacting with modal elements or dismissing it.]`
 - When you see this header, focus on resolving or closing the active dialog before targeting background elements.
 
-### 6.11 Environment Self-Diagnostics (`chrome_doctor`)
+### 8.11 Environment Self-Diagnostics (`chrome_doctor`)
 
 - If tool calls fail due to connection or authorization issues, call `chrome_doctor {}` (or run `browserclaw doctor` in terminal).
 - Returns health status for Native Host port 12306, the Agent master switch, Virtual Cursor mode, and Window Isolation settings.
 
-### 6.12 Window Isolation vs. Tab Groups (Window Mode)
+### 8.12 Window Isolation vs. Tab Groups (Window Mode)
 
 - **Tab Mode (Default)**: Automatically groups temporary task tabs under dedicated, colored Chrome Tab Groups (e.g., `12306查询`) within the current window and emulates background focus.
 - **Window Mode**: If the user toggles Window Mode in the popup, Agent tasks open in a separate OS window where CDP debugger infobars are strictly confined, leaving the user's primary workspace 100% untouched.

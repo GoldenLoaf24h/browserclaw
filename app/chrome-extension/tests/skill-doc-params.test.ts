@@ -15,6 +15,7 @@ const SKILL_EXAMPLES: Array<[string, Record<string, unknown>]> = [
   ['chrome_interact_index', { index: 1, action: 'click' }],
   ['chrome_fill_index', { index: 2, text: 'developer@example.com', clear: true }],
 
+  ['chrome_fill_index', { index: 2, text: 'developer@example.com', clear: true, pressEnter: true }],
   ['chrome_screenshot', { grid: true, format: 'webp' }],
   ['chrome_upload_file', { index: 5, filePath: 'D:/data/document.pdf' }],
   ['chrome_upload_file', { clickTargetIndex: 5, filePath: 'D:/data/document.pdf' }],
@@ -23,7 +24,7 @@ const SKILL_EXAMPLES: Array<[string, Record<string, unknown>]> = [
     'chrome_batch_actions',
     {
       actions: [
-        { type: 'fill', index: 2, text: 'a@b.com', clear: true },
+        { type: 'fill', index: 2, text: 'a@b.com', clear: true, pressEnter: true },
         { type: 'click', index: 4 },
         { type: 'wait', durationMs: 300 },
       ],
@@ -56,5 +57,35 @@ describe('SKILL.md parameter examples match the tool schemas', () => {
     for (const ghost of ['"ref":', 'enableGrid', 'targetRef', 'clickTargetRef', '"accept":']) {
       expect(skill.includes(ghost), `SKILL.md must not document ${ghost}`).toBe(false);
     }
+  });
+
+  it('verifies mcp-config.json autoApprove contains only valid canonical tools', async () => {
+    const fs = await import('node:fs');
+    const config = JSON.parse(fs.readFileSync('../../skill/config/mcp-config.json', 'utf-8'));
+    const autoApprove: string[] = config.configurations.cline_and_roo_code.config.mcpServers.browserclaw.autoApprove;
+    for (const tool of autoApprove) {
+      expect(schemas.has(tool), `autoApprove tool "${tool}" must exist in canonical TOOL_SCHEMAS`).toBe(true);
+    }
+  });
+
+  it('verifies user installed skills are synchronized with canonical skill', async () => {
+    const fs = await import('node:fs');
+    const crypto = await import('node:crypto');
+    const canonical = fs.readFileSync('../../skill/SKILL.md', 'utf-8');
+    const installedBrowserclaw = fs.readFileSync('C:/Users/Lenovo/.gemini/config/skills/browserclaw/SKILL.md', 'utf-8');
+
+    expect(installedBrowserclaw).toBe(canonical);
+
+    // Verify .browserclaw-managed.json hash matches installed SKILL.md
+    const managedBc = JSON.parse(fs.readFileSync('C:/Users/Lenovo/.gemini/config/skills/browserclaw/.browserclaw-managed.json', 'utf-8'));
+    const actualBcHash = crypto.createHash('sha256').update(installedBrowserclaw).digest('hex');
+    expect(managedBc.contentHash).toBe(actualBcHash);
+
+    // Verify mcp-chrome skill is also aligned (except name: mcp-chrome)
+    const installedMcpChrome = fs.readFileSync('C:/Users/Lenovo/.gemini/config/skills/mcp-chrome/SKILL.md', 'utf-8');
+    expect(installedMcpChrome).toBe(canonical.replace(/^name:\s*browserclaw/m, 'name: mcp-chrome'));
+    const managedMc = JSON.parse(fs.readFileSync('C:/Users/Lenovo/.gemini/config/skills/mcp-chrome/.browserclaw-managed.json', 'utf-8'));
+    const actualMcHash = crypto.createHash('sha256').update(installedMcpChrome).digest('hex');
+    expect(managedMc.contentHash).toBe(actualMcHash);
   });
 });

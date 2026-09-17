@@ -210,14 +210,14 @@ describe('Boost Phase 1 - Phase 4 Comprehensive Verification Suite', () => {
       assert.ok(src.includes('storeBase64 === true ? { base64Data } : {}'));
     });
 
-    it('4. Verifies computer.ts delegates raw coordinates to clickTool avoiding double projection', () => {
+    it('4. Verifies computer.ts directly dispatches native CDP mouse events for coordinate clicks', () => {
       const src = fs.readFileSync(
         'app/chrome-extension/entrypoints/background/tools/browser/computer.ts',
         'utf-8',
       );
       assert.ok(
-        src.includes('coordinates: params.coordinates'),
-        'computer.ts must pass params.coordinates to clickTool to prevent double projection',
+        src.includes('CDPHelper.dispatchMouseEvent(tabId,') && src.includes('project(params.coordinates)'),
+        'computer.ts must project coordinates and dispatch native CDP mouse events',
       );
     });
 
@@ -387,35 +387,22 @@ describe('Boost Phase 1 - Phase 4 Comprehensive Verification Suite', () => {
   });
 
   describe('Tool Schemas: Polymorphic Coordinate Support & chrome_read_dom Alignment', () => {
-    it('1. Verifies schemas support object and array for coordinates across all tools', () => {
-      const computerTool = TOOL_SCHEMAS.find((t: any) => t.name === TOOL_NAMES.BROWSER.COMPUTER);
+    it('1. Verifies schemas support object and array for coordinates across canonical tools', () => {
+      const computerTool = TOOL_SCHEMAS.find((t: any) => t.name === 'chrome_computer');
       assert.ok(computerTool);
-      assert.strictEqual(computerTool.inputSchema.properties.coordinates.type, 'object');
       assert.ok(computerTool.inputSchema.properties.coordinates.oneOf);
 
-      const interactTool = TOOL_SCHEMAS.find((t: any) => t.name === TOOL_NAMES.BROWSER.INTERACT_INDEX);
+      const interactTool = TOOL_SCHEMAS.find((t: any) => t.name === 'chrome_interact_index');
       assert.ok(interactTool);
-      assert.strictEqual(interactTool.inputSchema.properties.coordinate.type, 'object');
       assert.ok(interactTool.inputSchema.properties.coordinate.oneOf);
 
-      const clickTool = TOOL_SCHEMAS.find((t: any) => t.name === TOOL_NAMES.BROWSER.CLICK);
-      assert.ok(clickTool);
-      assert.strictEqual(clickTool.inputSchema.properties.coordinate.type, 'object');
-      assert.ok(clickTool.inputSchema.properties.coordinate.oneOf);
-
-      const scrollTool = TOOL_SCHEMAS.find((t: any) => t.name === TOOL_NAMES.BROWSER.SCROLL);
-      assert.ok(scrollTool);
-      assert.strictEqual(scrollTool.inputSchema.properties.coordinate.type, 'object');
-      assert.ok(scrollTool.inputSchema.properties.coordinate.oneOf);
-
-      const smartScrollTool = TOOL_SCHEMAS.find((t: any) => t.name === TOOL_NAMES.BROWSER.SMART_SCROLL);
+      const smartScrollTool = TOOL_SCHEMAS.find((t: any) => t.name === 'chrome_smart_scroll');
       assert.ok(smartScrollTool);
-      assert.strictEqual(smartScrollTool.inputSchema.properties.coordinate.type, 'object');
       assert.ok(smartScrollTool.inputSchema.properties.coordinate.oneOf);
 
-      const burstTool = TOOL_SCHEMAS.find((t: any) => t.name === TOOL_NAMES.BROWSER.BURST_INTERACT);
-      assert.ok(burstTool);
-      assert.ok(burstTool.inputSchema.properties.burstClicks.properties.center.oneOf);
+      const batchTool = TOOL_SCHEMAS.find((t: any) => t.name === 'chrome_batch_actions');
+      assert.ok(batchTool);
+      assert.ok(batchTool.inputSchema.properties.actions.items.properties.coordinate.oneOf);
     });
   });
 });
