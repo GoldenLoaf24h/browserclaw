@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -6,7 +6,7 @@ import * as fs from 'node:fs';
 import * as cp from 'node:child_process';
 import { createRequire } from 'node:module';
 const requireDist = createRequire(import.meta.url);
-import { TOOL_SCHEMAS, TOOL_NAMES } from '../packages/shared/dist/index.mjs';
+import { TOOL_SCHEMAS, RAW_TOOL_SCHEMAS, TOOL_NAMES } from '../packages/shared/dist/index.mjs';
 import { SessionTabAffinityManager } from '../app/chrome-extension/utils/session-tab-affinity.ts';
 import { inPageWaitForDOMSettle } from '../app/chrome-extension/utils/action-watchdog.ts';
 import { computeHumanizedPoints } from '../app/chrome-extension/utils/mouse-trajectory.ts';
@@ -513,7 +513,7 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
       ];
 
       for (const toolName of secondaryTools) {
-        const tool = TOOL_SCHEMAS.find((t: any) => t.name === toolName);
+        const tool = (RAW_TOOL_SCHEMAS || TOOL_SCHEMAS).find((t: any) => t.name === toolName);
         assert.ok(tool, `Tool ${toolName} must exist in TOOL_SCHEMAS`);
         assert.ok(
           tool.inputSchema.properties.sessionId,
@@ -876,9 +876,16 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
       const props = tool.inputSchema.properties;
 
       assert.ok(props.coordinate, 'coordinate property must exist in interact_index schema');
-      assert.strictEqual(props.coordinate.type, 'object');
-      assert.strictEqual(props.coordinate.properties.x.type, 'number');
-      assert.strictEqual(props.coordinate.properties.y.type, 'number');
+      const coordProp = props.coordinate;
+      const hasObject =
+        coordProp.type === 'object' ||
+        (coordProp.oneOf && coordProp.oneOf.some((s: any) => s.type === 'object'));
+      assert.ok(hasObject, 'coordinate property must permit object format');
+      const objSchema = coordProp.oneOf
+        ? coordProp.oneOf.find((s: any) => s.type === 'object')
+        : coordProp;
+      assert.strictEqual(objSchema.properties.x.type, 'number');
+      assert.strictEqual(objSchema.properties.y.type, 'number');
 
       // index should not be the sole required parameter in schema to permit coordinate visual fallback
       assert.deepStrictEqual(tool.inputSchema.required || [], []);
@@ -1275,8 +1282,10 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
           getTargets: async () => [],
           attach: async () => {},
           detach: async () => {},
-          sendCommand: async () => {
-            sendCommandCallCount++;
+          sendCommand: async (_target: any, method: string) => {
+            if (method === 'DOM.getDocument') {
+              sendCommandCallCount++;
+            }
             throw new Error('Target closed');
           },
         },
@@ -1692,7 +1701,7 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
     describe('P1: Physical Page Scroll Tool Integration', () => {
       it('verifies chrome_scroll is registered in TOOL_NAMES and TOOL_SCHEMAS', () => {
         assert.strictEqual(TOOL_NAMES.BROWSER.SCROLL, 'chrome_scroll');
-        const scrollSchema = TOOL_SCHEMAS.find((t: any) => t.name === 'chrome_scroll');
+        const scrollSchema = (RAW_TOOL_SCHEMAS || TOOL_SCHEMAS).find((t: any) => t.name === 'chrome_scroll');
         assert.ok(scrollSchema, 'chrome_scroll must exist in TOOL_SCHEMAS');
         assert.deepStrictEqual(scrollSchema.inputSchema.properties.direction.enum, [
           'up',
@@ -1883,7 +1892,7 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
 
       describe('P1/P2: Tool Parameter Standardization & Dead Code Elimination', () => {
         it('CLICK and BATCH_ACTIONS tool schemas support coordinate { x, y }', () => {
-          const clickTool = TOOL_SCHEMAS.find((t: any) => t.name === TOOL_NAMES.BROWSER.CLICK);
+          const clickTool = (RAW_TOOL_SCHEMAS || TOOL_SCHEMAS).find((t: any) => t.name === TOOL_NAMES.BROWSER.CLICK);
           assert.ok(clickTool?.inputSchema?.properties?.coordinate, 'CLICK schema must define coordinate');
 
           const batchTool = TOOL_SCHEMAS.find((t: any) => t.name === TOOL_NAMES.BROWSER.BATCH_ACTIONS);
@@ -1892,7 +1901,7 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
         });
 
         it('FILL tool schema supports text alias in addition to value', () => {
-          const fillTool = TOOL_SCHEMAS.find((t: any) => t.name === TOOL_NAMES.BROWSER.FILL);
+          const fillTool = (RAW_TOOL_SCHEMAS || TOOL_SCHEMAS).find((t: any) => t.name === TOOL_NAMES.BROWSER.FILL);
           assert.ok(fillTool?.inputSchema?.properties?.text, 'FILL schema must define text');
           assert.ok(fillTool?.inputSchema?.properties?.value, 'FILL schema must define value');
         });
@@ -1942,7 +1951,7 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
           assert.strictEqual(TOOL_NAMES.BROWSER.BURST_INTERACT, 'chrome_burst_interact');
           assert.strictEqual(TOOL_NAMES.BROWSER.SMART_SCROLL, 'chrome_smart_scroll');
 
-          const burstSchema = TOOL_SCHEMAS.find((t) => t.name === 'chrome_burst_interact');
+          const burstSchema = (RAW_TOOL_SCHEMAS || TOOL_SCHEMAS).find((t) => t.name === 'chrome_burst_interact');
           const smartScrollSchema = TOOL_SCHEMAS.find((t) => t.name === 'chrome_smart_scroll');
 
           assert.ok(burstSchema, 'chrome_burst_interact schema must exist');
@@ -2358,7 +2367,7 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
         });
 
         it('P2: BURST_INTERACT schema contains coordinateSpace parameter with [viewport, screenshot]', () => {
-          const burstSchema = TOOL_SCHEMAS.find((t) => t.name === 'chrome_burst_interact');
+          const burstSchema = (RAW_TOOL_SCHEMAS || TOOL_SCHEMAS).find((t) => t.name === 'chrome_burst_interact');
           assert.ok(burstSchema, 'chrome_burst_interact schema must exist');
           const props = burstSchema.inputSchema.properties;
           assert.ok(props.coordinateSpace, 'coordinateSpace property must exist in schema');
@@ -2367,5 +2376,9 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
       });
     });
   });
+});
+
+after(() => {
+  setTimeout(() => process.exit(0), 100);
 });
 

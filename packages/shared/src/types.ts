@@ -129,6 +129,7 @@ export interface BatchActionItem {
   direction?: 'up' | 'down' | 'left' | 'right';
   amount?: number;
   clear?: boolean;
+  pressEnter?: boolean;
   waitForSettle?: boolean;
   settleTimeoutMs?: number;
   // For type: 'assert'
@@ -211,6 +212,9 @@ export interface UnifiedLocatorResult {
   text?: string;
   value?: string;
   frameId?: number;
+  frameOffsetX?: number;
+  frameOffsetY?: number;
+  attributes?: Record<string, string>;
   error?: string;
   warning?: string;
 }

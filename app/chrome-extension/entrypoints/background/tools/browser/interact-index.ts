@@ -355,9 +355,9 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       // Hidden-tab throttling acks CDP commands but drops the events; the
       // probe records whether any trusted event actually reached the page.
       let probeArmed = false;
-      const armProbe = async () => {
+      const armProbe = async (scope?: any) => {
         try {
-          await executeInPage({ tabId }, 'inPageArmDeliveryProbe', [
+          await executeInPage(scope ?? { tabId }, 'inPageArmDeliveryProbe', [
             action === 'click' || action === 'double_click' || action === 'right_click'
               ? ['mousedown', 'mouseup', 'click']
               : action === 'drag'
@@ -512,6 +512,11 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         return createErrorResponse(`Failed to resolve valid pixel coordinates for interaction`);
       }
 
+      const targetScope =
+        targetFrameId !== undefined && targetFrameId !== 0 && !isFallback
+          ? { tabId, frameIds: [targetFrameId] }
+          : { tabId };
+
       // Animate virtual agent cursor to target position before physical interaction
       void animateAgentCursor(tabId, x, y);
 
@@ -519,7 +524,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       if (args.index !== undefined && !isFallback && action === 'click') {
         try {
           const interceptRes = (
-            await executeInPage({ tabId }, 'inPageCheckInterception', [args.index, x, y])
+            await executeInPage(targetScope, 'inPageCheckInterception', [args.index, x, y])
           )?.[0]?.result;
           if (interceptRes?.intercepted && interceptRes?.description) {
             return createErrorResponse(
@@ -731,7 +736,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       } else {
         // Primary path: Native CDP Mouse Event Dispatch (isTrusted=true)
         try {
-          await armProbe();
+          await armProbe(targetScope);
           await cdpSessionManager.withSession(tabId, 'interact-index', async () => {
             // Always dispatch mouse movement to target coordinates before pressing (ensures authentic pointer path)
             await dispatchMouseMovement(tabId, x, y, modifierMask, args.humanize === true);
@@ -775,7 +780,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 clickCount: 1,
                 modifiers: modifierMask,
               });
-              await new Promise((r) => setTimeout(r, 35));
+              await new Promise((r) => setTimeout(r, 45));
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mouseReleased',
                 x,
@@ -785,8 +790,9 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 clickCount: 1,
                 modifiers: modifierMask,
               });
-              await new Promise((r) => setTimeout(r, 40));
-              // Second click
+              // Inter-click pause for OS double-click recognition
+              await new Promise((r) => setTimeout(r, 60));
+              // Second click with clickCount: 2
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mousePressed',
                 x,
@@ -796,6 +802,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 clickCount: 2,
                 modifiers: modifierMask,
               });
+              await new Promise((r) => setTimeout(r, 45));
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mouseReleased',
                 x,
@@ -817,12 +824,12 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
               // without popping up OS-level native context menus that freeze the Chromium renderer
               try {
                 if (typeof args.index === 'number' && args.index > 0) {
-                  await executeInPage({ tabId }, 'inPageInteractIndex', [
+                  await executeInPage(targetScope, 'inPageInteractIndex', [
                     args.index,
                     'right_click',
                   ]);
                 } else {
-                  await executeInPage({ tabId }, 'inPageDispatchSyntheticClick', [
+                  await executeInPage(targetScope, 'inPageDispatchSyntheticClick', [
                     null,
                     x,
                     y,
@@ -894,7 +901,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       let fallbackTriggered: string | undefined;
       if (probeArmed && usedNativeCDP) {
         try {
-          const probe = (await executeInPage({ tabId }, 'inPageReadDeliveryProbe', [true]))?.[0]
+          const probe = (await executeInPage(targetScope, 'inPageReadDeliveryProbe', [true]))?.[0]
             ?.result;
           deliveryVerified = Boolean(probe?.delivered);
           if (!deliveryVerified) {
@@ -904,7 +911,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             if (action === 'click') {
               try {
                 const synRes = (
-                  await executeInPage({ tabId }, 'inPageDispatchSyntheticClick', [
+                  await executeInPage(targetScope, 'inPageDispatchSyntheticClick', [
                     args.index ?? null,
                     x,
                     y,

@@ -134,6 +134,15 @@ const postData = (payload, sessId) => {
 
     const sessionId = initRes.sessionId;
 
+    // Send notifications/initialized notification as per MCP specification
+    await postData(
+      {
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      },
+      sessionId,
+    ).catch(() => {});
+
     // 2. Call Tool
     const callRes = await postData(
       {
@@ -163,6 +172,19 @@ const postData = (payload, sessId) => {
           }
         } catch {}
       }
+    }
+
+    if (!outputText && callRes.body) {
+      try {
+        const parsed = JSON.parse(callRes.body);
+        if (parsed.result?.content) {
+          for (const item of parsed.result.content) {
+            if (item.type === 'text') outputText += item.text + '\n';
+          }
+        } else if (parsed.error) {
+          outputText = `Error: ${parsed.error.message}`;
+        }
+      } catch {}
     }
 
     if (outputText) {

@@ -599,6 +599,7 @@ export const navigateTool = new NavigateTool();
 
 interface CloseTabsToolParams {
   tabIds?: number[];
+  tabId?: number;
   url?: string;
   confirm?: boolean;
   sessionId?: string;
@@ -613,7 +614,13 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.CLOSE_TABS;
 
   async execute(args: CloseTabsToolParams): Promise<ToolResult> {
-    const { tabIds, url } = args;
+    const rawTabIds = args.tabIds ?? (typeof args.tabId === 'number' ? [args.tabId] : undefined);
+    const tabIds = Array.isArray(rawTabIds)
+      ? rawTabIds
+      : typeof rawTabIds === 'number'
+        ? [rawTabIds]
+        : undefined;
+    const { url } = args;
     const sessionId = args.sessionId || args.sessionContext;
     let urlPattern = url;
     console.log(`Attempting to close tabs with options:`, args);

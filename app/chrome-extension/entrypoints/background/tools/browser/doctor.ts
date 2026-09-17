@@ -33,9 +33,10 @@ class DoctorTool extends BaseBrowserToolExecutor {
         serverStatus = 'offline';
       }
 
-      // Query active tabs
+      // Query active tabs and windows
       const tabs = await chrome.tabs.query({});
-      const activeWindow = await chrome.windows.getCurrent().catch(() => null);
+      const allWindows = await chrome.windows.getAll().catch(() => []);
+      const windowCount = Math.max(1, allWindows.length);
 
       const checks = [
         {
@@ -64,7 +65,7 @@ class DoctorTool extends BaseBrowserToolExecutor {
         {
           name: 'Chrome Tabs Managed',
           status: 'pass',
-          detail: `${tabs.length} tabs open across ${activeWindow ? 'multiple windows' : '1 window'}`,
+          detail: `${tabs.length} tabs open across ${windowCount === 1 ? '1 window' : `${windowCount} windows`}`,
         },
       ];
 

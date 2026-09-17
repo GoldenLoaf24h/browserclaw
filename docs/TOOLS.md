@@ -2,13 +2,12 @@
 
 > 本文档由 `scripts/gen-tools-doc.mjs` 从 `packages/shared/src/tools.ts` 的 schema 生成，与代码保持一致。重新生成：`node scripts/gen-tools-doc.mjs`。
 
-| Profile      | 工具数 | Schema 开销   | 场景                                        |
-| ------------ | ------ | ------------- | ------------------------------------------- |
-| full（默认） | 52     | ~19.5k tokens | 完整底层 CDP 穿透与扩展控制                 |
-| core         | 14     | ~11.5k tokens | 核心高频利器（DOM 索引直点/表单/视觉/搜索） |
-| crawl        | 15     | ~5.8k tokens  | 极速批量网页抓取与数据提取                  |
+| core（默认） | 14 | ~11.5k tokens | 核心高频利器（DOM 索引直点/表单/视觉/搜索） |
+| full | 45 | ~19.5k tokens | 完整底层 CDP 穿透与扩展控制 |
+| crawl | 12 | ~5.8k tokens | 极速批量网页抓取与数据提取 |
 
 被 profile 隐藏的工具可用 `chrome_tool_docs` 按类别查询参数（该工具在任何 profile 均可用）。
+
 
 ## 导航与标签页 / Navigation & Tabs
 
@@ -24,6 +23,9 @@ Navigate to a URL, refresh the current tab, or navigate browser history (back/fo
 - `width` — Window width in pixels (default: 1280). When width or height is provided, a new window will be created.
 - `height` — Window height in pixels (default: 720). When width or height is provided, a new window will be created.
 - `refresh` — Refresh the current active tab instead of navigating to a URL. When true, the url parameter is ignored. Defaults to false
+- `groupTitle` — Task-aligned title for the Chrome tab group in user language (e.g. "GitHub 搜索", "Flight Tracker"). Fallback: "Agent"
+- `groupColor:grey|blue|red|yellow|green|pink|purple|cyan|orange` — Color for the Chrome tab group. Fallback: "blue"
+- `autoGroup` — Automatically place newly opened tab into an Agent-managed tab group with dedicated title and color. Default: true
 
 ### `chrome_switch_tab`
 
@@ -37,9 +39,11 @@ Switch to a specific browser tab
 
 Close one or more browser tabs
 
+- `tabId` — Single tab ID to close (convenience alternative to tabIds array).
 - `tabIds` — Array of tab IDs to close. If not provided, will close the active tab (requires confirm: true or session affinity).
 - `url` — Close tabs matching this URL. Can be used instead of tabIds.
 - `confirm` — Explicit confirmation required to close the active tab when tabIds or url are not specified.
+- `allManagedGroups` — Close all Agent-managed tab groups and their tabs created during automation sessions. Default: false
 
 ### `chrome_move_tab`
 
@@ -68,6 +72,9 @@ Detach CDP debugger from the tab and release session affinity, dismissing the Ch
 
 Get all currently open browser windows and tabs
 
+
+
+
 ## 页面感知 / Perception
 
 ### `chrome_read_dom`
@@ -83,7 +90,8 @@ Extract and prune interactive DOM tree with compact 1-based index assignment, vi
 - `limit` — Maximum number of indexed elements to return for current page cursor slice (default: unlimited)
 - `maxTextLength` — Maximum text length before truncation for element text content (default: 120)
 - `includeDetails` — Also return the bulky indexedElements/indexMap detail blocks (geometry, occlusion flags, safe click points). Off by default because the tree already c
-- `format:compact|html` — Output format for treeString. "compact" (default) produces a concise, accessibility-tree-inspired representation without closing tags, slashing token
+- `viewportOnly` — When true, only index elements inside or immediately near the visible viewport (default: false)
+- `format:compact|html` — Output format for treeString. "compact" (default) produces a concise, accessibility-tree-inspired representation without closing tags, slashing token 
 - `deltaOnly` — When true, returns only changed/added/removed diffs compared to the previous snapshot, saving 90%+ tokens on repeated reads.
 
 ### `chrome_get_markdown`
@@ -116,27 +124,6 @@ Search the page without dumping full DOM tree. Supports searching interactive el
 - `tabId` — Target tab ID (optional)
 - `sessionId` — Session identifier for tab affinity (optional)
 
-### `chrome_get_web_content`
-
-Fetch content from a web page
-
-- `url` — URL to fetch content from. If not provided, uses the current active tab
-- `tabId` — Target an existing tab by ID (default: active tab).
-- `background` — Do not activate tab/focus window while fetching (default: true)
-- `htmlContent` — Get the visible HTML content of the page. If true, textContent will be ignored (default: false)
-- `textContent` — Get the visible text content of the page with metadata. Ignored if htmlContent is true (default: true)
-- `selector` — CSS selector to get content from a specific element. If provided, only content from this element will be returned
-
-### `chrome_get_links`
-
-Extract all links on the page for crawling: absolute URL, anchor text, internal/external classification, rel=nofollow flag. Supports an optional CSS selector to scope extraction, and a sameOriginOnly filter.
-
-- `tabId` — Target tab ID (default: active tab)
-- `selector` — Optional CSS selector to scope the link search (default: whole document)
-- `sameOriginOnly` — Only return same-origin links (default: false)
-- `includeEmptyHref` — Include anchors without href (default: false)
-- `sessionId` — Session ID for tab affinity (optional)
-
 ### `chrome_get_dropdown_options`
 
 Get all options from a native <select> dropdown, ARIA combobox, or custom menu list.
@@ -154,15 +141,16 @@ Return compact parameter documentation for a category of BrowserClaw tools (navi
 - `category:navigate|perceive|act|observe|manage|crawl|diagnose|network`（必填） — Tool category to document
 - `activateForSession` — When true, dynamically exposes all tools in this category for the current MCP session without server restart. Default: false
 
+
 ## 交互操作 / Interaction
 
 ### `chrome_interact_index`
 
-Click, hover, or interact with an element using its compact 1-based numeric index from chrome_read_dom.
+Click, hover, or interact with an element using its compact 1-based numeric index from chrome_read_dom. When performing predictable multi-step actions (e.g. form submission or chain navigation), prefer chrome_batch_actions to finish in a single round-trip.
 
 - `index` — Compact 1-based numeric index of the target element
 - `coordinate` — Visual fallback coordinates in viewport/CSS pixels: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized
-- `coordinateSpace:viewport|screenshot` — Coordinate reference space. "viewport" (default) assumes standard CSS viewport pixels. "screenshot" scales coordinates based on the latest screenshot
+- `coordinateSpace:viewport|screenshot` — Coordinate reference space. "viewport" (default) assumes standard CSS viewport pixels. "screenshot" scales coordinates based on the latest screenshot 
 - `points` — Click sequence: dispatch a full CDP click at each viewport point with intervalMs pacing (rapid burst for moving canvas targets)
 - `intervalMs` — Delay between points in the click sequence, 5-500ms (default 35)
 - `action:click|hover|double_click|right_click|drag` — Interaction action to perform (default: click). "drag" requires `end` and moves from the indexed element to that target.
@@ -182,71 +170,19 @@ Click, hover, or interact with an element using its compact 1-based numeric inde
 
 ### `chrome_fill_index`
 
-Fill text into an input or textarea element using its compact 1-based numeric index.
+Fill text into an input or textarea element using its compact 1-based numeric index. When filling multiple fields in a form, prefer chrome_batch_actions to fill and submit the entire form in 1 turn.
 
 - `index`（必填） — Compact 1-based numeric index of the target element
 - `text` — Text content to fill into the element
 - `value` — Alias for text parameter
 - `clear` — Whether to clear existing field content before typing (default: true)
+- `pressEnter` — Whether to dispatch an Enter key event immediately after filling the text (default: false)
 - `tabId` — Target tab ID (optional)
 - `windowId` — Target window ID (optional)
 - `waitForSettle` — Wait for DOM mutations to settle after filling text before returning (default: false)
 - `settleTimeoutMs` — Maximum settle timeout in milliseconds (default: 1500, range: 200-10000)
 - `includeDelta` — Automatically capture and return DOM changes caused by filling in the delta field (default: false)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
-
-### `chrome_click_element`
-
-Click on an element in a web page. Follows a unified 4-tier degradation chain: ref/index (default) -> CSS/XPath selector -> text/role -> coordinate (fallback). Reports actual resolutionPath in response. Note: Visual coordinate mode is intended strictly as a fallback for elements that DOM/accessibility snapshots cannot express (e.g. Canvas, WebGL, SVG charts, or pages lacking accessibility info).
-
-- `index` — Compact 1-based index of the target element from chrome_read_dom (alias for ref).
-- `selector` — CSS selector or XPath for the element to click.
-- `selectorType:css|xpath` — Type of selector (default: "css").
-- `ref` — Element ref from chrome_read_dom (takes precedence over selector).
-- `text` — Target element by visible text content (evaluated after ref and selector in degradation chain).
-- `role` — Target element by ARIA role attribute (e.g. "button", "tab", "link").
-- `coordinate` — Coordinates to click at: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (preferred unified parameter). Interpreted in the spa
-- `coordinates` — Deprecated alias for coordinate. Prefer coordinate.
-- `double` — Perform double click when true (default: false).
-- `coordinateSpace:viewport|screenshot` — Space of coordinate/coordinates (default: viewport).
-- `button:left|right|middle` — Mouse button to click (default: "left").
-- `modifiers` — Modifier keys to hold during click.
-- `waitForNavigation` — Wait for navigation to complete after click (default: false).
-- `timeout` — Timeout in milliseconds for waiting (default: 5000).
-- `tabId` — Target tab ID. If omitted, uses the current active tab.
-- `windowId` — Window ID to select active tab from (when tabId is omitted).
-- `frameId` — Target frame ID for iframe support.
-- `sessionId` — Optional session identifier to bind affinity to a specific tab context
-
-### `chrome_fill_or_select`
-
-Fill or select a form element on a web page. Follows unified locator degradation: ref/index (default) -> CSS/XPath selector -> targetText/role -> coordinate (CDP click & type fallback). Reports actual resolutionPath in response.
-
-- `index` — Compact 1-based index of the target element from chrome_read_dom (alias for ref).
-- `selector` — CSS selector or XPath for the form element.
-- `selectorType:css|xpath` — Type of selector (default: "css").
-- `ref` — Element ref from chrome_read_dom (takes precedence over selector).
-- `targetText` — Target element by label or visible text content (used for locating target element).
-- `role` — Target element by ARIA role attribute (e.g. "textbox", "combobox").
-- `coordinate` — Viewport coordinates to click and focus before typing (fallback when ref/selector unavailable).
-- `coordinates` — Deprecated alias for coordinate. Prefer coordinate.
-- `text` — Text content to fill into the form element (preferred unified naming, alias for value).
-- `value` — Value to fill. For text inputs: string. For checkboxes/radios: boolean. For selects: option value or text.
-- `tabId` — Target tab ID. If omitted, uses the current active tab.
-- `windowId` — Window ID to select active tab from (when tabId is omitted).
-- `frameId` — Target frame ID for iframe support.
-- `sessionId` — Optional session identifier to bind affinity to a specific tab context
-
-### `chrome_fill_form`
-
-Fill multiple form fields in a single MCP call to reduce roundtrips. Supports filling by ref (1-based index), selector, or field name.
-
-- `fields`（必填） — Array of field descriptors to fill sequentially
-- `tabId` — Target tab ID (optional)
-- `windowId` — Target window ID (optional)
-- `waitForSettle` — Wait for DOM mutations to settle after form is filled (default: false)
-- `settleTimeoutMs` — Maximum settle timeout in ms (default: 1500)
-- `sessionId` — Session identifier for tab affinity
 
 ### `chrome_keyboard`
 
@@ -270,7 +206,7 @@ Upload files to web forms with file input elements using Chrome DevTools Protoco
 - `windowId` — Target window ID to pick active tab when tabId is omitted
 - `selector` — CSS selector for the file input element (optional if index is provided)
 - `index` — Compact 1-based numeric index of the file input element from chrome_read_dom
-- `clickTargetIndex` — Compact 1-based numeric index of a button/element from chrome_read_dom to click that triggers a dynamic file chooser dialog (e.g. Ant Design, Element
+- `clickTargetIndex` — Compact 1-based numeric index of a button/element from chrome_read_dom to click that triggers a dynamic file chooser dialog (e.g. Ant Design, Element 
 - `filePath` — Local file path to upload
 - `fileUrl` — URL to download file from before uploading
 - `base64Data` — Base64 encoded file data to upload
@@ -298,28 +234,15 @@ Wait for a browser download and return details (id, filename, url, state, size)
 
 ### `chrome_batch_actions`
 
-Execute a sequential pipeline of browser actions with static and runtime page-drift guards and partial failure reporting. Supports `click`, `double_click`, `right_click`, `fill`, `hover`, `scroll`, `press_key`, `wait`, `fill_form`, `assert`, and `extract`.
+Execute a sequential multi-step pipeline of browser actions in a single round-trip without waiting for intermediate model turns.
 
-- `actions`（必填） — List of actions to execute sequentially (supports `click`, `double_click`, `right_click`, `fill`, `hover`, `scroll`, `press_key`, `wait`, `fill_form`, `assert`, `extract`)
+- `actions`（必填） — List of actions to execute sequentially
 - `tabId` — Target tab ID (optional)
 - `windowId` — Target window ID (optional)
 - `waitForSettle` — Wait for DOM mutations to settle after all actions before returning (default: false)
 - `settleTimeoutMs` — Maximum settle timeout in milliseconds (default: 1500, range: 200-10000)
 - `includeDelta` — Automatically capture and return DOM changes caused by the batch in the delta field (default: false)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
-
-### `chrome_burst_interact`
-
-Execute ultra-low latency rapid interaction sequences: high-frequency clicks (burst), mouse trajectories, or rapid keyboard inputs directly over CDP without per-action roundtrip lag.
-
-- `tabId` — Target tab ID (optional)
-- `sessionId` — Session ID for tab affinity (optional)
-- `coordinateSpace:viewport|screenshot` — Coordinate space for coordinates (default: "viewport")
-- `burstClicks` — High-frequency burst clicking around a center point
-- `trajectory` — Smooth or micro-paused mouse movement trajectory sequence
-- `keySequence` — Rapid keyboard keypress sequence
-- `waitForSettle` — Wait for DOM settle after sequence completes
-- `settleTimeoutMs` — Settle timeout in ms
 
 ### `chrome_computer`
 
@@ -333,7 +256,7 @@ Use a mouse and keyboard to interact with a web browser, and take screenshots.
 - `dwellMs` — For click actions: milliseconds to hold the button down before release (0-2000). Use 50-150 for targets that reject instant clicks
 - `action:left_click|right_click|double_click|triple_click|left_click_drag|scroll|scroll_to|type|key|fill|fill_form|hover|wait|resize_page|zoom|screenshot`（必填） — Action to perform. There is no plain "click" — use left_click.
 - `ref` — Element ref/index from chrome_read_dom. For click/scroll/scroll_to/key/type and drag end when provided; takes precedence over coordinates.
-- `coordinates` — Coordinates for actions: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~~1.0 normalized, 0~~1000 per-mille, or abso
+- `coordinates` — Coordinates for actions: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized, 0~1000 per-mille, or abso
 - `coordinateSpace:viewport|screenshot` — Space of coordinates: viewport (default, absolute CSS pixels) or screenshot (mapped through the most recent screenshot context for this tab).
 - `startCoordinates` — Starting coordinates for drag action: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box.
 - `startRef` — Drag start ref/index from chrome_read_dom (alternative to startCoordinates).
@@ -377,6 +300,7 @@ Rolls back the most recent mutating action on this tab (e.g. reverts form field 
 
 - `tabId` — Target tab ID
 
+
 ## 观察与滚动 / Observation & Scrolling
 
 ### `chrome_screenshot`
@@ -406,19 +330,6 @@ Rolls back the most recent mutating action on this tab (e.g. reverts form field 
 - `quality` — Image compression quality from 0 to 100 for webp/jpeg formats (default: 80)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
 
-### `chrome_scroll`
-
-Physically scroll the page using CDP mouse wheel dispatch. Supports directional scrolling (up, down, left, right) by pixel distance or full/fractional pages.
-
-- `direction:up|down|left|right` — Direction to scroll (default: "down")
-- `amount` — Number of pixels to scroll (e.g. 500). Takes precedence over pages if both are provided.
-- `pages` — Number of viewport pages to scroll (e.g. 1 for full page, 0.5 for half page). Default is 1 if amount is omitted.
-- `index` — Target element index (from chrome_read_dom) to scroll. When provided, moves cursor to element and scrolls its container.
-- `coordinate` — Target coordinates to dispatch wheel event at: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (defaults to center of viewport
-- `tabId` — Target tab ID (optional, defaults to active tab)
-- `windowId` — Target window ID (optional)
-- `sessionId` — Session identifier for tab affinity
-
 ### `chrome_smart_scroll`
 
 Intelligently detects and scrolls the most prominent scrollable container on the page, or targets a specific container by selector, ref, or coordinate with automatic progress calculation.
@@ -429,19 +340,11 @@ Intelligently detects and scrolls the most prominent scrollable container on the
 - `amount` — Scroll amount: number in pixels, "page" (viewport height), or "half_page" (default: "page")
 - `selector` — Optional CSS selector of the scroll container to target
 - `ref` — Optional 1-based numeric index of the scroll container to target
+- `index` — Alias for ref: 1-based numeric index of the scroll container to target
 - `coordinate` — Optional coordinate to locate the scrollable container under pointer: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box
 - `smooth` — Whether to use smooth scrolling behavior (default: true)
 - `waitForSettle` — Wait for DOM and network activity to settle after scroll completes (default: true)
 - `settleTimeoutMs` — Maximum settle wait timeout in ms (default: 1500)
-
-### `chrome_scroll_to_text`
-
-Scroll the page using CDP and TreeWalker semantic search to bring specific text into the center of the viewport.
-
-- `text`（必填） — Target text string to search and scroll into view
-- `tabId` — Target tab ID (optional)
-- `windowId` — Target window ID (optional)
-- `sessionId` — Optional session identifier to bind affinity to a specific tab context
 
 ### `chrome_console`
 
@@ -460,6 +363,7 @@ Capture console output from a browser tab. Supports snapshot mode (default; one-
 - `pattern` — Optional regex filter applied to message/exception text. Supports /pattern/flags syntax.
 - `onlyErrors` — Only return error-level console messages (and exceptions when includeExceptions=true). Default: false.
 - `limit` — Deprecated alias for maxMessages. Prefer maxMessages.
+
 
 ## 数据管理 / Data Management
 
@@ -487,7 +391,7 @@ Add a new bookmark to Chrome
 
 - `url` — URL to bookmark. If not provided, uses the current active tab URL.
 - `title` — Title for the bookmark. If not provided, uses the page title from the URL.
-- `parentId` — Parent folder path or ID to add the bookmark to. Can be a path string (e.g., "Work/Projects") or a folder ID. If not provided, adds to the "Bookmarks
+- `parentId` — Parent folder path or ID to add the bookmark to. Can be a path string (e.g., "Work/Projects") or a folder ID. If not provided, adds to the "Bookmarks 
 - `createFolder` — Whether to create the parent folder if it does not exist (default: false)
 
 ### `chrome_bookmark_delete`
@@ -537,7 +441,14 @@ Close all tabs in a tab group and delete the group.
 
 - `groupId`（必填） — The ID of the tab group to close
 
+
 ## 代码诊断与调试 / Diagnostics & Debugging
+
+### `chrome_doctor`
+
+Diagnose BrowserClaw environment, Native Host connectivity, Chrome silent-debugger flags, port availability, and token security.
+
+- `verbose` — Return full path and configuration details (default: false)
 
 ### `chrome_javascript`
 
@@ -562,7 +473,7 @@ Read localStorage, sessionStorage, and cookies for the current tab. Cookies incl
 
 ### `chrome_intercept_api`
 
-Intercepts backend JSON API responses matching a URL pattern (e.g. "_/api/v1/data_") via CDP Network domain, bypassing messy HTML DOM scraping to obtain 100% structured ground-truth data.
+Intercepts backend JSON API responses matching a URL pattern (e.g. "*/api/v1/data*") via CDP Network domain, bypassing messy HTML DOM scraping to obtain 100% structured ground-truth data.
 
 - `urlPattern`（必填） — Glob pattern to match API endpoint URL
 - `triggerAction:inspect_recent|wait_next` — Wait for next response or inspect most recent match (default: inspect_recent)
@@ -591,6 +502,7 @@ Provides a lightweight summary of the last recorded trace. For deep insights (CW
 - `insightName` — Optional insight name for future deep analysis (e.g., "DocumentLatency"). Currently informational only.
 - `timeoutMs` — Timeout for deep analysis via native host (milliseconds). Default 60000. Increase for large traces.
 
+
 ## 网络拦截与捕获 / Network Interception & Capture
 
 ### `chrome_network_request`
@@ -617,4 +529,6 @@ Unified network capture tool. Use action="start" to begin capturing, action="sto
 - `inactivityTimeout` — Stop after inactivity in milliseconds (default: 60000). Set 0 to disable.
 - `includeStatic` — Include static resources like images/scripts/styles (default: false)
 
+
 ## 其他工具 / Remaining tools
+

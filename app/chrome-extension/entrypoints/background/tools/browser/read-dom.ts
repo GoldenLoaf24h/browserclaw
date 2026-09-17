@@ -53,6 +53,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
             highlight: args.highlight ?? false,
             maxTextLength: args.maxTextLength,
             format: args.format ?? 'compact',
+            viewportOnly: args.viewportOnly,
           },
         ]);
       } catch (frameErr) {
@@ -63,6 +64,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
             highlight: args.highlight ?? false,
             maxTextLength: args.maxTextLength,
             format: args.format ?? 'compact',
+            viewportOnly: args.viewportOnly,
           },
         ]);
       }

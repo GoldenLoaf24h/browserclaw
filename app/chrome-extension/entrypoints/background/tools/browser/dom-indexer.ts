@@ -1868,6 +1868,7 @@ export function extractElementLocationDetails(el: Element): {
   value?: string;
   frameOffsetX: number;
   frameOffsetY: number;
+  attributes?: Record<string, string>;
 } {
   const win = el.ownerDocument?.defaultView || window;
   const initialRect = el.getBoundingClientRect();
@@ -2003,6 +2004,12 @@ export function extractElementLocationDetails(el: Element): {
           : undefined,
     frameOffsetX,
     frameOffsetY,
+    attributes:
+      typeof (el as any).attributes !== 'undefined'
+        ? Object.fromEntries(
+            Array.from((el as Element).attributes || []).map((a) => [a.name, a.value]),
+          )
+        : undefined,
   };
 }
 
@@ -2021,6 +2028,7 @@ export function inPageGetElementCoordinates(refOrIndex: number | string): {
   value?: string;
   frameOffsetX?: number;
   frameOffsetY?: number;
+  attributes?: Record<string, string>;
   error?: string;
 } {
   let index: number;
@@ -2571,6 +2579,7 @@ export function inPageFillIndex(
   refOrIndex: number | string,
   textToFill: string,
   clear = true,
+  pressEnter = false,
 ): { success: boolean; index: number; tagName?: string; filledText?: string; error?: string } {
   let index: number;
   if (typeof refOrIndex === 'string') {
@@ -2675,6 +2684,51 @@ export function inPageFillIndex(
 
   el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
   el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+
+  if (pressEnter) {
+    el.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    el.dispatchEvent(
+      new KeyboardEvent('keypress', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    el.dispatchEvent(
+      new KeyboardEvent('keyup', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    if (el instanceof HTMLInputElement && el.form) {
+      const submitBtn = el.form.querySelector(
+        'button[type="submit"], input[type="submit"]',
+      ) as HTMLElement | null;
+      if (submitBtn) {
+        submitBtn.click();
+      } else if (typeof el.form.requestSubmit === 'function') {
+        try {
+          el.form.requestSubmit();
+        } catch {}
+      }
+    }
+  }
 
   return {
     success: true,

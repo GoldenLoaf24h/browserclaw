@@ -92,6 +92,9 @@ export async function resolveTargetLocation(
           text: match.text,
           value: match.value,
           frameId: targetFrameId,
+          frameOffsetX: match.frameOffsetX,
+          frameOffsetY: match.frameOffsetY,
+          attributes: match.attributes,
           warning: invalidationWarning,
         };
       }
@@ -134,6 +137,9 @@ export async function resolveTargetLocation(
           text: match.text,
           value: match.value,
           frameId: targetFrameId,
+          frameOffsetX: match.frameOffsetX,
+          frameOffsetY: match.frameOffsetY,
+          attributes: match.attributes,
         };
       }
     } catch (e) {
@@ -175,6 +181,9 @@ export async function resolveTargetLocation(
           text: match.text,
           value: match.value,
           frameId: targetFrameId,
+          frameOffsetX: match.frameOffsetX,
+          frameOffsetY: match.frameOffsetY,
+          attributes: match.attributes,
         };
       }
     } catch (e) {

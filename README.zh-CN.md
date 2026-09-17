@@ -104,9 +104,9 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 ---
 
-## 🛠️ 全量工具分类全览 (52 个 MCP 工具)
+## 🛠️ 全量工具分类全览 (45 个核心规范 MCP 工具)
 
-全量 52 个 Schema 校验的工具按功能归纳为以下 6 大类别。**点击对应分类即可展开查看工具清单。**
+全量 45 个核心规范 Schema 校验的工具按功能归纳为以下 6 大类别。**点击对应分类即可展开查看工具清单。**
 完整 JSON Schema 与入参定义请参阅 **[docs/TOOLS.md](./docs/TOOLS.md)**。
 
 <details>
@@ -125,56 +125,50 @@ cd app/native-server && node dist/scripts/register-dev.js
 </details>
 
 <details>
-<summary><b>📄 2. 内容感知、检索与数据提取 (7 个工具)</b></summary>
+<summary><b>📄 2. 内容感知、检索与数据提取 (5 个工具)</b></summary>
 
 <br/>
 
 - **`chrome_read_dom`**：极简剪枝 DOM 交互树，带 1-based 纯数字索引，Token 消耗压缩 85%+。
 - **`chrome_grep`**：毫秒级正则/文本定向检索，返回匹配项与索引，超大页面免除 Dump 全量 DOM。
-- **`chrome_get_markdown`**：提取页面排版优美、纯净结构化的 Markdown 文本，阅读长文与资料总结首选。
+- **`chrome_get_markdown`**：提取页面排版优美、纯净结构化的 Markdown 文本（支持 `includeLinks: true` 提取链接图谱），阅读长文与资料总结首选。
 - **`chrome_inspect_media`**：内存无损提取 `<img>` 与 `<canvas>` 原始图像 Data URL，支持 200%+ 超采样局部特写裁切。
-- **`chrome_get_web_content`**：事件驱动型页面加载等待与正文文本提取。
-- **`chrome_get_links`**：提取当前页面中的全部超链接地址（URL）与对应锚文本。
 - **`chrome_get_dropdown_options`**：直接读取原生或自定义 `<select>` 下拉选择器的全部可用候选项。
 
 </details>
 
 <details>
-<summary><b>🖱️ 3. 页面交互、输入与流水线 (15 个工具)</b></summary>
+<summary><b>🖱️ 3. 页面交互、输入与流水线 (11 个工具)</b></summary>
 
 <br/>
 
-- **`chrome_interact_index`**：核心物理级点击/悬停/双击，原生支持 `includeDelta: true` 自动回传局部变动。
-- **`chrome_fill_index`**：纯原生物理输入，支持清空重填与 `includeDelta: true` 变动核验。
+- **`chrome_interact_index`**：核心物理级点击/悬停/双击/连击序列（`points` 数组），原生支持 `includeDelta: true` 自动回传局部变动。
+- **`chrome_fill_index`**：纯原生物理输入，支持清空重填、Enter 提交与 `includeDelta: true` 变动核验。
 - **`chrome_batch_actions`**：闭环批处理流水线，单次网络调用按序执行点击、填充、等待，内置 `assert` 断言与 `extract` 提取。
-- **`chrome_smart_scroll`**：智能自适应滚屏，具备视口溢出检测与剩余滚动页数（`pages_down`）感知反馈。
-- **`chrome_scroll`**：按像素或方向精确滚动整页或特定可滚动容器。
-- **`chrome_scroll_to_text`**：自动在页面中检索目标文本并平滑滚动使其居中展现。
+- **`chrome_smart_scroll`**：智能自适应滚屏，具备视口溢出检测、像素精确滚动与剩余滚动页数（`pages_down`）感知反馈。
 - **`chrome_keyboard`**：派发单键（Enter/Tab/Esc）、组合快捷键（Ctrl+C/V）或指定元素文本聚焦输入。
 - **`chrome_upload_file`**：动态拦截本地文件选择对话框，或直接向 `<input type="file">` 注入绝对路径。
 - **`chrome_handle_dialog`**：响应或预设针对 JavaScript 原生弹窗（Alert / Confirm / Prompt）的自动处理策略。
 - **`chrome_handle_download`**：追踪、监听并管理浏览器底层正在进行的原生文件下载。
-- **`chrome_burst_interact`**：超低延迟连击序列，适用于即时连击或高并发点击场景。
 - **`chrome_computer`**：兼容 Anthropic Computer Use 协议的统一光标与键盘物理控制接口。
-- **`chrome_cdp_execute`**：工业级底层 CDP 逃生通道，支持 Target 多态路由与超时防死锁自动脱离。
 - **`chrome_request_human_intervention`**：页面毛玻璃暗化并挂起，让渡控制权供人类完成滑块/2FA，完成后一键无缝恢复。
 - **`chrome_undo_last_action`**：5 步环形栈撤销引擎，单步回滚最近一次页面跳转或表单输入。
 
 </details>
 
 <details>
-<summary><b>👁️ 4. 视觉感知与视口控制 (3 个工具)</b></summary>
+<summary><b>👁️ 4. 视觉感知、控制台与底层执行 (3 个工具)</b></summary>
 
 <br/>
 
 - **`chrome_screenshot`**：捕获视口或整页截图，可选叠加高对比度半透明像素标尺网格（Visual Fallback 必备）。
-- **`chrome_get_mouse_position`**：实时查询虚拟光标在当前视口中的物理坐标位置。
 - **`chrome_console`**：捕获、实时监听并过滤页面中的 JavaScript Console 日志与未捕获异常。
+- **`chrome_cdp_execute`**：工业级底层 CDP 逃生通道，支持 Target 多态路由与超时防死锁自动脱离。
 
 </details>
 
 <details>
-<summary><b>📡 5. 网络拦截与存储管理 (6 个工具)</b></summary>
+<summary><b>📡 5. 网络拦截与存储管理 (5 个工具)</b></summary>
 
 <br/>
 
@@ -183,12 +177,11 @@ cd app/native-server && node dist/scripts/register-dev.js
 - **`chrome_network_request`**：通过当前浏览器会话代理发送原生 HTTP 请求，继承当前站点的 Cookie 与会话头。
 - **`chrome_storage`**：读取、写入或清理当前站点的 `localStorage`、`sessionStorage` 与 Cookie 数据。
 - **`chrome_javascript`**：在页面隔离环境中执行任意自定义 JavaScript 脚本（支持单行表达式自动 return）。
-- **`chrome_tool_docs`**：动态查询工具文档，支持在会话级按需解锁全量工具分类（`activateForSession: true`）。
 
 </details>
 
 <details>
-<summary><b>🗂️ 6. 标签分组、书签、历史与诊断 (9 个工具)</b></summary>
+<summary><b>🗂️ 6. 标签分组、书签、历史与系统诊断 (14 个工具)</b></summary>
 
 <br/>
 
@@ -200,6 +193,8 @@ cd app/native-server && node dist/scripts/register-dev.js
 - **`chrome_history`**：按关键词或自定义时间跨度检索浏览器历史访问记录。
 - **`chrome_bookmark_search` / `add` / `delete`**：检索、新增或删除 Chrome 收藏夹书签。
 - **`performance_start_trace` / `stop_trace` / `analyze_insight`**：录制并深入分析 Chromium 底层性能 Trace 指标。
+- **`chrome_tool_docs`**：动态查询工具文档，支持在会话级按需解锁全量工具分类（`activateForSession: true`）。
+- **`chrome_doctor`**：诊断运行环境健康状况、检查端口 12306、Native Messaging Host 与插件通信链路。
 
 </details>
 
@@ -227,7 +222,7 @@ Chrome MV3 扩展 (Service Worker + WXT + Vue 3)
 ## 📚 项目全景文档库
 
 - **[项目地图导览](./docs/MAP.md)**：🗺️ 快速按角色导航、全工程 Monorepo 代码拓扑树与文档矩阵。
-- **[全量工具字典](./docs/TOOLS.md)**：自动化生成的 52 个工具完整参数输入输出参考手册。
+- **[全量工具字典](./docs/TOOLS.md)**：自动化生成的 45 个工具完整参数输入输出参考手册。
 - **[Agent 交互实操心法](./AGENT_CONFIG_GUIDE.md)**：面向大模型的六大高能交互准则与主流客户端配置样例。
 - **[深度系统架构](./docs/ARCHITECTURE.md)**：多进程拓扑、IPC 安全边界与设计决策记录 (ADR)。
 - **[故障排查指南](./docs/TROUBLESHOOTING.md)**：常见报错代码与连接异常秒级诊断排查。

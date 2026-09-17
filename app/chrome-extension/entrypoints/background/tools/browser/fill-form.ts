@@ -102,6 +102,83 @@ export class FillFormTool extends BaseBrowserToolExecutor {
                 [targetIndex, textToFill, field.clear !== false],
               );
               outcome = res?.[0]?.result;
+            } else if (field.selector) {
+              const selRes = await this.safeExecuteScript(tabId, {
+                target: loc.frameId ? { tabId, frameIds: [loc.frameId] } : { tabId },
+                func: (sel: string, val: string, shouldClear: boolean) => {
+                  const el = document.querySelector(sel);
+                  if (!el) return { success: false, error: `Selector "${sel}" not found` };
+                  if (typeof (el as HTMLElement).focus === 'function')
+                    (el as HTMLElement).focus();
+
+                  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement?.prototype || {},
+                    'value',
+                  )?.set;
+                  const nativeCheckboxSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement?.prototype || {},
+                    'checked',
+                  )?.set;
+                  const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLTextAreaElement?.prototype || {},
+                    'value',
+                  )?.set;
+
+                  if (
+                    el instanceof HTMLInputElement &&
+                    (el.type === 'checkbox' || el.type === 'radio')
+                  ) {
+                    const isTruthy =
+                      val === 'true' ||
+                      val === '1' ||
+                      val === 'checked' ||
+                      val === 'on' ||
+                      (val !== 'false' && val !== '0' && val !== 'off' && Boolean(val));
+                    if (nativeCheckboxSetter) {
+                      nativeCheckboxSetter.call(el, isTruthy);
+                    } else {
+                      el.checked = isTruthy;
+                    }
+                  } else if (el instanceof HTMLInputElement && nativeInputValueSetter) {
+                    if (shouldClear) nativeInputValueSetter.call(el, '');
+                    nativeInputValueSetter.call(el, val);
+                  } else if (el instanceof HTMLTextAreaElement && nativeTextAreaValueSetter) {
+                    if (shouldClear) nativeTextAreaValueSetter.call(el, '');
+                    nativeTextAreaValueSetter.call(el, val);
+                  } else if (el instanceof HTMLSelectElement) {
+                    let matched = false;
+                    for (const opt of Array.from(el.options)) {
+                      if (
+                        opt.value === val ||
+                        opt.text === val ||
+                        opt.text.trim() === val.trim()
+                      ) {
+                        el.value = opt.value;
+                        matched = true;
+                        break;
+                      }
+                    }
+                    if (!matched) el.value = val;
+                  } else if (
+                    el instanceof HTMLInputElement ||
+                    el instanceof HTMLTextAreaElement
+                  ) {
+                    if (shouldClear) el.value = '';
+                    el.value = val;
+                  } else if ((el as HTMLElement).isContentEditable) {
+                    if (shouldClear) (el as HTMLElement).innerText = '';
+                    (el as HTMLElement).innerText = val;
+                  } else {
+                    (el as any).value = val;
+                  }
+
+                  el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                  el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                  return { success: true, filledText: val };
+                },
+                args: [field.selector, textToFill, field.clear !== false],
+              });
+              outcome = selRes?.[0]?.result;
             }
             results.push({
               fieldIndex: i,

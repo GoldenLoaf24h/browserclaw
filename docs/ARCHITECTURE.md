@@ -108,7 +108,7 @@ sequenceDiagram
     participant CDP as CDP Session Manager
     participant InPage as Target Tab (Inpage Engine)
 
-    Agent->>Fastify: POST /mcp (tools/call: chrome_click_element)
+    Agent->>Fastify: POST /mcp (tools/call: chrome_interact_index)
     Note over Fastify: Validates CHROME_MCP_TOKEN Bearer
     Fastify->>Host: Dispatch Native Message
     Host->>SW: Standard IO Framed Message (4-byte length prefix)
@@ -351,7 +351,7 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
      - Schedule periodic `cleanupOldFiles()` in native server and unref timer.
   5. **Tooling & Ergonomics**:
      - Eliminate Service Worker loopback messaging (`chrome.runtime.sendMessage` to self) in favor of direct callback delivery (`sendFileOperationToNative`).
-     - Tighten `chrome_scroll_to_text` XPath queries and filter out root `html`/`body` containers to ensure Shadow DOM TreeWalker execution.
+     - Tighten `chrome_smart_scroll` container-aware discovery and filter out root `html`/`body` containers to ensure Shadow DOM TreeWalker execution.
      - Guard human intervention keyboard listener to ignore Enter keys when typing in input, textarea, or contenteditable fields.
      - Enforce `searchStartTime` window on download waiter to avoid capturing stale in-progress downloads.
      - Optimize `run_host.bat` cold start by replacing slow PowerShell subprocesses with pure cmd string substitution.

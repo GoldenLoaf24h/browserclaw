@@ -11,6 +11,7 @@ import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
 import { captureDeltaIfRequested } from '@/utils/delta-helper';
 import { getSubframeViewportOffset } from './interact-index';
 import { tabFaviconManager } from './tab-favicon';
+import { computeHumanizedPoints } from '@/utils/mouse-trajectory';
 
 export interface FillIndexParams {
   index: number;
@@ -136,23 +137,34 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           }
 
           await cdpSessionManager.withSession(targetTabId, 'fill-index', async () => {
-            await raceCdp(targetTabId, 'Input.dispatchMouseEvent', {
-              type: 'mouseMoved',
-              x: targetX,
-              y: targetY,
-            });
+            // Humanized micro-trajectory to bypass anti-bot path listeners
+            const startX = Math.max(0, targetX - (40 + Math.floor(Math.random() * 50)));
+            const startY = Math.max(0, targetY - (25 + Math.floor(Math.random() * 40)));
+            const points = computeHumanizedPoints(startX, startY, targetX, targetY, 3);
+            for (const pt of points) {
+              await raceCdp(targetTabId, 'Input.dispatchMouseEvent', {
+                type: 'mouseMoved',
+                x: pt.x,
+                y: pt.y,
+              });
+              await new Promise((r) => setTimeout(r, 10));
+            }
+
             await raceCdp(targetTabId, 'Input.dispatchMouseEvent', {
               type: 'mousePressed',
               x: targetX,
               y: targetY,
               button: 'left',
+              buttons: 1,
               clickCount: 1,
             });
+            await new Promise((r) => setTimeout(r, 35));
             await raceCdp(targetTabId, 'Input.dispatchMouseEvent', {
               type: 'mouseReleased',
               x: targetX,
               y: targetY,
               button: 'left',
+              buttons: 0,
               clickCount: 1,
             });
 
@@ -243,6 +255,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           args.index,
           textToFill,
           args.clear !== false,
+          args.pressEnter === true,
         ]);
 
         outcome = results?.[0]?.result;
@@ -250,12 +263,36 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           const frameResults = await executeInPage(
             { tabId: targetTabId, allFrames: true },
             'inPageFillIndex',
-            [args.index, textToFill, args.clear !== false],
+            [args.index, textToFill, args.clear !== false, args.pressEnter === true],
           );
           const match = frameResults.find((r) => r.result?.success);
           if (match?.result) {
             outcome = match.result;
           }
+        }
+
+        // If fallback fill succeeded and pressEnter requested, dispatch Enter via CDP
+        if (outcome?.success && args.pressEnter === true) {
+          try {
+            await cdpSessionManager.withSession(targetTabId, 'fill-index-enter', async () => {
+              await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
+                type: 'keyDown',
+                key: 'Enter',
+                code: 'Enter',
+                text: '\r',
+                unmodifiedText: '\r',
+                windowsVirtualKeyCode: 13,
+                nativeVirtualKeyCode: 13,
+              });
+              await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
+                type: 'keyUp',
+                key: 'Enter',
+                code: 'Enter',
+                windowsVirtualKeyCode: 13,
+                nativeVirtualKeyCode: 13,
+              });
+            });
+          } catch {}
         }
       }
 

@@ -31,9 +31,8 @@ const toolDoc = (t) => {
 
 let out = '# BrowserClaw 工具参考 / Tool Reference\n\n';
 out += '> 本文档由 `scripts/gen-tools-doc.mjs` 从 `packages/shared/src/tools.ts` 的 schema 生成，与代码保持一致。重新生成：`node scripts/gen-tools-doc.mjs`。\n\n';
-out += '| Profile | 工具数 | Schema 开销 | 场景 |\n| --- | --- | --- | --- |\n';
-out += `| full（默认） | ${TOOL_SCHEMAS.length} | ~19.5k tokens | 完整底层 CDP 穿透与扩展控制 |\n`;
-out += `| core | ${CORE_TOOL_NAMES.size} | ~11.5k tokens | 核心高频利器（DOM 索引直点/表单/视觉/搜索） |\n`;
+out += `| core（默认） | ${CORE_TOOL_NAMES.size} | ~11.5k tokens | 核心高频利器（DOM 索引直点/表单/视觉/搜索） |\n`;
+out += `| full | ${TOOL_SCHEMAS.length} | ~19.5k tokens | 完整底层 CDP 穿透与扩展控制 |\n`;
 out += `| crawl | ${CRAWL_TOOL_NAMES.size} | ~5.8k tokens | 极速批量网页抓取与数据提取 |\n\n`;
 out += '被 profile 隐藏的工具可用 `chrome_tool_docs` 按类别查询参数（该工具在任何 profile 均可用）。\n\n';
 

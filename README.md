@@ -113,7 +113,7 @@ All 45 schema-validated tools are grouped into 6 logical categories below. **Cli
 For machine-readable JSON schemas and detailed option flags, consult **[docs/TOOLS.md](./docs/TOOLS.md)**.
 
 <details>
-<summary><b>🌐 1. Navigation & Tab Management (5 Tools)</b></summary>
+<summary><b>🌐 1. Navigation & Tab Management (7 Tools)</b></summary>
 
 <br/>
 
@@ -134,10 +134,8 @@ For machine-readable JSON schemas and detailed option flags, consult **[docs/TOO
 
 - **`chrome_read_dom`**: Pruned interactive DOM tree with 1-based numeric indices. Reduces prompt token consumption by >85%.
 - **`chrome_grep`**: Sub-100 token instant regex or text search across elements and text lines without full DOM dumping.
-- **`chrome_get_markdown`**: Clean, structured Markdown content extraction optimized for long-form reading and article summarization.
+- **`chrome_get_markdown`**: Clean, structured Markdown content extraction (supports `includeLinks: true` for link graph extraction) optimized for long-form reading and article summarization.
 - **`chrome_inspect_media`**: Lossless in-memory extraction of raw `<img>` and `<canvas>` data, with 200%+ super-sampling crop fallback for noisy captchas.
-- **`chrome_get_web_content`**: Event-driven page content extraction with complete status waiting.
-- **`chrome_get_links`**: Extract all hyperlinks, URLs, and associated anchor texts from the active page.
 - **`chrome_get_dropdown_options`**: Inspect all selectable options within native or custom `<select>` dropdown elements.
 
 </details>
@@ -147,37 +145,33 @@ For machine-readable JSON schemas and detailed option flags, consult **[docs/TOO
 
 <br/>
 
-- **`chrome_interact_index`**: Native trusted click, hover, or dblclick by 1-based index; supports `includeDelta: true` for autonomous DOM diff feedback.
-- **`chrome_fill_index`**: Native trusted text input with automatic value clearing and `includeDelta: true` mutation checking.
+- **`chrome_interact_index`**: Native trusted click, hover, dblclick, or click sequence (`points` array) by 1-based index; supports `includeDelta: true` for autonomous DOM diff feedback.
+- **`chrome_fill_index`**: Native trusted text input with automatic value clearing, Enter key submission, and `includeDelta: true` mutation checking.
 - **`chrome_batch_actions`**: High-performance multi-step pipeline combining click, fill, press, and wait in a single roundtrip, with built-in `assert` and `extract` rules.
-- **`chrome_smart_scroll`**: Viewport overflow-aware scrolling that returns accurate remaining page counts (`pages_down` / `pages_up`).
-- **`chrome_scroll`**: Precise pixel-level and directional scroll control across the document or target scrollable containers.
-- **`chrome_scroll_to_text`**: Automatically search for target text in the page and smoothly scroll it to the center of the viewport.
+- **`chrome_smart_scroll`**: Viewport overflow-aware scrolling with pixel precision and accurate remaining page counts (`pages_down` / `pages_up`).
 - **`chrome_keyboard`**: Dispatch physical keystrokes (Enter, Tab, Esc), combinations (Ctrl+C/V), or targeted text input.
 - **`chrome_upload_file`**: Intercept file chooser dialogs dynamically or inject absolute local file paths into `<input type="file">`.
 - **`chrome_handle_dialog`**: Handle or pre-arm responses for native JavaScript dialogs (alert, confirm, prompt).
 - **`chrome_handle_download`**: Track, monitor, and manage active native browser file downloads.
-- **`chrome_burst_interact`**: Low-latency burst click sequence designed for rapid successive triggers.
 - **`chrome_computer`**: Anthropic Computer Use-compatible unified interface for mouse and keyboard control.
-- **`chrome_cdp_execute`**: Industrial-grade low-level CDP escape hatch with target polymorphic routing and anti-hang auto-detach guards.
 - **`chrome_request_human_intervention`**: Softly dim page, display a frosted-glass banner, park the virtual cursor, and yield control to the human for 2FA or slider captchas.
 - **`chrome_undo_last_action`**: 5-step ring buffer undo engine to roll back recent navigation jumps or form input values.
 
 </details>
 
 <details>
-<summary><b>👁️ 4. Vision & Viewport Control (2 Tools)</b></summary>
+<summary><b>👁️ 4. Vision, Console & Low-Level CDP (3 Tools)</b></summary>
 
 <br/>
 
 - **`chrome_screenshot`**: Capture viewport or full-page PNGs with optional high-contrast pixel coordinate grid overlays for visual fallback.
-- **`chrome_get_mouse_position`**: Query the real-time physical coordinates and position of the virtual cursor in the viewport.
 - **`chrome_console`**: Capture, monitor, and filter page-level JavaScript console logs, warnings, and unhandled runtime exceptions.
+- **`chrome_cdp_execute`**: Industrial-grade low-level CDP escape hatch with target polymorphic routing and anti-hang auto-detach guards.
 
 </details>
 
 <details>
-<summary><b>📡 5. Network Intercept & Storage (6 Tools)</b></summary>
+<summary><b>📡 5. Network Intercept & Storage (5 Tools)</b></summary>
 
 <br/>
 
@@ -186,12 +180,11 @@ For machine-readable JSON schemas and detailed option flags, consult **[docs/TOO
 - **`chrome_network_request`**: Dispatch native HTTP requests through the browser session, inheriting all active origin cookies and headers.
 - **`chrome_storage`**: Read, write, or clear browser storage state (`localStorage`, `sessionStorage`, and cookies).
 - **`chrome_javascript`**: Execute custom JavaScript expressions in the page context with automatic single-expression return detection.
-- **`chrome_tool_docs`**: Dynamic in-session capability discovery and profile activation (`activateForSession: true`).
 
 </details>
 
 <details>
-<summary><b>🗂️ 6. Tab Groups, Bookmarks & Diagnostics (10 Tools)</b></summary>
+<summary><b>🗂️ 6. Tab Groups, Bookmarks & Diagnostics (14 Tools)</b></summary>
 
 <br/>
 
@@ -203,6 +196,8 @@ For machine-readable JSON schemas and detailed option flags, consult **[docs/TOO
 - **`chrome_history`**: Query and filter historical browser visits across customizable time ranges.
 - **`chrome_bookmark_search` / `add` / `delete`**: Search, create, and remove browser bookmarks.
 - **`performance_start_trace` / `stop_trace` / `analyze_insight`**: Record and analyze Core Web Vitals and Chromium performance traces.
+- **`chrome_tool_docs`**: Dynamic in-session capability discovery and profile activation (`activateForSession: true`).
+- **`chrome_doctor`**: Diagnose environment health, check port 12306, Native Messaging Host, and extension bridge connectivity.
 
 </details>
 

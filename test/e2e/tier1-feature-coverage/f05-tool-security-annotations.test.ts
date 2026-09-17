@@ -68,7 +68,7 @@ describe('Tier 1 - Feature 5: MCP Tool Security Annotations', () => {
   it('test_f05_open_world_hint_compliance: browser web interaction tools declare openWorldHint: true', () => {
     const openWorldToolNames = [
       TOOL_NAMES.BROWSER.NAVIGATE,
-      TOOL_NAMES.BROWSER.WEB_FETCHER,
+      TOOL_NAMES.BROWSER.GET_MARKDOWN,
       TOOL_NAMES.BROWSER.READ_DOM,
       TOOL_NAMES.BROWSER.BATCH_ACTIONS,
     ];

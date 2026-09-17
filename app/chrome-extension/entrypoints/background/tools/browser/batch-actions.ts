@@ -339,13 +339,15 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                   });
                 } else if (item.type === 'right_click') {
                   try {
+                    const rightClickTarget =
+                      targetFrameId !== 0 ? { tabId, frameIds: [targetFrameId] } : { tabId };
                     if (typeof item.index === 'number' && item.index > 0) {
-                      await executeInPage({ tabId }, 'inPageInteractIndex', [
+                      await executeInPage(rightClickTarget, 'inPageInteractIndex', [
                         item.index,
                         'right_click',
                       ]);
                     } else {
-                      await executeInPage({ tabId }, 'inPageDispatchSyntheticClick', [
+                      await executeInPage(rightClickTarget, 'inPageDispatchSyntheticClick', [
                         null,
                         targetX,
                         targetY,
@@ -449,8 +451,15 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                   typeof coords.x === 'number' &&
                   typeof coords.y === 'number'
                 ) {
-                  const targetX = coords.x;
-                  const targetY = coords.y;
+                  let targetX = coords.x;
+                  let targetY = coords.y;
+                  if (targetFrameId !== 0) {
+                    const offset = await getSubframeViewportOffset(tabId, targetFrameId);
+                    const localX = loc.frameOffsetX || coords?.frameOffsetX || 0;
+                    const localY = loc.frameOffsetY || coords?.frameOffsetY || 0;
+                    targetX = targetX - localX + offset.offsetX;
+                    targetY = targetY - localY + offset.offsetY;
+                  }
                   isKnownEmpty = typeof coords.value === 'string' && coords.value === '';
 
                   await cdpSessionManager.withSession(tabId, 'batch-actions-fill', async () => {
@@ -468,6 +477,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                       buttons: 1,
                       clickCount: 1,
                     });
+                    await new Promise((r) => setTimeout(r, 35));
                     await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
                       type: 'mouseReleased',
                       x: targetX,
@@ -514,6 +524,23 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                         text: String(text),
                       });
                     }
+
+                    if (item.pressEnter === true) {
+                      await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
+                        type: 'rawKeyDown',
+                        windowsVirtualKeyCode: 13,
+                        unmodifiedText: '\r',
+                        text: '\r',
+                        key: 'Enter',
+                        code: 'Enter',
+                      });
+                      await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
+                        type: 'keyUp',
+                        windowsVirtualKeyCode: 13,
+                        key: 'Enter',
+                        code: 'Enter',
+                      });
+                    }
                   });
 
                   stepOutput = {
@@ -547,13 +574,14 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     targetIndex,
                     text,
                     item.clear !== false,
+                    item.pressEnter === true,
                   ]);
                   outcome = res?.[0]?.result;
                   if (!outcome?.success && !targetFrameId) {
                     const frameResults = await executeInPage(
                       { tabId, allFrames: true },
                       'inPageFillIndex',
-                      [targetIndex, text, item.clear !== false],
+                      [targetIndex, text, item.clear !== false, item.pressEnter === true],
                     );
                     const match = frameResults.find((r) => r.result?.success);
                     if (match?.result) outcome = match.result;
@@ -561,7 +589,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 } else if (item.selector) {
                   const selRes = await this.safeExecuteScript(tabId, {
                     target: targetFrameId ? { tabId, frameIds: [targetFrameId] } : { tabId },
-                    func: (sel: string, val: string, shouldClear: boolean) => {
+                    func: (sel: string, val: string, shouldClear: boolean, shouldEnter: boolean) => {
                       const el = document.querySelector(sel);
                       if (!el) return { success: false, error: `Selector "${sel}" not found` };
                       if (typeof (el as HTMLElement).focus === 'function')
@@ -630,9 +658,54 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
                       el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
                       el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+
+                      if (shouldEnter) {
+                        el.dispatchEvent(
+                          new KeyboardEvent('keydown', {
+                            key: 'Enter',
+                            code: 'Enter',
+                            keyCode: 13,
+                            which: 13,
+                            bubbles: true,
+                            composed: true,
+                          }),
+                        );
+                        el.dispatchEvent(
+                          new KeyboardEvent('keypress', {
+                            key: 'Enter',
+                            code: 'Enter',
+                            keyCode: 13,
+                            which: 13,
+                            bubbles: true,
+                            composed: true,
+                          }),
+                        );
+                        el.dispatchEvent(
+                          new KeyboardEvent('keyup', {
+                            key: 'Enter',
+                            code: 'Enter',
+                            keyCode: 13,
+                            which: 13,
+                            bubbles: true,
+                            composed: true,
+                          }),
+                        );
+                        if (el instanceof HTMLInputElement && el.form) {
+                          const submitBtn = el.form.querySelector(
+                            'button[type="submit"], input[type="submit"]',
+                          ) as HTMLElement | null;
+                          if (submitBtn) {
+                            submitBtn.click();
+                          } else if (typeof el.form.requestSubmit === 'function') {
+                            try {
+                              el.form.requestSubmit();
+                            } catch {}
+                          }
+                        }
+                      }
                       return { success: true, filledText: val };
                     },
-                    args: [item.selector, text, item.clear !== false],
+                    args: [item.selector, text, item.clear !== false, item.pressEnter === true],
                   });
                   outcome = selRes?.[0]?.result;
                 }
@@ -704,6 +777,83 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                         [targetIndex, textVal, field.clear !== false],
                       );
                       outcome = res?.[0]?.result;
+                    } else if (field.selector) {
+                      const selRes = await this.safeExecuteScript(tabId, {
+                        target: loc.frameId ? { tabId, frameIds: [loc.frameId] } : { tabId },
+                        func: (sel: string, val: string, shouldClear: boolean) => {
+                          const el = document.querySelector(sel);
+                          if (!el) return { success: false, error: `Selector "${sel}" not found` };
+                          if (typeof (el as HTMLElement).focus === 'function')
+                            (el as HTMLElement).focus();
+
+                          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                            window.HTMLInputElement?.prototype || {},
+                            'value',
+                          )?.set;
+                          const nativeCheckboxSetter = Object.getOwnPropertyDescriptor(
+                            window.HTMLInputElement?.prototype || {},
+                            'checked',
+                          )?.set;
+                          const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
+                            window.HTMLTextAreaElement?.prototype || {},
+                            'value',
+                          )?.set;
+
+                          if (
+                            el instanceof HTMLInputElement &&
+                            (el.type === 'checkbox' || el.type === 'radio')
+                          ) {
+                            const isTruthy =
+                              val === 'true' ||
+                              val === '1' ||
+                              val === 'checked' ||
+                              val === 'on' ||
+                              (val !== 'false' && val !== '0' && val !== 'off' && Boolean(val));
+                            if (nativeCheckboxSetter) {
+                              nativeCheckboxSetter.call(el, isTruthy);
+                            } else {
+                              el.checked = isTruthy;
+                            }
+                          } else if (el instanceof HTMLInputElement && nativeInputValueSetter) {
+                            if (shouldClear) nativeInputValueSetter.call(el, '');
+                            nativeInputValueSetter.call(el, val);
+                          } else if (el instanceof HTMLTextAreaElement && nativeTextAreaValueSetter) {
+                            if (shouldClear) nativeTextAreaValueSetter.call(el, '');
+                            nativeTextAreaValueSetter.call(el, val);
+                          } else if (el instanceof HTMLSelectElement) {
+                            let matched = false;
+                            for (const opt of Array.from(el.options)) {
+                              if (
+                                opt.value === val ||
+                                opt.text === val ||
+                                opt.text.trim() === val.trim()
+                              ) {
+                                el.value = opt.value;
+                                matched = true;
+                                break;
+                              }
+                            }
+                            if (!matched) el.value = val;
+                          } else if (
+                            el instanceof HTMLInputElement ||
+                            el instanceof HTMLTextAreaElement
+                          ) {
+                            if (shouldClear) el.value = '';
+                            el.value = val;
+                          } else if ((el as HTMLElement).isContentEditable) {
+                            if (shouldClear) (el as HTMLElement).innerText = '';
+                            (el as HTMLElement).innerText = val;
+                          } else {
+                            (el as any).value = val;
+                          }
+
+                          el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                          el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                          return { success: true, filledText: val };
+                        },
+                        args: [field.selector, textVal, field.clear !== false],
+                      });
+                      outcome = selRes?.[0]?.result;
                     }
                     fillFormResults.push({
                       fieldIndex: f,
@@ -713,23 +863,34 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     continue;
                   }
 
+                  let targetX = loc.x;
+                  let targetY = loc.y;
+                  if (loc.frameId && loc.frameId !== 0) {
+                    const offset = await getSubframeViewportOffset(tabId, loc.frameId);
+                    const localX = loc.frameOffsetX || 0;
+                    const localY = loc.frameOffsetY || 0;
+                    targetX = targetX - localX + offset.offsetX;
+                    targetY = targetY - localY + offset.offsetY;
+                  }
+
                   await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
                     type: 'mouseMoved',
-                    x: loc.x,
-                    y: loc.y,
+                    x: targetX,
+                    y: targetY,
                   });
                   await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
                     type: 'mousePressed',
-                    x: loc.x,
-                    y: loc.y,
+                    x: targetX,
+                    y: targetY,
                     button: 'left',
                     buttons: 1,
                     clickCount: 1,
                   });
+                  await new Promise((r) => setTimeout(r, 35));
                   await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
                     type: 'mouseReleased',
-                    x: loc.x,
-                    y: loc.y,
+                    x: targetX,
+                    y: targetY,
                     button: 'left',
                     buttons: 0,
                     clickCount: 1,
@@ -993,26 +1154,36 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                   actualText = String(coords.text ?? coords.value ?? '');
                 }
               } else if (item.selector) {
+                const selFunc = (sel: string) => {
+                  const el = document.querySelector(sel);
+                  if (!el) return { found: false };
+                  const rect = el.getBoundingClientRect();
+                  const visible =
+                    rect.width > 0 &&
+                    rect.height > 0 &&
+                    window.getComputedStyle(el).visibility !== 'hidden';
+                  return {
+                    found: true,
+                    visible,
+                    text: (el as HTMLElement).innerText ?? el.textContent ?? '',
+                    value: (el as HTMLInputElement).value ?? '',
+                  };
+                };
                 const selRes = await this.safeExecuteScript(tabId, {
                   target: { tabId },
-                  func: (sel: string) => {
-                    const el = document.querySelector(sel);
-                    if (!el) return { found: false };
-                    const rect = el.getBoundingClientRect();
-                    const visible =
-                      rect.width > 0 &&
-                      rect.height > 0 &&
-                      window.getComputedStyle(el).visibility !== 'hidden';
-                    return {
-                      found: true,
-                      visible,
-                      text: (el as HTMLElement).innerText ?? el.textContent ?? '',
-                      value: (el as HTMLInputElement).value ?? '',
-                    };
-                  },
+                  func: selFunc,
                   args: [item.selector],
                 });
-                const data = selRes?.[0]?.result as any;
+                let data = selRes?.[0]?.result as any;
+                if (!data?.found) {
+                  const frameResults = await this.safeExecuteScript(tabId, {
+                    target: { tabId, allFrames: true },
+                    func: selFunc,
+                    args: [item.selector],
+                  });
+                  const match = frameResults.find((r: any) => r.result?.found);
+                  if (match?.result) data = match.result;
+                }
                 if (data?.found) {
                   isVisible = Boolean(data.visible);
                   actualText = String(data.text || data.value || '');
@@ -1084,22 +1255,45 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                   if (match?.result) coords = match.result;
                 }
                 if (coords?.success) {
-                  extractedValue =
-                    prop === 'value' ? String(coords.value ?? '') : String(coords.text ?? '');
+                  if (prop === 'attribute') {
+                    const attrName = item.attributeName || '';
+                    const attrs = (coords as any).attributes || {};
+                    extractedValue =
+                      attrs[attrName] ??
+                      attrs[attrName.toLowerCase()] ??
+                      '';
+                  } else if (prop === 'value') {
+                    extractedValue = String(coords.value ?? '');
+                  } else {
+                    extractedValue = String(coords.text ?? '');
+                  }
                 }
               } else if (item.selector) {
+                const extractFunc = (sel: string, p: string, attr?: string) => {
+                  const el = document.querySelector(sel);
+                  if (!el) return null;
+                  if (p === 'attribute' && attr) return el.getAttribute(attr) ?? '';
+                  if (p === 'value') return (el as HTMLInputElement).value ?? '';
+                  return (el as HTMLElement).innerText ?? el.textContent ?? '';
+                };
                 const selRes = await this.safeExecuteScript(tabId, {
                   target: { tabId },
-                  func: (sel: string, p: string, attr?: string) => {
-                    const el = document.querySelector(sel);
-                    if (!el) return '';
-                    if (p === 'attribute' && attr) return el.getAttribute(attr) ?? '';
-                    if (p === 'value') return (el as HTMLInputElement).value ?? '';
-                    return (el as HTMLElement).innerText ?? el.textContent ?? '';
-                  },
+                  func: extractFunc,
                   args: [item.selector, prop, item.attributeName || ''],
                 });
-                extractedValue = String(selRes?.[0]?.result ?? '');
+                let val = selRes?.[0]?.result;
+                if (val === null || val === undefined) {
+                  const frameResults = await this.safeExecuteScript(tabId, {
+                    target: { tabId, allFrames: true },
+                    func: extractFunc,
+                    args: [item.selector, prop, item.attributeName || ''],
+                  });
+                  const match = frameResults.find(
+                    (r: any) => r.result !== null && r.result !== undefined,
+                  );
+                  if (match) val = match.result;
+                }
+                extractedValue = String(val ?? '');
               }
 
               const varName = item.variableName || `var_${i}`;

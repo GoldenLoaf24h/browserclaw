@@ -16,6 +16,7 @@ export interface SmartScrollParams {
   amount?: string | number;
   selector?: string;
   ref?: number;
+  index?: number;
   coordinate?: { x: number; y: number } | PolymorphicCoordinate;
   smooth?: boolean;
   waitForSettle?: boolean;
@@ -71,11 +72,13 @@ export class SmartScrollTool extends BaseBrowserToolExecutor {
         }
       }
 
+      const refIndex = args.ref ?? args.index;
+
       // 1. Locate optimal scroll target container
       const targetResults = await executeInPage({ tabId }, 'inPageFindSmartScrollTarget', [
         {
           selector: args.selector,
-          ref: args.ref,
+          ref: refIndex,
           coordinate: resolvedCoordinate,
         },
       ]);

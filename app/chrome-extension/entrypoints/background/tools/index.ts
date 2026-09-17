@@ -58,7 +58,7 @@ export const handleCallTool = async (param: ToolCallParam) => {
         const trimmed = val.trim();
         // Coerce string numeric indices to integers
         if (
-          (key === 'index' || key === 'targetIndex' || key === 'tabId' || key === 'windowId') &&
+          (key === 'index' || key === 'targetIndex' || key === 'ref' || key === 'tabId' || key === 'windowId') &&
           /^-?\d+$/.test(trimmed)
         ) {
           args[key] = parseInt(trimmed, 10);

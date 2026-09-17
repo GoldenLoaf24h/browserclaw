@@ -150,18 +150,19 @@ Injected `mcp` API:
 - `await mcp.sleep(ms)`: Delay execution.
 - `await mcp.fetch(url, options)`: In-page fetch using the tab's logged-in session, cookies, and CORS context.
 
-#### D. High-Frequency Micro-Interactions (`chrome_burst_interact`)
+#### D. High-Frequency Micro-Interactions (`chrome_interact_index`)
 
-For dynamic UI targets, fast animations, or canvas items:
+For dynamic UI targets, fast animations, canvas items, or rapid sequential clicks:
 
 ```json
-// Call chrome_burst_interact
+// Call chrome_interact_index with points sequence
 {
-  "burstClicks": {
-    "center": { "x": 420, "y": 280 },
-    "count": 3,
-    "intervalMs": 30
-  }
+  "points": [
+    { "x": 420, "y": 280 },
+    { "x": 425, "y": 285 },
+    { "x": 430, "y": 290 }
+  ],
+  "intervalMs": 35
 }
 ```
 
@@ -184,9 +185,9 @@ For dynamic UI targets, fast animations, or canvas items:
 | `zoom`                         | `region` as `{x0,y0,x1,y1}` or `[ymin,xmin,ymax,xmax]`; returns a magnified crop.                                                                                                                                                                                                                                                                       |
 | `screenshot`                   | See `chrome_screenshot` for most cases.                                                                                                                                                                                                                                                                                                                 |
 
-#### F. Intelligent Scrolling (`chrome_smart_scroll` & `chrome_scroll`)
+#### F. Intelligent Scrolling (`chrome_smart_scroll`)
 
-- Auto-detects the most prominent scrollable container and scrolls it by direction + amount. `amount` accepts a pixel number, `"page"` (viewport height, default) or `"half_page"`:
+- Auto-detects the most prominent scrollable container and scrolls it by direction + amount. `amount` accepts a pixel number (e.g. `400`), `"page"` (viewport height, default) or `"half_page"`:
   ```json
   // Call chrome_smart_scroll
   {
@@ -194,9 +195,9 @@ For dynamic UI targets, fast animations, or canvas items:
     "amount": "page"
   }
   ```
-- Precise wheel scroll with local scrollable container auto-resolution. Use `amount` (pixels) or `pages` (fractional viewport heights); there is no `percent` parameter:
+- Precise pixel wheel scroll with local scrollable container auto-resolution or explicit selector/index targeting:
   ```json
-  // Call chrome_scroll
+  // Call chrome_smart_scroll with pixel distance
   {
     "direction": "down",
     "amount": 400
@@ -358,9 +359,9 @@ Reads localStorage, sessionStorage, and cookies for the current tab in one call:
 - `includeHttpOnly: false` hides them; `filter` matches key or value case-insensitively; values are capped at 2000 chars with a `truncated` flag.
 - WebSocket frames are captured by `chrome_network_capture` (text payloads up to 4000 chars, binary recorded by size, max 200 frames per connection).
 
-### G. Link Graph Extraction (`chrome_get_links`) & On-Demand Tool Docs (`chrome_tool_docs`)
+### G. Link Graph Extraction & On-Demand Tool Docs (`chrome_tool_docs`)
 
-- `chrome_get_links { sameOriginOnly?: true, selector?: "main" }` returns every unique absolute URL with anchor text, internal/external flag, and `rel=nofollow` — the input for any multi-page crawl. Pair with `chrome_navigate` + `chrome_get_markdown { fit: true }` per page.
+- `chrome_get_markdown { includeLinks: true }` returns a complete Markdown document along with every unique absolute URL, anchor text, and link graph metadata — the canonical replacement for multi-page crawls. Pair with `chrome_navigate` + `chrome_get_markdown { fit: true }` per page.
 - **Streamlined Core Profile (14 tools default)**: BrowserClaw defaults to 14 high-frequency tools (`chrome_read_dom`, `chrome_get_markdown`, `chrome_inspect_media`, `chrome_grep`, `chrome_interact_index`, `chrome_fill_index`, `chrome_batch_actions`, `chrome_screenshot`, `chrome_smart_scroll`, `chrome_navigate`, `chrome_switch_tab`, `chrome_close_tabs`, `get_windows_and_tabs`, `chrome_tool_docs`), reducing token overhead by >65%.
 - **Auto-Unlock on Call**: Calling any non-core tool (e.g. `chrome_javascript`, `chrome_history`, `chrome_network_request`) automatically unlocks its entire category and executes without error, while notifying the client via `notifications/tools/list_changed`.
 - `chrome_tool_docs { category: "navigate" | "perceive" | "act" | "observe" | "manage" | "crawl" | "diagnose" | "network", activateForSession?: true }` prints compact parameter docs for one category (~1-3KB).

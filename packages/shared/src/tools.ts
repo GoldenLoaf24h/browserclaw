@@ -63,7 +63,7 @@ export const TOOL_NAMES = {
   },
 };
 
-const RAW_TOOL_SCHEMAS: Tool[] = [
+export const RAW_TOOL_SCHEMAS: Tool[] = [
   {
     name: TOOL_NAMES.BROWSER.GET_WINDOWS_AND_TABS,
     annotations: {
@@ -564,6 +564,11 @@ const RAW_TOOL_SCHEMAS: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        tabId: {
+          type: 'number',
+          description:
+            'Single tab ID to close (convenience alternative to tabIds array).',
+        },
         tabIds: {
           type: 'array',
           items: { type: 'number' },
@@ -1644,6 +1649,11 @@ const RAW_TOOL_SCHEMAS: Tool[] = [
           type: 'boolean',
           description: 'Whether to clear existing field content before typing (default: true)',
         },
+        pressEnter: {
+          type: 'boolean',
+          description:
+            'Whether to dispatch an Enter key event immediately after filling the text (default: false)',
+        },
         tabId: { type: 'number', description: 'Target tab ID (optional)' },
         windowId: { type: 'number', description: 'Target window ID (optional)' },
         waitForSettle: {
@@ -1720,6 +1730,11 @@ const RAW_TOOL_SCHEMAS: Tool[] = [
               clear: {
                 type: 'boolean',
                 description: 'Clear field before typing (default: true)',
+              },
+              pressEnter: {
+                type: 'boolean',
+                description:
+                  'Whether to dispatch an Enter key event immediately after filling the text (for type: fill)',
               },
               fields: {
                 type: 'array',
@@ -2434,6 +2449,10 @@ const RAW_TOOL_SCHEMAS: Tool[] = [
           type: 'number',
           description: 'Optional 1-based numeric index of the scroll container to target',
         },
+        index: {
+          type: 'number',
+          description: 'Alias for ref: 1-based numeric index of the scroll container to target',
+        },
         coordinate: {
           oneOf: [
             {
@@ -2668,6 +2687,7 @@ const RAW_TOOL_SCHEMAS: Tool[] = [
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
+      openWorldHint: false,
     },
     description:
       'Diagnose BrowserClaw environment, Native Host connectivity, Chrome silent-debugger flags, port availability, and token security.',
