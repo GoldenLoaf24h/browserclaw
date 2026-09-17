@@ -86,6 +86,8 @@ export interface PrunedDOMTreeResult {
   activeModal?: string;
   /** True when an open modal is trapping focus on the page */
   focusTrapped?: boolean;
+  /** True if a container matching the requested selector was found */
+  selectorMatched?: boolean;
 }
 
 export interface PageSettleResult {

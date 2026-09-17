@@ -79,8 +79,10 @@ Get all currently open browser windows and tabs
 
 ### `chrome_read_dom`
 
-Extract and prune interactive DOM tree with compact 1-based index assignment, viewport boundary filtering, and occlusion pruning.
+Extract and prune interactive DOM tree with compact 1-based index assignment, viewport boundary filtering, and occlusion pruning. Supports scoped container targeting (selector) and noise exclusion (exclude) to eliminate full DOM dump overhead.
 
+- `selector` — CSS selector to scope parsing to a specific container/element (e.g. "#main-cart", ".dialog-box"). Only descendants and self within matching containers
+- `exclude` — CSS selector(s) to exclude from parsing (e.g. "#footer, #recommendations, .ad-banner"). Matching elements and their entire subtrees are pruned.
 - `viewportThreshold` — Vertical threshold in pixels for viewport boundary checking (default 1000)
 - `tabId` — Target tab ID (optional)
 - `windowId` — Target window ID (optional)
@@ -452,7 +454,7 @@ Diagnose BrowserClaw environment, Native Host connectivity, Chrome silent-debugg
 
 ### `chrome_javascript`
 
-Execute JavaScript code in a browser tab and return the result. Uses CDP Runtime.evaluate with awaitPromise and returnByValue; automatically falls back to chrome.scripting.executeScript if the debugger is busy. Output is sanitized (sensitive data redacted) and truncated by default.
+Execute JavaScript code in a browser tab and return the result. Built-in "mcp" helper supports end-to-end in-page agent workflows: mcp.run(async () => ...), mcp.waitFor, mcp.click, mcp.fill, mcp.check, mcp.sleep, mcp.queryAll, and :has-text("...") pseudo-selector support, eliminating multi-turn LLM ping-pong latency. Uses CDP Runtime.evaluate with awaitPromise and returnByValue; automatically falls back to chrome.scripting.executeScript if the debugger is busy. Output is sanitized (sensitive data redacted) and truncated by default.
 
 - `code`（必填） — JavaScript code to execute. Runs inside an async function body, so top-level await and "return ..." are supported.
 - `tabId` — Target tab ID. If omitted, uses the current active tab.

@@ -20,6 +20,16 @@ export interface ReadDOMParams {
   format?: 'compact' | 'html';
   viewportOnly?: boolean;
   /**
+   * CSS selector to scope parsing to a specific container/element (e.g. "#main-cart").
+   * Only descendants and self within matching containers are indexed.
+   */
+  selector?: string;
+  /**
+   * CSS selector(s) to exclude from parsing (e.g. "#footer, #recommendations, .ad-banner").
+   * Matching elements and their entire subtrees are pruned.
+   */
+  exclude?: string | string[];
+  /**
    * Opt in to the bulky per-element detail blocks (indexedElements + indexMap).
    * Off by default: the pruned tree already carries index/tag/attributes/text
    * for every element, and the detail blocks duplicated it as pretty-printed
@@ -54,6 +64,8 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
             maxTextLength: args.maxTextLength,
             format: args.format ?? 'compact',
             viewportOnly: args.viewportOnly,
+            selector: args.selector,
+            exclude: args.exclude,
           },
         ]);
       } catch (frameErr) {
@@ -65,6 +77,8 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
             maxTextLength: args.maxTextLength,
             format: args.format ?? 'compact',
             viewportOnly: args.viewportOnly,
+            selector: args.selector,
+            exclude: args.exclude,
           },
         ]);
       }
@@ -93,6 +107,8 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         scrollInfo: mainData.scrollInfo,
         activeModal: mainData.activeModal,
         focusTrapped: mainData.focusTrapped,
+        selectorMatched:
+          mainData.selectorMatched ?? (results.some((r) => r.result?.selectorMatched) || false),
       };
 
       let currentIndex = (mergedData.indexedElements?.length || 0) + 1;
@@ -233,6 +249,15 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
                     removedIndices: diff.removed,
                     added: diff.added,
                     modified: diff.modified,
+                    ...(diff.truncated
+                      ? {
+                          truncated: true,
+                          totalAdded: diff.totalAdded,
+                          totalModified: diff.totalModified,
+                          totalRemoved: diff.totalRemoved,
+                          summary: diff.summary,
+                        }
+                      : {}),
                   },
                   null,
                   2,
@@ -255,7 +280,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
       // Pagination slices the pruned tree lines, which are the primary payload.
       // It previously sliced only indexedElements, so a paginated read still
       // shipped the whole tree and saved almost nothing on large pages.
-      const allTreeLines = mergedData.treeString.split('\n');
+      const allTreeLines = mergedData.treeString ? mergedData.treeString.split('\n') : [];
       const totalElements = allTreeLines.length;
       const cursor = typeof args.cursor === 'number' ? Math.max(0, args.cursor) : 0;
       const limit = typeof args.limit === 'number' && args.limit > 0 ? args.limit : undefined;
@@ -285,6 +310,16 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         totalElements,
         hasMore,
         nextCursor,
+        ...(args.selector !== undefined
+          ? {
+              selector: args.selector,
+              selectorMatched: Boolean(mergedData.selectorMatched),
+              ...(!mergedData.selectorMatched
+                ? { message: `No elements matching selector "${args.selector}" found on page.` }
+                : {}),
+            }
+          : {}),
+        ...(args.exclude !== undefined ? { exclude: args.exclude } : {}),
       };
 
       // Default response is the pruned tree plus counters only. The detail

@@ -930,7 +930,7 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
       openWorldHint: true,
     },
     description:
-      'Execute JavaScript code in a browser tab and return the result. Uses CDP Runtime.evaluate with awaitPromise and returnByValue; automatically falls back to chrome.scripting.executeScript if the debugger is busy. Output is sanitized (sensitive data redacted) and truncated by default.',
+      'Execute JavaScript code in a browser tab and return the result. Built-in "mcp" helper supports end-to-end in-page agent workflows: mcp.run(async () => ...), mcp.waitFor, mcp.click, mcp.fill, mcp.check, mcp.sleep, mcp.queryAll, and :has-text("...") pseudo-selector support, eliminating multi-turn LLM ping-pong latency. Uses CDP Runtime.evaluate with awaitPromise and returnByValue; automatically falls back to chrome.scripting.executeScript if the debugger is busy. Output is sanitized (sensitive data redacted) and truncated by default.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1418,10 +1418,23 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
       openWorldHint: true,
     },
     description:
-      'Extract and prune interactive DOM tree with compact 1-based index assignment, viewport boundary filtering, and occlusion pruning.',
+      'Extract and prune interactive DOM tree with compact 1-based index assignment, viewport boundary filtering, and occlusion pruning. Supports scoped container targeting (selector) and noise exclusion (exclude) to eliminate full DOM dump overhead.',
     inputSchema: {
       type: 'object',
       properties: {
+        selector: {
+          type: 'string',
+          description:
+            'CSS selector to scope parsing to a specific container/element (e.g. "#main-cart", ".dialog-box"). Only descendants and self within matching containers are indexed.',
+        },
+        exclude: {
+          oneOf: [
+            { type: 'string' },
+            { type: 'array', items: { type: 'string' } },
+          ],
+          description:
+            'CSS selector(s) to exclude from parsing (e.g. "#footer, #recommendations, .ad-banner"). Matching elements and their entire subtrees are pruned.',
+        },
         viewportThreshold: {
           type: 'number',
           description: 'Vertical threshold in pixels for viewport boundary checking (default 1000)',

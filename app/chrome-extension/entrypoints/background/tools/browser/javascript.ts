@@ -40,55 +40,478 @@ export const MCP_INPAGE_HELPERS = `const mcp = (() => {
     )) || new Map()
   );
   const deref = (e) => (e && typeof e.deref === 'function' ? e.deref() : e);
+
+  // Robust :has-text evaluator supporting:
+  // 1. Quotes with escaped characters: :has-text("Submit \"Now\"")
+  // 2. Regular expressions: :has-text(/失效|无货/)
+  // 3. Comma-separated selectors: button:has-text("A"), button:has-text("B")
+  // 4. Non-terminal pseudo-selectors: tr:has-text("Order #123") button
+  // 5. Chained filters: div:has-text("A"):has-text("B")
+  // 6. Innermost element matching for single element queries
+  const splitTopLevelCommas = (selector) => {
+    const parts = [];
+    let current = '';
+    let inSingleQuote = false;
+    let inDoubleQuote = false;
+    let parenDepth = 0;
+
+    for (let i = 0; i < selector.length; i++) {
+      const ch = selector[i];
+      const prev = i > 0 ? selector[i - 1] : '';
+
+      if (ch === "'" && !inDoubleQuote && prev !== '\\\\') {
+        inSingleQuote = !inSingleQuote;
+        current += ch;
+      } else if (ch === '"' && !inSingleQuote && prev !== '\\\\') {
+        inDoubleQuote = !inDoubleQuote;
+        current += ch;
+      } else if (ch === '(' && !inSingleQuote && !inDoubleQuote) {
+        parenDepth++;
+        current += ch;
+      } else if (ch === ')' && !inSingleQuote && !inDoubleQuote) {
+        if (parenDepth > 0) parenDepth--;
+        current += ch;
+      } else if (ch === ',' && !inSingleQuote && !inDoubleQuote && parenDepth === 0) {
+        if (current.trim()) parts.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    if (current.trim()) parts.push(current.trim());
+    return parts;
+  };
+
+  const extractFirstHasText = (sel) => {
+    const idx = sel.indexOf(':has-text(');
+    if (idx === -1) return null;
+
+    const prefix = sel.slice(0, idx).trim() || '*';
+    const afterOpen = sel.slice(idx + ':has-text('.length);
+
+    let inSingle = false;
+    let inDouble = false;
+    let closeIdx = -1;
+
+    for (let i = 0; i < afterOpen.length; i++) {
+      const ch = afterOpen[i];
+      const prev = i > 0 ? afterOpen[i - 1] : '';
+      if (ch === "'" && !inDouble && prev !== '\\\\') {
+        inSingle = !inSingle;
+      } else if (ch === '"' && !inSingle && prev !== '\\\\') {
+        inDouble = !inDouble;
+      } else if (ch === ')' && !inSingle && !inDouble) {
+        closeIdx = i;
+        break;
+      }
+    }
+
+    if (closeIdx === -1) return null;
+
+    const rawArg = afterOpen.slice(0, closeIdx).trim();
+    const suffix = afterOpen.slice(closeIdx + 1);
+
+    let pattern = rawArg;
+    const regexMatch = /^\\/(.+)\\/([gimsuy]*)$/.exec(rawArg);
+    if (regexMatch) {
+      try {
+        pattern = new RegExp(regexMatch[1], regexMatch[2]);
+      } catch {
+        pattern = rawArg;
+      }
+    } else if (
+      (rawArg.startsWith('"') && rawArg.endsWith('"')) ||
+      (rawArg.startsWith("'") && rawArg.endsWith("'"))
+    ) {
+      pattern = rawArg.slice(1, -1).replace(/\\\\(["'])/g, '$1');
+    }
+
+    return { prefix, pattern, suffix };
+  };
+
+  const elementMatchesPattern = (el, pattern) => {
+    const text = el.innerText || el.textContent || '';
+    if (pattern instanceof RegExp) {
+      return pattern.test(text);
+    }
+    return text.includes(pattern);
+  };
+
+  const queryHasTextSingleSelector = (root, selector, single) => {
+    const parsed = extractFirstHasText(selector);
+    if (!parsed) {
+      try {
+        return single
+          ? (root.querySelector(selector) ? [root.querySelector(selector)] : [])
+          : Array.from(root.querySelectorAll(selector));
+      } catch {
+        return [];
+      }
+    }
+
+    const { prefix, pattern, suffix } = parsed;
+    let baseCandidates;
+    try {
+      baseCandidates = Array.from(root.querySelectorAll(prefix));
+    } catch {
+      baseCandidates = [];
+    }
+
+    const matchedPrefix = baseCandidates.filter((el) => elementMatchesPattern(el, pattern));
+
+    const trimmedSuffix = suffix.trim();
+    if (!trimmedSuffix) {
+      if (single) {
+        if (matchedPrefix.length === 0) return [];
+        // Innermost match: element that does not contain another matched candidate
+        const innermost = matchedPrefix.find(
+          (el) => !matchedPrefix.some((other) => other !== el && el.contains(other)),
+        );
+        return [innermost || matchedPrefix[0]];
+      }
+      return matchedPrefix;
+    }
+
+    // Process suffix
+    const results = [];
+    const seen = new Set();
+
+    for (const parent of matchedPrefix) {
+      let childMatches;
+      if (trimmedSuffix.startsWith(':has-text(')) {
+        childMatches = queryHasTextSingleSelector(parent, '*' + trimmedSuffix, single);
+      } else {
+        const isCombinator = /^[>+~]/.test(trimmedSuffix);
+        const childSel = isCombinator ? \`:scope \${trimmedSuffix}\` : trimmedSuffix;
+        if (childSel.includes(':has-text(')) {
+          childMatches = queryHasTextSingleSelector(parent, childSel, single);
+        } else {
+          try {
+            childMatches = single
+              ? (parent.querySelector(childSel) ? [parent.querySelector(childSel)] : [])
+              : Array.from(parent.querySelectorAll(childSel));
+          } catch {
+            childMatches = [];
+          }
+        }
+      }
+
+      for (const m of childMatches) {
+        if (!seen.has(m)) {
+          seen.add(m);
+          results.push(m);
+          if (single) return results;
+        }
+      }
+    }
+
+    return results;
+  };
+
+  const queryWithHasText = (root, selector, single = false) => {
+    if (typeof selector !== 'string') return single ? null : [];
+    if (!selector.includes(':has-text(')) {
+      try {
+        return single ? root.querySelector(selector) : Array.from(root.querySelectorAll(selector));
+      } catch {
+        return single ? null : [];
+      }
+    }
+
+    const parts = splitTopLevelCommas(selector);
+    if (parts.length === 1) {
+      const res = queryHasTextSingleSelector(root, parts[0], single);
+      return single ? res[0] || null : res;
+    }
+
+    const combined = [];
+    const seen = new Set();
+    for (const part of parts) {
+      const res = queryHasTextSingleSelector(root, part, single);
+      for (const el of res) {
+        if (!seen.has(el)) {
+          seen.add(el);
+          combined.push(el);
+          if (single) return el;
+        }
+      }
+    }
+    return single ? combined[0] || null : combined;
+  };
+
+  // Polyfill :has-text support on Document & Element prototypes so document.querySelector('...:has-text(...)') works natively
+  if (typeof Document !== 'undefined' && !Document.prototype.__mcpHasTextPatched) {
+    try {
+      const origDocQS = Document.prototype.querySelector;
+      const origDocQSA = Document.prototype.querySelectorAll;
+      const origElQS = Element.prototype.querySelector;
+      const origElQSA = Element.prototype.querySelectorAll;
+
+      Document.prototype.querySelector = function (sel) {
+        if (typeof sel === 'string' && sel.includes(':has-text(')) {
+          return queryWithHasText(this, sel, true);
+        }
+        return origDocQS.call(this, sel);
+      };
+      Document.prototype.querySelectorAll = function (sel) {
+        if (typeof sel === 'string' && sel.includes(':has-text(')) {
+          return queryWithHasText(this, sel, false);
+        }
+        return origDocQSA.call(this, sel);
+      };
+      Element.prototype.querySelector = function (sel) {
+        if (typeof sel === 'string' && sel.includes(':has-text(')) {
+          return queryWithHasText(this, sel, true);
+        }
+        return origElQS.call(this, sel);
+      };
+      Element.prototype.querySelectorAll = function (sel) {
+        if (typeof sel === 'string' && sel.includes(':has-text(')) {
+          return queryWithHasText(this, sel, false);
+        }
+        return origElQSA.call(this, sel);
+      };
+      Document.prototype.__mcpHasTextPatched = true;
+    } catch {}
+  }
+
   const resolve = (t) => {
     if (typeof t === 'number') {
       const fromMap = deref(getMap().get(t));
-      if (fromMap && (fromMap.isConnected !== false)) return fromMap;
-      const fpMap = typeof globalThis !== 'undefined' && globalThis[Symbol.for('__browser_use_index_fingerprint_map__')];
+      if (fromMap && fromMap.isConnected !== false) return fromMap;
+      const fpMap =
+        typeof globalThis !== 'undefined' &&
+        globalThis[Symbol.for('__browser_use_index_fingerprint_map__')];
       if (fpMap && fpMap.has(t)) {
         const fp = fpMap.get(t);
-        if (fp?.id) { const byId = document.getElementById(fp.id); if (byId) return byId; }
-        if (fp?.testId) { const byTest = document.querySelector('[data-testid="' + fp.testId + '"]'); if (byTest) return byTest; }
-        if (fp?.ariaLabel) { const byAria = document.querySelector((fp.tag || '') + '[aria-label="' + fp.ariaLabel + '"]'); if (byAria) return byAria; }
-        if (fp?.name) { const byName = document.querySelector((fp.tag || '') + '[name="' + fp.name + '"]'); if (byName) return byName; }
-        if (fp?.placeholder) { const byPl = document.querySelector((fp.tag || '') + '[placeholder="' + fp.placeholder + '"]'); if (byPl) return byPl; }
+        if (fp?.id) {
+          const byId = document.getElementById(fp.id);
+          if (byId) return byId;
+        }
+        if (fp?.testId) {
+          const byTest = document.querySelector('[data-testid="' + fp.testId + '"]');
+          if (byTest) return byTest;
+        }
+        if (fp?.ariaLabel) {
+          const byAria = document.querySelector(
+            (fp.tag || '') + '[aria-label="' + fp.ariaLabel + '"]',
+          );
+          if (byAria) return byAria;
+        }
+        if (fp?.name) {
+          const byName = document.querySelector((fp.tag || '') + '[name="' + fp.name + '"]');
+          if (byName) return byName;
+        }
+        if (fp?.placeholder) {
+          const byPl = document.querySelector(
+            (fp.tag || '') + '[placeholder="' + fp.placeholder + '"]',
+          );
+          if (byPl) return byPl;
+        }
       }
       return document.querySelector(\`[data-mcp-idx="\${t}"]\`);
     }
     if (typeof t === 'string') {
-      const p = parseInt(t.replace(/^ref_/, ''), 10);
-      if (!isNaN(p)) {
-        const fromMap = deref(getMap().get(p));
-        if (fromMap && (fromMap.isConnected !== false)) return fromMap;
-        const fpMap = typeof globalThis !== 'undefined' && globalThis[Symbol.for('__browser_use_index_fingerprint_map__')];
-        if (fpMap && fpMap.has(p)) {
-          const fp = fpMap.get(p);
-          if (fp?.id) { const byId = document.getElementById(fp.id); if (byId) return byId; }
-          if (fp?.testId) { const byTest = document.querySelector('[data-testid="' + fp.testId + '"]'); if (byTest) return byTest; }
-          if (fp?.ariaLabel) { const byAria = document.querySelector((fp.tag || '') + '[aria-label="' + fp.ariaLabel + '"]'); if (byAria) return byAria; }
-          if (fp?.name) { const byName = document.querySelector((fp.tag || '') + '[name="' + fp.name + '"]'); if (byName) return byName; }
-          if (fp?.placeholder) { const byPl = document.querySelector((fp.tag || '') + '[placeholder="' + fp.placeholder + '"]'); if (byPl) return byPl; }
+      const trimmed = t.trim();
+      // Only treat as numeric index / ref if it is purely digits or ref_digits
+      if (/^(?:ref_)?\\d+$/.test(trimmed)) {
+        const p = parseInt(trimmed.replace(/^ref_/, ''), 10);
+        if (!isNaN(p)) {
+          const fromMap = deref(getMap().get(p));
+          if (fromMap && fromMap.isConnected !== false) return fromMap;
+          const fpMap =
+            typeof globalThis !== 'undefined' &&
+            globalThis[Symbol.for('__browser_use_index_fingerprint_map__')];
+          if (fpMap && fpMap.has(p)) {
+            const fp = fpMap.get(p);
+            if (fp?.id) {
+              const byId = document.getElementById(fp.id);
+              if (byId) return byId;
+            }
+            if (fp?.testId) {
+              const byTest = document.querySelector('[data-testid="' + fp.testId + '"]');
+              if (byTest) return byTest;
+            }
+            if (fp?.ariaLabel) {
+              const byAria = document.querySelector(
+                (fp.tag || '') + '[aria-label="' + fp.ariaLabel + '"]',
+              );
+              if (byAria) return byAria;
+            }
+            if (fp?.name) {
+              const byName = document.querySelector((fp.tag || '') + '[name="' + fp.name + '"]');
+              if (byName) return byName;
+            }
+            if (fp?.placeholder) {
+              const byPl = document.querySelector(
+                (fp.tag || '') + '[placeholder="' + fp.placeholder + '"]',
+              );
+              if (byPl) return byPl;
+            }
+          }
+          const fromAttr = document.querySelector(\`[data-mcp-idx="\${p}"]\`);
+          if (fromAttr) return fromAttr;
         }
-        const fromAttr = document.querySelector(\`[data-mcp-idx="\${p}"]\`);
-        if (fromAttr) return fromAttr;
       }
-      return document.querySelector(t);
+      if (trimmed.startsWith('#')) {
+        const byId = document.getElementById(trimmed.slice(1));
+        if (byId) return byId;
+      }
+      if (t.includes(':has-text(')) {
+        return queryWithHasText(document, t, true);
+      }
+      try {
+        return document.querySelector(t);
+      } catch {
+        return null;
+      }
     }
     return t instanceof Element ? t : null;
   };
+
+  const isVisible = (t) => {
+    const el = resolve(t);
+    if (!el || !el.isConnected) return false;
+    const style = window.getComputedStyle(el);
+    if (
+      style.display === 'none' ||
+      style.visibility === 'hidden' ||
+      parseFloat(style.opacity || '1') <= 0
+    ) {
+      return false;
+    }
+    const r = el.getBoundingClientRect();
+    const hasSize =
+      (r && r.width > 0 && r.height > 0) ||
+      (typeof el.offsetWidth === 'number' && el.offsetWidth > 0 && el.offsetHeight > 0);
+    return hasSize;
+  };
+
   return {
     get: resolve,
-    click: async (t) => {
+    run: async (fn) => {
+      if (typeof fn !== 'function') return fn;
+      return await fn(mcp);
+    },
+    query: (selector, textPattern) => {
+      if (textPattern !== undefined) {
+        let els;
+        if (typeof selector === 'string' && selector.includes(':has-text(')) {
+          els = queryWithHasText(document, selector, false);
+        } else {
+          try {
+            els = Array.from(document.querySelectorAll(selector));
+          } catch {
+            els = [];
+          }
+        }
+        const matched = els.find((el) => {
+          const txt = el.innerText || el.textContent || '';
+          return textPattern instanceof RegExp
+            ? textPattern.test(txt)
+            : txt.includes(String(textPattern));
+        });
+        return matched || null;
+      }
+      return resolve(selector);
+    },
+    queryAll: (selector, textPattern) => {
+      let els;
+      if (typeof selector === 'string' && selector.includes(':has-text(')) {
+        els = queryWithHasText(document, selector, false);
+      } else {
+        try {
+          els = Array.from(document.querySelectorAll(selector));
+        } catch {
+          els = [];
+        }
+      }
+      if (textPattern !== undefined) {
+        return els.filter((el) => {
+          const txt = el.innerText || el.textContent || '';
+          return textPattern instanceof RegExp
+            ? textPattern.test(txt)
+            : txt.includes(String(textPattern));
+        });
+      }
+      return els;
+    },
+    findByText: (textOrRegex, selector = '*') => {
+      let els;
+      if (typeof selector === 'string' && selector.includes(':has-text(')) {
+        els = queryWithHasText(document, selector, false);
+      } else {
+        try {
+          els = Array.from(document.querySelectorAll(selector));
+        } catch {
+          els = [];
+        }
+      }
+      const matched = els.find((el) => {
+        const txt = el.innerText || el.textContent || '';
+        return textOrRegex instanceof RegExp
+          ? textOrRegex.test(txt)
+          : txt.includes(String(textOrRegex));
+      });
+      return matched || null;
+    },
+    findAllByText: (textOrRegex, selector = '*') => {
+      let els;
+      if (typeof selector === 'string' && selector.includes(':has-text(')) {
+        els = queryWithHasText(document, selector, false);
+      } else {
+        try {
+          els = Array.from(document.querySelectorAll(selector));
+        } catch {
+          els = [];
+        }
+      }
+      return els.filter((el) => {
+        const txt = el.innerText || el.textContent || '';
+        return textOrRegex instanceof RegExp
+          ? textOrRegex.test(txt)
+          : txt.includes(String(textOrRegex));
+      });
+    },
+    isVisible,
+    click: async (t, options) => {
+      if (options?.waitFor) {
+        const timeout = typeof options.waitFor === 'number' ? options.waitFor : 5000;
+        await mcp.waitFor(t, timeout);
+      }
       const el = resolve(t);
       if (!el) throw new Error('Element not found: ' + t);
+      if (typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
       const r = el.getBoundingClientRect();
       const x = r.left + r.width / 2;
       const y = r.top + r.height / 2;
-      const init = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 };
+      const init = {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+        button: 0,
+      };
       el.dispatchEvent(new MouseEvent('mousemove', { ...init, buttons: 0 }));
       el.dispatchEvent(new MouseEvent('mousedown', { ...init, buttons: 1 }));
       el.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0 }));
-      el.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
+      if (typeof el.click === 'function') {
+        el.click();
+      } else {
+        el.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
+      }
+      if (options?.double) {
+        el.dispatchEvent(new MouseEvent('mousedown', { ...init, buttons: 1, detail: 2 }));
+        el.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0, detail: 2 }));
+        if (typeof el.click === 'function') {
+          el.click();
+        } else {
+          el.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0, detail: 2 }));
+        }
+        el.dispatchEvent(new MouseEvent('dblclick', { ...init, buttons: 0, detail: 2 }));
+      }
       return true;
     },
     fill: async (t, text, clearFirst = true) => {
@@ -96,8 +519,24 @@ export const MCP_INPAGE_HELPERS = `const mcp = (() => {
       if (!el) throw new Error('Element not found: ' + t);
       if (typeof el.focus === 'function') el.focus();
       if ('value' in el) {
-        if (clearFirst) el.value = '';
-        el.value = String(text ?? '');
+        const val = String(text ?? '');
+        const isInput = typeof HTMLInputElement !== 'undefined' && el instanceof HTMLInputElement;
+        const isTextArea = typeof HTMLTextAreaElement !== 'undefined' && el instanceof HTMLTextAreaElement;
+        const proto = isInput
+          ? (typeof HTMLInputElement !== 'undefined' ? HTMLInputElement.prototype : null)
+          : isTextArea
+            ? (typeof HTMLTextAreaElement !== 'undefined' ? HTMLTextAreaElement.prototype : null)
+            : Object.getPrototypeOf(el);
+        const nativeSetter = proto ? Object.getOwnPropertyDescriptor(proto, 'value')?.set : null;
+        if (clearFirst) {
+          if (nativeSetter) nativeSetter.call(el, '');
+          else el.value = '';
+        }
+        if (nativeSetter) {
+          nativeSetter.call(el, val);
+        } else {
+          el.value = val;
+        }
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
       } else if (el.isContentEditable) {
@@ -107,6 +546,37 @@ export const MCP_INPAGE_HELPERS = `const mcp = (() => {
       }
       return true;
     },
+    check: async (t, checked = true) => {
+      const el = resolve(t);
+      if (!el) throw new Error('Element not found: ' + t);
+      if ('checked' in el && el.checked !== checked) {
+        const proto = typeof HTMLInputElement !== 'undefined' ? HTMLInputElement.prototype : null;
+        const nativeSetter = proto ? Object.getOwnPropertyDescriptor(proto, 'checked')?.set : null;
+        if (nativeSetter) {
+          nativeSetter.call(el, checked);
+        } else {
+          el.checked = checked;
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      return true;
+    },
+    press: async (key, t) => {
+      const el = t ? resolve(t) : document.activeElement || document.body;
+      if (!el) throw new Error('Target not found for press');
+      const eventInit = { key, bubbles: true, cancelable: true };
+      el.dispatchEvent(new KeyboardEvent('keydown', eventInit));
+      el.dispatchEvent(new KeyboardEvent('keypress', eventInit));
+      el.dispatchEvent(new KeyboardEvent('keyup', eventInit));
+      return true;
+    },
+    scrollIntoView: (t, align = 'center') => {
+      const el = resolve(t);
+      if (!el) return false;
+      el.scrollIntoView({ block: align, inline: align, behavior: 'auto' });
+      return true;
+    },
     extract: (t, prop = 'text') => {
       const el = resolve(t);
       if (!el) return null;
@@ -114,14 +584,57 @@ export const MCP_INPAGE_HELPERS = `const mcp = (() => {
       if (prop === 'value') return el.value ?? '';
       return el.getAttribute?.(prop) ?? el[prop] ?? null;
     },
-    waitFor: async (t, ms = 5000) => {
+    waitFor: async (t, msOrOpts = 5000, intervalMs = 100) => {
+      let ms = 5000;
+      let interval = 100;
+      let requireVisible = false;
+      if (typeof msOrOpts === 'number') {
+        ms = msOrOpts;
+        interval = typeof intervalMs === 'number' ? intervalMs : 100;
+      } else if (msOrOpts && typeof msOrOpts === 'object') {
+        ms = typeof msOrOpts.timeout === 'number' ? msOrOpts.timeout : 5000;
+        interval = typeof msOrOpts.interval === 'number' ? msOrOpts.interval : 100;
+        requireVisible = Boolean(msOrOpts.visible);
+      }
       const start = Date.now();
       while (Date.now() - start < ms) {
-        const el = resolve(t);
-        if (el) return el;
-        await new Promise((r) => setTimeout(r, 100));
+        if (typeof t === 'function') {
+          try {
+            const res = await t();
+            if (res) return res;
+          } catch {}
+        } else {
+          const el = resolve(t);
+          if (el && el.isConnected) {
+            if (!requireVisible || isVisible(el)) return el;
+          }
+        }
+        await new Promise((r) => setTimeout(r, interval));
       }
-      throw new Error('Timeout waiting for: ' + t);
+      throw new Error(
+        'Timeout (' +
+          ms +
+          'ms) waiting for: ' +
+          (typeof t === 'function' ? 'predicate function' : t),
+      );
+    },
+    waitForText: async (textOrRegex, selector = '*', msOrOpts = 5000, intervalMs = 100) => {
+      let ms = 5000;
+      let interval = 100;
+      if (typeof msOrOpts === 'number') {
+        ms = msOrOpts;
+        interval = typeof intervalMs === 'number' ? intervalMs : 100;
+      } else if (msOrOpts && typeof msOrOpts === 'object') {
+        ms = typeof msOrOpts.timeout === 'number' ? msOrOpts.timeout : 5000;
+        interval = typeof msOrOpts.interval === 'number' ? msOrOpts.interval : 100;
+      }
+      const start = Date.now();
+      while (Date.now() - start < ms) {
+        const el = mcp.findByText(textOrRegex, selector);
+        if (el && el.isConnected) return el;
+        await new Promise((r) => setTimeout(r, interval));
+      }
+      throw new Error('Timeout (' + ms + 'ms) waiting for text: ' + textOrRegex);
     },
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     fetch: (url, opts) => window.fetch(url, opts),
@@ -313,6 +826,16 @@ export function wrapUserCode(code: string): string {
   const expr = detectSingleExpression(code);
   if (expr !== null) {
     return `(async () => {\n${MCP_INPAGE_HELPERS}return (\n${expr}\n);\n})()`;
+  }
+  const trimmed = code.trim();
+  const declMatch = /^\s*(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=([\s\S]+)$/.exec(trimmed);
+  if (declMatch) {
+    const varName = declMatch[1];
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+    try {
+      new AsyncFunction(`${trimmed}\nreturn ${varName};`);
+      return `(async () => {\n${MCP_INPAGE_HELPERS}${trimmed}\nreturn ${varName};\n})()`;
+    } catch {}
   }
   return `(async () => {\n${MCP_INPAGE_HELPERS}${code}\n})()`;
 }
@@ -520,6 +1043,13 @@ async function executeViaScripting(
             }
             if (validExpr !== null) {
               codeToRun = `return (\n${validExpr}\n);`;
+            } else {
+              const declMatch = /^\s*(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*([\s\S]+?);?\s*$/.exec(
+                rawTrimmed,
+              );
+              if (declMatch && !declMatch[2].includes(';\n') && !declMatch[2].includes(';\r\n')) {
+                codeToRun = `${userCode}\nreturn ${declMatch[1]};`;
+              }
             }
           }
           const fn = new AsyncFunction((inpageHelpers || '') + codeToRun);

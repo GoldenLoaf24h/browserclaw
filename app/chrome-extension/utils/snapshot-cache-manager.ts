@@ -26,6 +26,92 @@ export interface DomDiffResult {
   modified: any[];
   removed: number[];
   totalCurrent: number;
+  truncated?: boolean;
+  totalAdded?: number;
+  totalModified?: number;
+  totalRemoved?: number;
+  summary?: string;
+  message?: string;
+}
+
+export const DEFAULT_MAX_DELTA_CHANGES = 25;
+
+export interface DiffOptions {
+  maxDelta?: number;
+  filterNoise?: boolean;
+}
+
+const COUNTDOWN_TIMER_REGEX =
+  /^((\d{1,2}:)?\d{1,2}:\d{2}(\.\d+)?|\d+\s*(s|秒|ms|分|min|小时|h)|(\d+\s*天)?\s*(\d+\s*(小时|h))?\s*(\d+\s*(分|min))?\s*\d+\s*(s|秒)|(\d+\s*天)?\s*(\d+\s*(小时|h))\s*\d+\s*(分|min))$/i;
+const COUNTDOWN_PREFIX_REGEX =
+  /^(倒计时|距结束|剩余|秒杀|限时|抢购|ends?\s*in|expires?\s*in)\s*[:：]?\s*((\d+\s*天)?\s*(\d{1,2}:)?\d{1,2}:\d{2}(\.\d+)?|(\d+\s*天)?.*?\d+\s*(s|秒|分|min|小时|h))/i;
+
+export function isClockOrTimerNoise(oldText?: string, newText?: string): boolean {
+  if (!oldText || !newText || oldText === newText) return false;
+  const t1 = oldText.trim();
+  const t2 = newText.trim();
+  if (COUNTDOWN_TIMER_REGEX.test(t1) && COUNTDOWN_TIMER_REGEX.test(t2)) return true;
+  if (COUNTDOWN_PREFIX_REGEX.test(t1) && COUNTDOWN_PREFIX_REGEX.test(t2)) return true;
+  return false;
+}
+
+const NOISE_ATTR_REGEX =
+  /(adsbygoogle|google[-_]?ads?|ad[-_]?banner|taboola|outbrain|sponsored|recommend|guess[-_]?you[-_]?like|feed[-_]?item|elevator|shortcut)/i;
+
+export function isNoiseElement(el: any): boolean {
+  if (!el) return false;
+  const tag = (el.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return false;
+
+  const idAndClass = `${el.attributes?.id || ''} ${el.attributes?.class || ''}`;
+  return NOISE_ATTR_REGEX.test(idAndClass);
+}
+
+export function compactDeltaElement(el: any): any {
+  if (!el || typeof el !== 'object') return el;
+  const cleanAttr: Record<string, string> = {};
+  if (el.attributes) {
+    const keepKeys = [
+      'id',
+      'name',
+      'type',
+      'role',
+      'placeholder',
+      'checked',
+      'selected',
+      'disabled',
+      'aria-checked',
+      'aria-selected',
+      'aria-expanded',
+      'aria-disabled',
+      'href',
+      'title',
+      'class',
+      'value',
+    ];
+    for (const k of keepKeys) {
+      if (el.attributes[k] !== undefined) {
+        cleanAttr[k] = String(el.attributes[k]).slice(0, 100);
+      }
+    }
+  }
+
+  const text = el.text ? (el.text.length > 120 ? el.text.slice(0, 120) + '…' : el.text) : undefined;
+
+  return {
+    index: el.index,
+    tagName: el.tagName,
+    ...(el.role ? { role: el.role } : {}),
+    ...(text ? { text } : {}),
+    ...(el.value !== undefined ? { value: String(el.value).slice(0, 100) } : {}),
+    ...(Object.keys(cleanAttr).length > 0
+      ? { attributes: cleanAttr }
+      : el.attributes
+        ? { attributes: el.attributes }
+        : {}),
+    isInteractive: Boolean(el.isInteractive),
+    ...(el.diffHints ? { diffHints: el.diffHints } : {}),
+  };
 }
 
 export class SnapshotCacheManager {
@@ -103,20 +189,35 @@ export class SnapshotCacheManager {
     return snapshot;
   }
 
-  public diffWithPrevious(tabId: number, currentElements: any[]): DomDiffResult {
+  public diffWithPrevious(
+    tabId: number,
+    currentElements: any[],
+    options?: DiffOptions,
+  ): DomDiffResult {
     const prev = this.cache.get(tabId);
     const currentRev = (this.tabRevisions.get(tabId) ?? 0) + 1;
+    const maxDelta = options?.maxDelta ?? DEFAULT_MAX_DELTA_CHANGES;
+    const filterNoise = options?.filterNoise ?? true;
 
     if (!prev || !prev.valid || !prev.fingerprints || prev.fingerprints.size === 0) {
       // First snapshot on this page or invalidated, no prior baseline to diff
+      const isTruncated = currentElements.length > maxDelta;
+      const rawAdded = isTruncated ? currentElements.slice(0, maxDelta) : currentElements;
       return {
         isDelta: false,
         unchanged: false,
         revision: currentRev,
-        added: currentElements,
+        added: rawAdded.map(compactDeltaElement),
         modified: [],
         removed: [],
         totalCurrent: currentElements.length,
+        ...(isTruncated
+          ? {
+              truncated: true,
+              totalAdded: currentElements.length,
+              summary: `Initial baseline capture truncated from ${currentElements.length} to ${maxDelta} elements.`,
+            }
+          : {}),
       };
     }
 
@@ -128,6 +229,11 @@ export class SnapshotCacheManager {
     for (const el of currentElements) {
       const idx = el.index;
       currentIndices.add(idx);
+
+      if (filterNoise && isNoiseElement(el)) {
+        continue;
+      }
+
       const old = oldMap.get(idx);
 
       if (!old) {
@@ -138,7 +244,15 @@ export class SnapshotCacheManager {
         const interactiveChanged = Boolean(el.isInteractive) !== old.isInteractive;
         const valChanged = (el.value || '') !== (old.value || '');
 
-        if (textChanged || roleChanged || interactiveChanged || valChanged) {
+        const isTimerNoise =
+          filterNoise &&
+          textChanged &&
+          !roleChanged &&
+          !interactiveChanged &&
+          !valChanged &&
+          isClockOrTimerNoise(old.text, el.text);
+
+        if (!isTimerNoise && (textChanged || roleChanged || interactiveChanged || valChanged)) {
           modified.push({
             ...el,
             diffHints: {
@@ -157,16 +271,37 @@ export class SnapshotCacheManager {
       }
     }
 
-    const unchanged = added.length === 0 && modified.length === 0 && removed.length === 0;
+    const totalAdded = added.length;
+    const totalModified = modified.length;
+    const totalRemoved = removed.length;
+    const isTruncated =
+      totalAdded > maxDelta || totalModified > maxDelta || totalRemoved > maxDelta;
+
+    const finalAdded = (isTruncated ? added.slice(0, maxDelta) : added).map(compactDeltaElement);
+    const finalModified = (isTruncated ? modified.slice(0, maxDelta) : modified).map(
+      compactDeltaElement,
+    );
+    const finalRemoved = isTruncated ? removed.slice(0, maxDelta) : removed;
+
+    const unchanged = totalAdded === 0 && totalModified === 0 && totalRemoved === 0;
 
     return {
       isDelta: true,
       unchanged,
       revision: currentRev,
-      added,
-      modified,
-      removed,
+      added: finalAdded,
+      modified: finalModified,
+      removed: finalRemoved,
       totalCurrent: currentElements.length,
+      ...(isTruncated
+        ? {
+            truncated: true,
+            totalAdded,
+            totalModified,
+            totalRemoved,
+            summary: `Delta truncated: showing ${finalAdded.length}/${totalAdded} added, ${finalModified.length}/${totalModified} modified, ${finalRemoved.length}/${totalRemoved} removed. Call chrome_read_dom for full DOM tree.`,
+          }
+        : {}),
     };
   }
 

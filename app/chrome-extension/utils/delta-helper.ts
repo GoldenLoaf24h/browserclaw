@@ -18,7 +18,7 @@ export async function captureDeltaIfRequested(
       'inPageDOMPruner',
       [
         {
-          viewportThreshold: 1000,
+          viewportThreshold: 500,
           highlight: false,
         },
       ],
@@ -53,6 +53,23 @@ export async function captureDeltaIfRequested(
       elementCount: allElements.length,
       elements: allElements,
     });
+
+    if (!diff.isDelta) {
+      // First interaction with includeDelta before any prior chrome_read_dom snapshot baseline.
+      // Prevent 96KB context explosion on initial interaction by not dumping all page elements into added.
+      return {
+        isDelta: false,
+        unchanged: false,
+        revision: diff.revision,
+        added: [],
+        modified: [],
+        removed: [],
+        totalCurrent: diff.totalCurrent,
+        message:
+          'Baseline snapshot established. Subsequent interactions will report incremental DOM deltas.',
+      };
+    }
+
     return diff;
   } catch (err) {
     return {

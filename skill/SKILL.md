@@ -76,6 +76,8 @@ Mouse and keyboard input dispatched through the CDP path (`chrome_interact_index
   [4] <button "Submit" disabled="false">
   ```
 - **Default response is the pruned tree + counters** (compact JSON). The bulky `indexedElements`/`indexMap` detail blocks are omitted to keep the payload small; pass `includeDetails: true` only when you need per-element `rect`, `isOccluded`, or `safeClickPoint`.
+- **Targeted Container Scoping (`selector`) & Exclusion (`exclude`)**: Eliminate dumping whole-page DOM by specifying a container selector (e.g. `selector: "#main-cart"` or `selector: ".dialog-box"`) or pruning noise subtrees (e.g. `exclude: "#footer, #recommendations, .ad-banner"`).
+- **Hardened Delta Diffing (`deltaOnly: true`)**: Repeated reads return minimal changed element diffs. Automatic noise gating suppresses countdown timers, clocks, and dynamic ad feeds, while capping changes at 25 items to prevent context explosion on complex modern web pages.
 - **Pagination**: `cursor` + `limit` slice the tree lines, so large pages can be read incrementally without re-shipping the whole tree.
 - **Never guess long CSS selectors or brittle XPath**. Always use the numeric `index` from `chrome_read_dom`.
 
@@ -144,10 +146,17 @@ For complex multi-step logic (conditional branches, loops, or form filling + dat
 
 Injected `mcp` API:
 
-- `await mcp.click(indexOrSelector)`: Dispatch clean mouse sequence to numeric index or CSS selector.
+- `await mcp.run(async (mcp) => { ... })`: Single-turn in-page agent closure orchestrating multi-step actions and returning structured results.
+- `await mcp.click(indexOrSelector, { waitFor?, double? })`: Dispatch clean mouse sequence to numeric index or CSS selector (supports `:has-text("...")`).
 - `await mcp.fill(indexOrSelector, text, clearFirst?)`: Focus, clear, fill, and dispatch input/change events.
+- `await mcp.check(indexOrSelector, checked?)`: Toggle checkbox/radio state with input and change events.
+- `await mcp.press(key, indexOrSelector?)`: Dispatch keyboard events to focused or targeted element.
 - `await mcp.extract(indexOrSelector, 'text' | 'value' | attrName)`: Extract element data.
-- `await mcp.waitFor(indexOrSelector, timeoutMs?)`: Poll until target appears in DOM.
+- `await mcp.waitFor(indexOrSelectorOrPredicate, timeoutMs?, intervalMs?)`: Poll until target appears in DOM or predicate resolves truthy.
+- `await mcp.waitForText(textOrRegex, selector?, timeoutMs?)`: Poll until text appears in matching elements.
+- `mcp.query(selector, textPattern?)` / `mcp.queryAll(selector, textPattern?)`: Query elements with optional text pattern matching.
+- `mcp.findByText(textOrRegex, selector?)` / `mcp.findAllByText(textOrRegex, selector?)`: Locate elements by text content or regex.
+- `:has-text("...")` Pseudo-Selector: Natively supported in `document.querySelector('button:has-text("Submit")')` and all `mcp.*` helpers.
 - `await mcp.sleep(ms)`: Delay execution.
 - `await mcp.fetch(url, options)`: In-page fetch using the tab's logged-in session, cookies, and CORS context.
 

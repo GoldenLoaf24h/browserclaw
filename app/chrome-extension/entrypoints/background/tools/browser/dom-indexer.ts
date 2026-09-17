@@ -152,6 +152,12 @@ export function describeHitTarget(element: Element): string {
 export function isInteractiveSvgNode(el: Element, style?: CSSStyleDeclaration): boolean {
   if (!el || (typeof Element !== 'undefined' && !(el instanceof Element))) return false;
   const tag = (el.tagName || '').toLowerCase();
+  const isSvg =
+    tag === 'svg' ||
+    el.namespaceURI === 'http://www.w3.org/2000/svg' ||
+    (typeof el.closest === 'function' && Boolean(el.closest('svg')));
+  if (!isSvg) return false;
+
   if (
     /^(defs|clippath|mask|pattern|lineargradient|radialgradient|filter|metadata|style|title|desc)$/i.test(
       tag,
@@ -698,11 +704,262 @@ export function inPageDOMPruner(options?: {
   maxTextLength?: number;
   format?: 'compact' | 'html';
   viewportOnly?: boolean;
+  selector?: string;
+  exclude?: string | string[];
 }): PrunedDOMTreeResult {
   const isViewportOnly = options?.viewportOnly === true;
   const threshold = isViewportOnly ? 150 : (options?.viewportThreshold ?? 1000);
   const startingIndex = options?.startingIndex ?? 1;
   const frameId = options?.frameId;
+
+  // Robust :has-text evaluator for container scoping & exclusion
+  function splitTopLevelCommas(selector: string): string[] {
+    const parts: string[] = [];
+    let current = '';
+    let inSingleQuote = false;
+    let inDoubleQuote = false;
+    let parenDepth = 0;
+
+    for (let i = 0; i < selector.length; i++) {
+      const ch = selector[i];
+      const prev = i > 0 ? selector[i - 1] : '';
+
+      if (ch === "'" && !inDoubleQuote && prev !== '\\') {
+        inSingleQuote = !inSingleQuote;
+        current += ch;
+      } else if (ch === '"' && !inSingleQuote && prev !== '\\') {
+        inDoubleQuote = !inDoubleQuote;
+        current += ch;
+      } else if (ch === '(' && !inSingleQuote && !inDoubleQuote) {
+        parenDepth++;
+        current += ch;
+      } else if (ch === ')' && !inSingleQuote && !inDoubleQuote) {
+        if (parenDepth > 0) parenDepth--;
+        current += ch;
+      } else if (ch === ',' && !inSingleQuote && !inDoubleQuote && parenDepth === 0) {
+        if (current.trim()) parts.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    if (current.trim()) parts.push(current.trim());
+    return parts;
+  }
+
+  function extractFirstHasText(sel: string): {
+    prefix: string;
+    pattern: string | RegExp;
+    suffix: string;
+  } | null {
+    const idx = sel.indexOf(':has-text(');
+    if (idx === -1) return null;
+
+    const prefix = sel.slice(0, idx).trim() || '*';
+    const afterOpen = sel.slice(idx + ':has-text('.length);
+
+    let inSingle = false;
+    let inDouble = false;
+    let closeIdx = -1;
+
+    for (let i = 0; i < afterOpen.length; i++) {
+      const ch = afterOpen[i];
+      const prev = i > 0 ? afterOpen[i - 1] : '';
+      if (ch === "'" && !inDouble && prev !== '\\') {
+        inSingle = !inSingle;
+      } else if (ch === '"' && !inSingle && prev !== '\\') {
+        inDouble = !inDouble;
+      } else if (ch === ')' && !inSingle && !inDouble) {
+        closeIdx = i;
+        break;
+      }
+    }
+
+    if (closeIdx === -1) return null;
+
+    const rawArg = afterOpen.slice(0, closeIdx).trim();
+    const suffix = afterOpen.slice(closeIdx + 1);
+
+    let pattern: string | RegExp = rawArg;
+    const regexMatch = /^\/(.+)\/([gimsuy]*)$/.exec(rawArg);
+    if (regexMatch) {
+      try {
+        pattern = new RegExp(regexMatch[1], regexMatch[2]);
+      } catch {
+        pattern = rawArg;
+      }
+    } else if (
+      (rawArg.startsWith('"') && rawArg.endsWith('"')) ||
+      (rawArg.startsWith("'") && rawArg.endsWith("'"))
+    ) {
+      pattern = rawArg.slice(1, -1).replace(/\\(["'])/g, '$1');
+    }
+
+    return { prefix, pattern, suffix };
+  }
+
+  function elementMatchesPattern(el: Element, pattern: string | RegExp): boolean {
+    const text = (el as HTMLElement).innerText || el.textContent || '';
+    if (pattern instanceof RegExp) {
+      return pattern.test(text);
+    }
+    return text.includes(pattern);
+  }
+
+  function queryHasTextSingleSelector(root: Element | Document, selector: string, single: boolean): Element[] {
+    const parsed = extractFirstHasText(selector);
+    if (!parsed) {
+      try {
+        return single
+          ? (root.querySelector(selector) ? [root.querySelector(selector)!] : [])
+          : Array.from(root.querySelectorAll(selector));
+      } catch {
+        return [];
+      }
+    }
+
+    const { prefix, pattern, suffix } = parsed;
+    let baseCandidates: Element[];
+    try {
+      baseCandidates = Array.from(root.querySelectorAll(prefix));
+    } catch {
+      baseCandidates = [];
+    }
+
+    const matchedPrefix = baseCandidates.filter((el) => elementMatchesPattern(el, pattern));
+
+    const trimmedSuffix = suffix.trim();
+    if (!trimmedSuffix) {
+      if (single) {
+        if (matchedPrefix.length === 0) return [];
+        const innermost = matchedPrefix.find(
+          (el) => !matchedPrefix.some((other) => other !== el && el.contains(other)),
+        );
+        return [innermost || matchedPrefix[0]];
+      }
+      return matchedPrefix;
+    }
+
+    const results: Element[] = [];
+    const seen = new Set<Element>();
+
+    for (const parent of matchedPrefix) {
+      let childMatches: Element[];
+      if (trimmedSuffix.startsWith(':has-text(')) {
+        childMatches = queryHasTextSingleSelector(parent, '*' + trimmedSuffix, single);
+      } else {
+        const isCombinator = /^[>+~]/.test(trimmedSuffix);
+        const childSel = isCombinator ? `:scope ${trimmedSuffix}` : trimmedSuffix;
+        if (childSel.includes(':has-text(')) {
+          childMatches = queryHasTextSingleSelector(parent, childSel, single);
+        } else {
+          try {
+            childMatches = single
+              ? (parent.querySelector(childSel) ? [parent.querySelector(childSel)!] : [])
+              : Array.from(parent.querySelectorAll(childSel));
+          } catch {
+            childMatches = [];
+          }
+        }
+      }
+
+      for (const m of childMatches) {
+        if (!seen.has(m)) {
+          seen.add(m);
+          results.push(m);
+          if (single) return results;
+        }
+      }
+    }
+
+    return results;
+  }
+
+  function queryWithHasText(root: Element | Document, selector: string, single = false): Element[] {
+    if (typeof selector !== 'string') return [];
+    if (!selector.includes(':has-text(')) {
+      try {
+        return single
+          ? (root.querySelector(selector) ? [root.querySelector(selector)!] : [])
+          : Array.from(root.querySelectorAll(selector));
+      } catch {
+        return [];
+      }
+    }
+
+    const parts = splitTopLevelCommas(selector);
+    if (parts.length === 1) {
+      return queryHasTextSingleSelector(root, parts[0], single);
+    }
+
+    const combined: Element[] = [];
+    const seen = new Set<Element>();
+    for (const part of parts) {
+      const res = queryHasTextSingleSelector(root, part, single);
+      for (const el of res) {
+        if (!seen.has(el)) {
+          seen.add(el);
+          combined.push(el);
+          if (single) return [el];
+        }
+      }
+    }
+    return combined;
+  }
+
+  function buildExcludeChecker(exclude?: string | string[]): (el: Element, isRoot?: boolean) => boolean {
+    if (!exclude) return () => false;
+    const rawList = Array.isArray(exclude) ? exclude : [exclude];
+    const standardSelectors: string[] = [];
+    const textExcludedSet = new Set<Element>();
+
+    for (const item of rawList) {
+      if (typeof item === 'string') {
+        for (const part of splitTopLevelCommas(item)) {
+          const trimmed = part.trim();
+          if (trimmed) {
+            if (trimmed.includes(':has-text(')) {
+              for (const matched of queryWithHasText(document, trimmed, false)) {
+                textExcludedSet.add(matched);
+              }
+            } else {
+              standardSelectors.push(trimmed);
+            }
+          }
+        }
+      }
+    }
+
+    if (standardSelectors.length === 0 && textExcludedSet.size === 0) return () => false;
+
+    return (el: Element, isRoot = false) => {
+      if (!el) return false;
+      if (textExcludedSet.size > 0) {
+        if (textExcludedSet.has(el)) return true;
+        if (isRoot) {
+          for (const textEl of textExcludedSet) {
+            if (textEl.contains(el)) return true;
+          }
+        }
+      }
+
+      for (const sel of standardSelectors) {
+        try {
+          if (isRoot) {
+            if (typeof el.closest === 'function' && el.closest(sel)) return true;
+          }
+          if (typeof el.matches === 'function' && el.matches(sel)) return true;
+        } catch {
+          try {
+            if (el.matches(sel)) return true;
+          } catch {}
+        }
+      }
+      return false;
+    };
+  }
+
+  const isExcluded = buildExcludeChecker(options?.exclude);
   const maxTextLength =
     typeof options?.maxTextLength === 'number' && options.maxTextLength > 0
       ? options.maxTextLength
@@ -1137,6 +1394,8 @@ export function inPageDOMPruner(options?: {
     parentHasPointer = false,
     insideShadow = false,
   ) {
+    if (isExcluded(node, false)) return;
+
     totalOriginalNodes++;
 
     const tag = (node.tagName || '').toLowerCase();
@@ -1281,8 +1540,30 @@ export function inPageDOMPruner(options?: {
     inShadowDom?: boolean;
   }> = [];
 
-  if (document.body) {
-    traverse(document.body, null, false, false);
+  let roots: Element[] = [];
+  let selectorMatched = false;
+  if (options?.selector) {
+    try {
+      const allRoots = options.selector.includes(':has-text(')
+        ? queryWithHasText(document, options.selector, false)
+        : Array.from(document.querySelectorAll(options.selector));
+      selectorMatched = allRoots.length > 0;
+      // Filter out nested roots so child elements are not traversed or indexed twice
+      roots = allRoots.filter(
+        (r) => !allRoots.some((other) => other !== r && other.contains(r)),
+      );
+    } catch {
+      roots = [];
+      selectorMatched = false;
+    }
+  } else if (document.body) {
+    roots = [document.body];
+    selectorMatched = true;
+  }
+
+  for (const root of roots) {
+    if (isExcluded(root, true)) continue;
+    traverse(root, null, false, false);
   }
 
   // Phase 2: Deterministic visual reading-order sort (top-to-bottom, left-to-right)
@@ -1729,6 +2010,7 @@ export function inPageDOMPruner(options?: {
     scrollInfo,
     activeModal,
     focusTrapped: focusTrapped || undefined,
+    selectorMatched: options?.selector !== undefined ? selectorMatched : undefined,
   };
 }
 
