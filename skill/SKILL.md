@@ -470,3 +470,27 @@ When encountering slider captchas, SMS codes, or payment prompts:
 ### 6.8 In-Page JavaScript Evaluation (`chrome_javascript`)
 
 - Supports top-level `await` and automatic single-expression `return (...)` wrapping. You can pass raw expressions such as `document.title` or `window.location.href` directly without manually prepending `return`.
+
+### 6.9 Viewport-Only Token Pruning (`chrome_read_dom` with `viewportOnly: true`)
+
+When inspecting long-scroll pages (e.g. social feeds, search results, large data tables):
+
+- Call `chrome_read_dom { viewportOnly: true }` to constrain extraction to elements within or immediately adjacent (150px) to the current viewport.
+- Eliminates distant off-screen DOM nodes and reduces token consumption by an additional 50%~70%.
+
+### 6.10 VOM Geometric Coverage & Modal Focus Guidance
+
+- BrowserClaw calculates exact geometric viewport overlap: `overlap / (vp.width * vp.height)`.
+- When an overlay covers $\ge 60\%$ of the screen or a modal covers $\ge 12\%$, the compact AX tree prefixes:
+  `[Modal Guidance: Active modal focus trap (<element>). Prioritize interacting with modal elements or dismissing it.]`
+- When you see this header, focus on resolving or closing the active dialog before targeting background elements.
+
+### 6.11 Environment Self-Diagnostics (`chrome_doctor`)
+
+- If tool calls fail due to connection or authorization issues, call `chrome_doctor {}` (or run `browserclaw doctor` in terminal).
+- Returns health status for Native Host port 12306, the Agent master switch, Virtual Cursor mode, and Window Isolation settings.
+
+### 6.12 Window Isolation vs. Tab Groups (Window Mode)
+
+- **Tab Mode (Default)**: Automatically groups temporary task tabs under dedicated, colored Chrome Tab Groups (e.g., `12306查询`) within the current window and emulates background focus.
+- **Window Mode**: If the user toggles Window Mode in the popup, Agent tasks open in a separate OS window where CDP debugger infobars are strictly confined, leaving the user's primary workspace 100% untouched.
