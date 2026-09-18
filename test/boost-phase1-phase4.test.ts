@@ -61,11 +61,26 @@ describe('Boost Phase 1 - Phase 4 Comprehensive Verification Suite', () => {
     });
 
     it('8. Distinguishes Gemini point [y, x] vs OpenAI point [x, y]', () => {
-      const gemini = parseUnifiedCoordinate([300, 500], { ...defaultOpts, pointFormat: 'gemini' });
-      assert.deepStrictEqual(gemini, { x: 500, y: 300 });
+      const geminiPixel = parseUnifiedCoordinate([300, 500], {
+        ...defaultOpts,
+        pointFormat: 'gemini',
+        scale: 'pixel',
+      });
+      assert.deepStrictEqual(geminiPixel, { x: 500, y: 300 });
 
-      const openai = parseUnifiedCoordinate([500, 300], { ...defaultOpts, pointFormat: 'openai' });
+      const openai = parseUnifiedCoordinate([500, 300], {
+        ...defaultOpts,
+        pointFormat: 'openai',
+        scale: 'pixel',
+      });
       assert.deepStrictEqual(openai, { x: 500, y: 300 });
+
+      // Default without scale: 'pixel' automatically scales Gemini per-mille coordinates to viewport (1000x800)
+      const geminiAuto = parseUnifiedCoordinate([300, 500], {
+        ...defaultOpts,
+        pointFormat: 'gemini',
+      });
+      assert.deepStrictEqual(geminiAuto, { x: 500, y: 240 });
     });
 
     it('9. Automatically applies ROI origin offsets (originX, originY) for local crops', () => {

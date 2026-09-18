@@ -96,6 +96,8 @@ export interface PrunedDOMTreeResult {
   isConfirmationTrap?: boolean;
   /** True if a container matching the requested selector was found */
   selectorMatched?: boolean;
+  /** True if DOM indexing was scoped to an active modal and its whitelisted containers */
+  modalIsolated?: boolean;
 }
 
 export interface PageSettleResult {
@@ -156,12 +158,43 @@ export interface BatchActionItem {
   preferComposer?: boolean;
   // For type: 'assert'
   expectedText?: string;
-  condition?: 'contains' | 'equals' | 'visible' | 'not_visible';
+  condition?:
+    | 'contains'
+    | 'not_contains'
+    | 'equals'
+    | 'matches'
+    | 'visible'
+    | 'not_visible'
+    | 'enabled'
+    | 'disabled'
+    | 'valid'
+    | 'invalid'
+    | 'checked'
+    | 'unchecked';
+  timeoutMs?: number;
   abortOnFailure?: boolean;
+  // Inline network capture
+  captureNetwork?: CaptureNetworkOptions;
   // For type: 'extract'
   property?: 'text' | 'value' | 'attribute';
   attributeName?: string;
   variableName?: string;
+}
+
+export interface CaptureNetworkOptions {
+  urlPattern: string;
+  method?: string;
+  timeoutMs?: number;
+  statusCodes?: number[];
+}
+
+export interface CapturedNetworkResult {
+  url: string;
+  status: number;
+  data: any;
+  mimeType?: string;
+  durationMs?: number;
+  error?: string;
 }
 
 export interface BatchActionResult {
@@ -177,6 +210,27 @@ export interface BatchActionResult {
   urlChanged?: boolean;
   previousUrl?: string;
   currentUrl?: string;
+  networkResult?: CapturedNetworkResult;
+}
+
+export interface ReadDOMParams {
+  viewportThreshold?: number;
+  tabId?: number;
+  windowId?: number;
+  highlight?: boolean;
+  sessionId?: string;
+  sessionContext?: string;
+  cursor?: number;
+  limit?: number;
+  deltaOnly?: boolean;
+  maxTextLength?: number;
+  format?: 'compact' | 'html';
+  viewportOnly?: boolean;
+  selector?: string;
+  scope?: string;
+  exclude?: string | string[];
+  includeDetails?: boolean;
+  isolateModal?: boolean;
 }
 
 export interface AttachTabParams {

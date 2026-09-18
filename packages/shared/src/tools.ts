@@ -584,15 +584,7 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           description: 'Alias for region: { x, y, width, height } or { x0, y0, x1, y1 }.',
         },
         grid: {
-          oneOf: [
-            { type: 'boolean' },
-            {
-              type: 'string',
-              enum: ['ruler', 'crosshair', 'classic', '1000'],
-              description:
-                'Grid style: "ruler" (perimeter tape measure rulers), "crosshair" (unobtrusive reticle + markers without screen-crossing lines), "classic" (dashed red lines), or "1000" (normalized 0-1000 coordinates).',
-            },
-          ],
+          type: 'boolean',
           description:
             'Overlay semi-transparent coordinate reference grid with perimeter tape measure rulers (20/50/100px ticks) and interior reticle crosshairs (+) to eliminate visual estimation hallucination (default: false)',
         },
@@ -1501,6 +1493,16 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           description:
             'CSS selector to scope parsing to a specific container/element (e.g. "#main-cart", ".dialog-box"). Only descendants and self within matching containers are indexed.',
         },
+        scope: {
+          type: 'string',
+          description:
+            'Alias for selector. CSS selector to scope parsing to a specific container/element (e.g. "#main-cart", ".dialog-box"). Only descendants and self within matching containers are indexed.',
+        },
+        isolateModal: {
+          type: 'boolean',
+          description:
+            'When true and an active modal dialog is detected, restricts indexing to the active modal while strictly protecting portals, dropdowns, and alert containers.',
+        },
         exclude: {
           oneOf: [
             { type: 'string' },
@@ -1727,6 +1729,32 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           type: 'number',
           description: 'Network quiescence timeout in ms (default: 2000)',
         },
+        captureNetwork: {
+          type: 'object',
+          properties: {
+            urlPattern: {
+              type: 'string',
+              description: 'URL pattern or substring to match (e.g. "*/api/order*", "/checkout")',
+            },
+            method: {
+              type: 'string',
+              description: 'Optional HTTP method to filter by (GET, POST, PUT, DELETE, etc.)',
+            },
+            timeoutMs: {
+              type: 'number',
+              description:
+                'Maximum time in milliseconds to wait for the matching network response (default: 5000ms)',
+            },
+            statusCodes: {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Optional HTTP status codes to accept (e.g. [200, 201])',
+            },
+          },
+          required: ['urlPattern'],
+          description:
+            'Inline capture of network response triggered by this interaction in a single round-trip',
+        },
       },
       required: [],
     },
@@ -1948,8 +1976,27 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
               },
               condition: {
                 type: 'string',
-                enum: ['contains', 'equals', 'visible', 'not_visible'],
-                description: 'Assertion condition (default: "contains")',
+                enum: [
+                  'contains',
+                  'not_contains',
+                  'equals',
+                  'matches',
+                  'visible',
+                  'not_visible',
+                  'enabled',
+                  'disabled',
+                  'valid',
+                  'invalid',
+                  'checked',
+                  'unchecked',
+                ],
+                description:
+                  'Assertion condition: contains, not_contains, equals, matches (regex), visible, not_visible, enabled, disabled, valid, invalid, checked, unchecked (default: "contains")',
+              },
+              timeoutMs: {
+                type: 'number',
+                description:
+                  'Async polling timeout in milliseconds for assertion settling (default: 300ms)',
               },
               abortOnFailure: {
                 type: 'boolean',
@@ -1968,6 +2015,31 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
               variableName: {
                 type: 'string',
                 description: 'Key name under extractedData to store the result',
+              },
+              captureNetwork: {
+                type: 'object',
+                properties: {
+                  urlPattern: {
+                    type: 'string',
+                    description: 'URL pattern or substring to match (e.g. "*/api/order*")',
+                  },
+                  method: {
+                    type: 'string',
+                    description: 'Optional HTTP method to filter by (GET, POST, etc.)',
+                  },
+                  timeoutMs: {
+                    type: 'number',
+                    description:
+                      'Maximum time in milliseconds to wait for the network response (default: 5000ms)',
+                  },
+                  statusCodes: {
+                    type: 'array',
+                    items: { type: 'number' },
+                    description: 'Optional HTTP status codes to accept',
+                  },
+                },
+                required: ['urlPattern'],
+                description: 'Inline capture of network response triggered by this action',
               },
             },
             required: ['type'],
@@ -2002,6 +2074,32 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         sessionId: {
           type: 'string',
           description: 'Optional session identifier to bind affinity to a specific tab context',
+        },
+        captureNetwork: {
+          type: 'object',
+          properties: {
+            urlPattern: {
+              type: 'string',
+              description: 'URL pattern or substring to match (e.g. "*/api/order*", "/checkout")',
+            },
+            method: {
+              type: 'string',
+              description: 'Optional HTTP method to filter by (GET, POST, PUT, DELETE, etc.)',
+            },
+            timeoutMs: {
+              type: 'number',
+              description:
+                'Maximum time in milliseconds to wait for the matching network response (default: 5000ms)',
+            },
+            statusCodes: {
+              type: 'array',
+              items: { type: 'number' },
+              description: 'Optional HTTP status codes to accept (e.g. [200, 201])',
+            },
+          },
+          required: ['urlPattern'],
+          description:
+            'Inline capture of network response triggered during batch execution in a single round-trip',
         },
       },
       required: ['actions'],

@@ -82,6 +82,8 @@ Get all currently open browser windows and tabs
 Extract and prune interactive DOM tree with compact 1-based index assignment, viewport boundary filtering, and occlusion pruning. Supports scoped container targeting (selector) and noise exclusion (exclude) to eliminate full DOM dump overhead.
 
 - `selector` — CSS selector to scope parsing to a specific container/element (e.g. "#main-cart", ".dialog-box"). Only descendants and self within matching containers
+- `scope` — Alias for selector. CSS selector to scope parsing to a specific container/element (e.g. "#main-cart", ".dialog-box"). Only descendants and self within
+- `isolateModal` — When true and an active modal dialog is detected, restricts indexing to the active modal while strictly protecting portals, dropdowns, and alert conta
 - `exclude` — CSS selector(s) to exclude from parsing (e.g. "#footer, #recommendations, .ad-banner"). Matching elements and their entire subtrees are pruned.
 - `viewportThreshold` — Vertical threshold in pixels for viewport boundary checking (default 1000)
 - `tabId` — Target tab ID (optional)
@@ -173,6 +175,7 @@ Click, hover, or interact with an element using its compact 1-based numeric inde
 - `pierceOverlay` — Automatically pierce non-opaque or transient backdrop masks/loading stubs when intercepted (default: true)
 - `waitForNetworkQuiescence` — Wait for in-flight network requests to settle after this interaction before returning (default: false)
 - `quiescenceTimeoutMs` — Network quiescence timeout in ms (default: 2000)
+- `captureNetwork` — Inline capture of network response triggered by this interaction in a single round-trip
 
 ### `chrome_fill_index`
 
@@ -251,6 +254,7 @@ Execute a sequential multi-step pipeline of browser actions in a single round-tr
 - `quiescenceTimeoutMs` — Network quiescence timeout in ms (default: 2000)
 - `includeDelta` — Automatically capture and return DOM changes caused by the batch in the delta field (default: false)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
+- `captureNetwork` — Inline capture of network response triggered during batch execution in a single round-trip
 
 ### `chrome_computer`
 

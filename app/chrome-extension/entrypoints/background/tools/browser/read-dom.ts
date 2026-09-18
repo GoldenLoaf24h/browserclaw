@@ -25,6 +25,10 @@ export interface ReadDOMParams {
    */
   selector?: string;
   /**
+   * Alias for selector. CSS selector to scope parsing to a specific container/element.
+   */
+  scope?: string;
+  /**
    * CSS selector(s) to exclude from parsing (e.g. "#footer, #recommendations, .ad-banner").
    * Matching elements and their entire subtrees are pruned.
    */
@@ -37,6 +41,11 @@ export interface ReadDOMParams {
    * when you need geometry (rect/safeClickPoint) or per-element flags.
    */
   includeDetails?: boolean;
+  /**
+   * When true and an active modal is detected, prunes background page elements
+   * and scopes indexing to the active modal while protecting portals, dropdowns, and alerts.
+   */
+  isolateModal?: boolean;
 }
 
 export class ReadDOMTool extends BaseBrowserToolExecutor {
@@ -54,32 +63,29 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
       }
       tabFaviconManager.markTabActive(tab.id);
 
+      const effectiveSelector = args.scope || args.selector;
+      const prunerOpts = {
+        viewportThreshold: args.viewportThreshold ?? 1000,
+        highlight: args.highlight ?? false,
+        maxTextLength: args.maxTextLength,
+        format: args.format ?? 'compact',
+        viewportOnly: args.viewportOnly,
+        selector: effectiveSelector,
+        scope: args.scope,
+        exclude: args.exclude,
+        isolateModal: args.isolateModal,
+      };
+
       let results: chrome.scripting.InjectionResult<PrunedDOMTreeResult>[] = [];
       try {
         // Multi-frame penetration using Chrome Extension native { allFrames: true }
         results = await executeInPage({ tabId: tab.id, allFrames: true }, 'inPageDOMPruner', [
-          {
-            viewportThreshold: args.viewportThreshold ?? 1000,
-            highlight: args.highlight ?? false,
-            maxTextLength: args.maxTextLength,
-            format: args.format ?? 'compact',
-            viewportOnly: args.viewportOnly,
-            selector: args.selector,
-            exclude: args.exclude,
-          },
+          prunerOpts,
         ]);
       } catch (frameErr) {
         // Fallback to main frame only if allFrames fails
         results = await executeInPage({ tabId: tab.id }, 'inPageDOMPruner', [
-          {
-            viewportThreshold: args.viewportThreshold ?? 1000,
-            highlight: args.highlight ?? false,
-            maxTextLength: args.maxTextLength,
-            format: args.format ?? 'compact',
-            viewportOnly: args.viewportOnly,
-            selector: args.selector,
-            exclude: args.exclude,
-          },
+          prunerOpts,
         ]);
       }
 
@@ -107,6 +113,8 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         scrollInfo: mainData.scrollInfo,
         activeModal: mainData.activeModal,
         focusTrapped: mainData.focusTrapped,
+        isConfirmationTrap: mainData.isConfirmationTrap,
+        modalIsolated: mainData.modalIsolated,
         selectorMatched:
           mainData.selectorMatched ?? (results.some((r) => r.result?.selectorMatched) || false),
       };
@@ -310,16 +318,19 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         totalElements,
         hasMore,
         nextCursor,
-        ...(args.selector !== undefined
+        ...(effectiveSelector !== undefined
           ? {
-              selector: args.selector,
+              selector: effectiveSelector,
+              ...(args.scope ? { scope: args.scope } : {}),
               selectorMatched: Boolean(mergedData.selectorMatched),
               ...(!mergedData.selectorMatched
-                ? { message: `No elements matching selector "${args.selector}" found on page.` }
+                ? { message: `No elements matching selector "${effectiveSelector}" found on page.` }
                 : {}),
             }
           : {}),
         ...(args.exclude !== undefined ? { exclude: args.exclude } : {}),
+        ...(mergedData.modalIsolated ? { modalIsolated: true } : {}),
+        ...(mergedData.isConfirmationTrap ? { isConfirmationTrap: true } : {}),
       };
 
       // Default response is the pruned tree plus counters only. The detail

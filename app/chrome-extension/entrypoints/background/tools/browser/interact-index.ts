@@ -1,6 +1,6 @@
 import { createErrorResponse, ToolResult } from '../../../../common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
-import { TOOL_NAMES } from 'chrome-mcp-shared';
+import { TOOL_NAMES, type CaptureNetworkOptions } from 'chrome-mcp-shared';
 import { cdpSessionManager } from '../../../../utils/cdp-session-manager';
 import {
   raceCdp,
@@ -21,6 +21,7 @@ import { sessionTabAffinity } from '../../../../utils/session-tab-affinity';
 import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
 import { captureDeltaIfRequested } from '../../../../utils/delta-helper';
 import { tabFaviconManager } from './tab-favicon';
+import { startActionNetworkCapture } from '../../../../utils/action-network-capture';
 
 export interface InteractIndexParams {
   index?: number;
@@ -50,6 +51,8 @@ export interface InteractIndexParams {
   autoSnap?: boolean;
   /** Automatically pierce non-opaque, transient, or presentation backdrop masks */
   pierceOverlay?: boolean;
+  /** Inline capture of network response triggered by this interaction in a single RTT */
+  captureNetwork?: CaptureNetworkOptions;
 }
 
 /**
@@ -553,6 +556,9 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       // Animate virtual agent cursor to target position before physical interaction
       void animateAgentCursor(tabId, x, y);
 
+      // Start inline network capture if requested
+      const netCapture = startActionNetworkCapture(tabId, args.captureNetwork);
+
       // Shadow DOM penetrating interception check (self-healing feedback)
       let maskPierced: { description: string; reason: string } | undefined;
       if (args.index !== undefined && !isFallback && action === 'click') {
@@ -567,6 +573,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 reason: interceptRes.pierceReason || 'transient_mask',
               };
             } else {
+              netCapture.dispose();
               return createErrorResponse(
                 `Element [${args.index}] click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first. Hint: If this is an open modal, interact with its buttons to dismiss. If it is a captcha or human verification, call chrome_request_human_intervention.`,
               );
@@ -599,6 +606,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         if (!hasPath) {
           endPoint = await resolveDragEndPoint(tabId, args.end, args.coordinateSpace);
           if (!endPoint) {
+            netCapture.dispose();
             return createErrorResponse('drag requires end.index, end.coordinate, or a path array');
           }
         } else {
@@ -607,6 +615,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         }
 
         if (!endPoint && !hasPath) {
+          netCapture.dispose();
           return createErrorResponse(
             'drag requires end.index or end.coordinate that resolves to a valid viewport point',
           );
@@ -1015,6 +1024,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       } catch {}
       const urlChanged = Boolean(previousUrl && currentUrl && previousUrl !== currentUrl);
 
+      const networkResult = await netCapture.waitForResult();
+
       return {
         content: [
           {
@@ -1029,6 +1040,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 action,
                 tagName,
                 text,
+                ...(networkResult ? { networkResult } : {}),
                 isTrusted: usedNativeCDP,
                 coordinates: { x, y },
                 fallbackTriggered,

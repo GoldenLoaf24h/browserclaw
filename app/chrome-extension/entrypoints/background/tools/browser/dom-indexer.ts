@@ -734,7 +734,7 @@ export function detectEditorSemantics(el: Element): {
   isEditor: boolean;
   isSearch: boolean;
 } {
-  if (!el || !(el instanceof Element)) {
+  if (!el || !(el instanceof Element) || typeof (el as any).getAttribute !== 'function') {
     return { isComposer: false, isEditor: false, isSearch: false };
   }
 
@@ -855,6 +855,129 @@ export function getStickyOcclusionMargins(win: Window): { top: number; bottom: n
   };
 }
 
+export interface ActiveModalBlockerInfo {
+  el: HTMLElement;
+  coverage: number;
+  stackingScore: number;
+  kind: 'modal' | 'mask';
+  name: string;
+  isTrap?: boolean;
+}
+
+/**
+ * Detect active modal blocker using stacking score competition algorithm.
+ * Evaluates Top-Layer, dialog role, aria-modal, z-index, and DOM order so
+ * secondary confirmation traps are not obscured by large parent modals.
+ */
+export function detectActiveModalBlocker(win: Window = window): ActiveModalBlockerInfo | null {
+  try {
+    const doc = win.document;
+    if (!doc || typeof doc.querySelectorAll !== 'function') return null;
+    const vpWidth = win.innerWidth || doc.documentElement?.clientWidth || 1280;
+    const vpHeight = win.innerHeight || doc.documentElement?.clientHeight || 800;
+    const vpArea = vpWidth * vpHeight;
+
+    const positionedCandidates = Array.from(
+      doc.querySelectorAll(
+        'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"], [popover], [class*="modal"], [class*="dialog"], [class*="backdrop"], [class*="overlay"], [class*="mask"], [id*="modal"], [id*="dialog"], [id*="overlay"], [style*="fixed"], [style*="absolute"], body > div, body > section, body > aside',
+      ),
+    ) as HTMLElement[];
+
+    let topBlocker: ActiveModalBlockerInfo | null = null;
+
+    for (let i = 0; i < positionedCandidates.length; i++) {
+      const d = positionedCandidates[i];
+      if (!d || d.getAttribute('aria-hidden') === 'true') continue;
+      let style: CSSStyleDeclaration;
+      try {
+        style = win.getComputedStyle(d);
+      } catch {
+        continue;
+      }
+      if (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        style.pointerEvents === 'none'
+      )
+        continue;
+      const pos = style.position;
+      const isPositioned = pos === 'fixed' || pos === 'absolute' || pos === 'sticky';
+      const isDialogRole =
+        d.tagName.toLowerCase() === 'dialog' ||
+        d.getAttribute('role') === 'dialog' ||
+        d.getAttribute('role') === 'alertdialog' ||
+        d.getAttribute('aria-modal') === 'true';
+
+      if (!isPositioned && !isDialogRole) continue;
+
+      const rect = d.getBoundingClientRect();
+      const ix = Math.max(0, Math.min(rect.right, vpWidth) - Math.max(rect.left, 0));
+      const iy = Math.max(0, Math.min(rect.bottom, vpHeight) - Math.max(rect.top, 0));
+      const cov = vpArea > 0 ? (ix * iy) / vpArea : 0;
+
+      const qualifies = cov >= 0.6 || (isDialogRole && cov >= 0.12);
+      if (!qualifies) continue;
+
+      const hasInputs = !!d.querySelector('input, textarea, select, button, a');
+      const kind: 'modal' | 'mask' =
+        isDialogRole || hasInputs ? 'modal' : cov >= 0.85 ? 'mask' : 'modal';
+
+      const tag = d.tagName.toLowerCase();
+      const id = d.id ? `#${d.id}` : '';
+      const name =
+        d.getAttribute('aria-label') ||
+        d.querySelector('h1, h2, h3, [role="heading"]')?.textContent?.trim()?.slice(0, 40);
+      const desc = name
+        ? `${tag}${id} "${name}"`
+        : `${tag}${id || (kind === 'mask' ? '.mask' : '.modal')}`;
+
+      const textSnippet = `${desc} ${name || ''} ${d.textContent?.slice(0, 300) || ''}`;
+      const isDiscardOrConfirm =
+        /(discard|abandon|unsaved|confirm|放弃|取消|未保存|确认放弃|是否放弃|离开)/i.test(textSnippet);
+
+      // Stacking score: Top-Layer > confirmation trap > alertdialog > aria-modal > z-index > DOM order
+      let score = 0;
+      const isNativeDialog = tag === 'dialog' && (d as HTMLDialogElement).open;
+      const isPopoverOpen =
+        Boolean((d as any).matches?.(':popover-open')) ||
+        (d.hasAttribute('popover') && style.display !== 'none');
+      if (isNativeDialog || isPopoverOpen) {
+        score += 1_000_000;
+      }
+      if (isDiscardOrConfirm) {
+        score += 500_000;
+      } else if (d.getAttribute('role') === 'alertdialog') {
+        score += 200_000;
+      } else if (d.getAttribute('aria-modal') === 'true') {
+        score += 100_000;
+      }
+
+      let z = 0;
+      if (style.zIndex && style.zIndex !== 'auto') {
+        const parsedZ = parseInt(style.zIndex, 10);
+        if (!isNaN(parsedZ)) z = parsedZ;
+      }
+      score += Math.max(0, Math.min(z, 99_999)) * 10;
+      score += i;
+
+      if (!topBlocker || score > topBlocker.stackingScore) {
+        topBlocker = {
+          el: d,
+          coverage: cov,
+          stackingScore: score,
+          kind,
+          name: isDiscardOrConfirm ? `${desc} [CONFIRMATION_TRAP]` : desc,
+          isTrap: isDiscardOrConfirm,
+        };
+      }
+    }
+
+    return topBlocker;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * DOM In-Page Indexer & Pruner
  * Evaluated inside the active tab context.
@@ -868,7 +991,9 @@ export function inPageDOMPruner(options?: {
   format?: 'compact' | 'html';
   viewportOnly?: boolean;
   selector?: string;
+  scope?: string;
   exclude?: string | string[];
+  isolateModal?: boolean;
 }): PrunedDOMTreeResult {
   const isViewportOnly = options?.viewportOnly === true;
   const threshold = isViewportOnly ? 150 : (options?.viewportThreshold ?? 1000);
@@ -1705,11 +1830,14 @@ export function inPageDOMPruner(options?: {
 
   let roots: Element[] = [];
   let selectorMatched = false;
-  if (options?.selector) {
+  let modalIsolated = false;
+
+  const targetSelector = options?.scope || options?.selector;
+  if (targetSelector) {
     try {
-      const allRoots = options.selector.includes(':has-text(')
-        ? queryWithHasText(document, options.selector, false)
-        : Array.from(document.querySelectorAll(options.selector));
+      const allRoots = targetSelector.includes(':has-text(')
+        ? queryWithHasText(document, targetSelector, false)
+        : Array.from(document.querySelectorAll(targetSelector));
       selectorMatched = allRoots.length > 0;
       // Filter out nested roots so child elements are not traversed or indexed twice
       roots = allRoots.filter(
@@ -1718,6 +1846,75 @@ export function inPageDOMPruner(options?: {
     } catch {
       roots = [];
       selectorMatched = false;
+    }
+  } else if (options?.isolateModal) {
+    // Phase 2: Safe Modal Isolation & Portal/Toast Protection
+    const activeBlocker = detectActiveModalBlocker(window);
+    if (activeBlocker && activeBlocker.el) {
+      modalIsolated = true;
+      const modalRoots: Element[] = [activeBlocker.el];
+      const WHITELIST_SELECTORS = [
+        'dialog[open]',
+        '[popover]:not([popover="manual"])',
+        ':popover-open',
+        '[data-radix-popper-content-wrapper]',
+        '[data-radix-portal]',
+        '[data-floating-ui-portal]',
+        '[data-headlessui-portal]',
+        '.ant-select-dropdown',
+        '.ant-picker-dropdown',
+        '.ant-dropdown',
+        '.ant-tooltip',
+        '.ant-popover',
+        '.ant-message',
+        '.ant-notification',
+        '.MuiMenu-root',
+        '.MuiPopover-root',
+        '.MuiModal-root',
+        '.MuiAutocomplete-popper',
+        '.MuiSnackbar-root',
+        '[role="menu"]',
+        '[role="listbox"]',
+        '[role="combobox"]',
+        '[role="tooltip"]',
+        '#toast-root',
+        '#notification-root',
+        '#portal-root',
+        '.Toastify',
+        '.toaster',
+        '[data-sonner-toaster]',
+        '[role="alert"]',
+        '[role="status"]',
+        '.modal-backdrop',
+        '.ant-modal-mask',
+        '.MuiBackdrop-root',
+      ];
+
+      for (const sel of WHITELIST_SELECTORS) {
+        try {
+          const items = Array.from(document.querySelectorAll(sel));
+          for (const item of items) {
+            if (item instanceof HTMLElement) {
+              const s = window.getComputedStyle(item);
+              if (
+                s.display !== 'none' &&
+                s.visibility !== 'hidden' &&
+                (s.opacity === '' || parseFloat(s.opacity) > 0)
+              ) {
+                modalRoots.push(item);
+              }
+            }
+          }
+        } catch {}
+      }
+
+      roots = modalRoots.filter(
+        (r) => !modalRoots.some((other) => other !== r && other.contains(r)),
+      );
+      selectorMatched = true;
+    } else if (document.body) {
+      roots = [document.body];
+      selectorMatched = true;
     }
   } else if (document.body) {
     roots = [document.body];
@@ -2042,79 +2239,7 @@ export function inPageDOMPruner(options?: {
   let blockingLayerKind: 'modal' | 'mask' | undefined = undefined;
 
   try {
-    const vpWidth = window.innerWidth || document.documentElement?.clientWidth || 1280;
-    const vpHeight = window.innerHeight || document.documentElement?.clientHeight || 800;
-    const vpArea = vpWidth * vpHeight;
-
-    const positionedCandidates = Array.from(
-      document.querySelectorAll(
-        'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"], div, section, aside',
-      ),
-    ) as HTMLElement[];
-
-    let topBlocker: {
-      el: HTMLElement;
-      coverage: number;
-      kind: 'modal' | 'mask';
-      name?: string;
-      isTrap?: boolean;
-    } | null = null;
-
-    for (const d of positionedCandidates) {
-      if (!d || d.getAttribute('aria-hidden') === 'true') continue;
-      const style = window.getComputedStyle(d);
-      if (
-        style.display === 'none' ||
-        style.visibility === 'hidden' ||
-        style.pointerEvents === 'none'
-      )
-        continue;
-      const pos = style.position;
-      const isPositioned = pos === 'fixed' || pos === 'absolute' || pos === 'sticky';
-      const isDialogRole =
-        d.tagName.toLowerCase() === 'dialog' ||
-        d.getAttribute('role') === 'dialog' ||
-        d.getAttribute('role') === 'alertdialog' ||
-        d.getAttribute('aria-modal') === 'true';
-
-      if (!isPositioned && !isDialogRole) continue;
-
-      const rect = d.getBoundingClientRect();
-      const ix = Math.max(0, Math.min(rect.right, vpWidth) - Math.max(rect.left, 0));
-      const iy = Math.max(0, Math.min(rect.bottom, vpHeight) - Math.max(rect.top, 0));
-      const cov = vpArea > 0 ? (ix * iy) / vpArea : 0;
-
-      const qualifies = cov >= 0.6 || (isDialogRole && cov >= 0.12);
-      if (!qualifies) continue;
-
-      const hasInputs = !!d.querySelector('input, textarea, select, button, a');
-      const kind: 'modal' | 'mask' =
-        isDialogRole || hasInputs ? 'modal' : cov >= 0.85 ? 'mask' : 'modal';
-
-      const tag = d.tagName.toLowerCase();
-      const id = d.id ? `#${d.id}` : '';
-      const name =
-        d.getAttribute('aria-label') ||
-        d.querySelector('h1, h2, h3, [role="heading"]')?.textContent?.trim()?.slice(0, 40);
-      const desc = name
-        ? `${tag}${id} "${name}"`
-        : `${tag}${id || (kind === 'mask' ? '.mask' : '.modal')}`;
-
-      const textSnippet = `${desc} ${name || ''} ${d.textContent?.slice(0, 300) || ''}`;
-      const isDiscardOrConfirm =
-        /(discard|abandon|unsaved|confirm|放弃|取消|未保存|确认放弃|是否放弃|离开)/i.test(textSnippet);
-
-      if (!topBlocker || cov > topBlocker.coverage) {
-        topBlocker = {
-          el: d,
-          coverage: cov,
-          kind,
-          name: isDiscardOrConfirm ? `${desc} [CONFIRMATION_TRAP]` : desc,
-          isTrap: isDiscardOrConfirm,
-        };
-      }
-    }
-
+    const topBlocker = detectActiveModalBlocker(window);
     if (topBlocker) {
       focusTrapped = true;
       blockingLayerKind = topBlocker.kind;
@@ -2205,13 +2330,17 @@ export function inPageDOMPruner(options?: {
     activeModal,
     focusTrapped: focusTrapped || undefined,
     isConfirmationTrap: isConfirmationTrap || undefined,
-    selectorMatched: options?.selector !== undefined ? selectorMatched : undefined,
+    selectorMatched:
+      options?.selector !== undefined || options?.scope !== undefined
+        ? selectorMatched
+        : undefined,
+    modalIsolated: modalIsolated || undefined,
   };
 }
 
 export function actionPointForElement(
   target: Element,
-  view: Window,
+  view: Window = window,
 ): { x: number; y: number } | null {
   const rects = Array.from(target.getClientRects?.() || []).filter(
     (rect) => rect.width > 0 && rect.height > 0,
@@ -2222,21 +2351,23 @@ export function actionPointForElement(
     rects.push(rect);
   }
 
+  const vw = typeof view?.innerWidth === 'number' && view.innerWidth > 0 ? view.innerWidth : 1280;
+  const vh = typeof view?.innerHeight === 'number' && view.innerHeight > 0 ? view.innerHeight : 800;
   const margins = getStickyOcclusionMargins(view);
   const safeTop = margins.top > 0 ? margins.top : 0;
-  const safeBottom = margins.bottom > 0 ? view.innerHeight - margins.bottom : view.innerHeight;
+  const safeBottom = margins.bottom > 0 ? vh - margins.bottom : vh;
 
   let best = null;
   for (const rect of rects) {
     const left = Math.max(0, rect.left);
     const top = Math.max(safeTop, rect.top);
-    const right = Math.min(view.innerWidth, rect.right);
+    const right = Math.min(vw, rect.right);
     const bottom = Math.min(safeBottom, rect.bottom);
     const visibleArea = Math.max(0, right - left) * Math.max(0, bottom - top);
 
     const centerX = (rect.left + rect.right) / 2;
     const centerY = (rect.top + rect.bottom) / 2;
-    const distanceX = centerX - Math.max(0, Math.min(view.innerWidth, centerX));
+    const distanceX = centerX - Math.max(0, Math.min(vw, centerX));
     const distanceY = centerY - Math.max(safeTop, Math.min(safeBottom, centerY));
     const viewportDistance = distanceX * distanceX + distanceY * distanceY;
 
@@ -2274,56 +2405,59 @@ export function scrollRequestForPoint(
   x: number,
   y: number,
 ): { x: number; y: number; deltaX: number; deltaY: number } | null {
-  const view = target.ownerDocument?.defaultView;
-  if (!view) return null;
+  const view = target.ownerDocument?.defaultView || window;
+  const vw = typeof view?.innerWidth === 'number' && view.innerWidth > 0 ? view.innerWidth : 1280;
+  const vh = typeof view?.innerHeight === 'number' && view.innerHeight > 0 ? view.innerHeight : 800;
 
   let ancestor = composedParent(target);
   while (ancestor) {
     if (
-      ancestor !== target.ownerDocument.body &&
-      ancestor !== target.ownerDocument.documentElement
+      ancestor !== target.ownerDocument?.body &&
+      ancestor !== target.ownerDocument?.documentElement
     ) {
-      const style = view.getComputedStyle(ancestor);
-      const canScrollX =
-        /^(auto|scroll|overlay)$/.test(style.overflowX) &&
-        ancestor.scrollWidth > ancestor.clientWidth + 1;
-      const canScrollY =
-        /^(auto|scroll|overlay)$/.test(style.overflowY) &&
-        ancestor.scrollHeight > ancestor.clientHeight + 1;
+      const style = typeof view.getComputedStyle === 'function' ? view.getComputedStyle(ancestor) : null;
+      if (style) {
+        const canScrollX =
+          /^(auto|scroll|overlay)$/.test(style.overflowX) &&
+          ancestor.scrollWidth > ancestor.clientWidth + 1;
+        const canScrollY =
+          /^(auto|scroll|overlay)$/.test(style.overflowY) &&
+          ancestor.scrollHeight > ancestor.clientHeight + 1;
 
-      if (canScrollX || canScrollY) {
-        const rect = ancestor.getBoundingClientRect();
-        const area = {
-          left: Math.max(0, rect.left),
-          top: Math.max(0, rect.top),
-          right: Math.min(view.innerWidth, rect.right),
-          bottom: Math.min(view.innerHeight, rect.bottom),
-        };
+        if (canScrollX || canScrollY) {
+          const rect = ancestor.getBoundingClientRect();
+          const area = {
+            left: Math.max(0, rect.left),
+            top: Math.max(0, rect.top),
+            right: Math.min(vw, rect.right),
+            bottom: Math.min(vh, rect.bottom),
+          };
 
-        if (area.right > area.left && area.bottom > area.top) {
-          let deltaX =
-            canScrollX && (x < area.left || x >= area.right) ? x - (area.left + area.right) / 2 : 0;
-          let deltaY =
-            canScrollY && (y < area.top || y >= area.bottom) ? y - (area.top + area.bottom) / 2 : 0;
+          if (area.right > area.left && area.bottom > area.top) {
+            let deltaX =
+              canScrollX && (x < area.left || x >= area.right) ? x - (area.left + area.right) / 2 : 0;
+            let deltaY =
+              canScrollY && (y < area.top || y >= area.bottom) ? y - (area.top + area.bottom) / 2 : 0;
 
-          if (
-            (deltaX < 0 && ancestor.scrollLeft <= 0) ||
-            (deltaX > 0 && ancestor.scrollLeft >= ancestor.scrollWidth - ancestor.clientWidth - 1)
-          )
-            deltaX = 0;
-          if (
-            (deltaY < 0 && ancestor.scrollTop <= 0) ||
-            (deltaY > 0 && ancestor.scrollTop >= ancestor.scrollHeight - ancestor.clientHeight - 1)
-          )
-            deltaY = 0;
+            if (
+              (deltaX < 0 && ancestor.scrollLeft <= 0) ||
+              (deltaX > 0 && ancestor.scrollLeft >= ancestor.scrollWidth - ancestor.clientWidth - 1)
+            )
+              deltaX = 0;
+            if (
+              (deltaY < 0 && ancestor.scrollTop <= 0) ||
+              (deltaY > 0 && ancestor.scrollTop >= ancestor.scrollHeight - ancestor.clientHeight - 1)
+            )
+              deltaY = 0;
 
-          if (deltaX || deltaY) {
-            return {
-              x: (area.left + area.right) / 2,
-              y: (area.top + area.bottom) / 2,
-              deltaX,
-              deltaY,
-            };
+            if (deltaX || deltaY) {
+              return {
+                x: (area.left + area.right) / 2,
+                y: (area.top + area.bottom) / 2,
+                deltaX,
+                deltaY,
+              };
+            }
           }
         }
       }
@@ -2331,13 +2465,13 @@ export function scrollRequestForPoint(
     ancestor = composedParent(ancestor);
   }
 
-  if (x >= 0 && y >= 0 && x < view.innerWidth && y < view.innerHeight) return null;
+  if (x >= 0 && y >= 0 && x < vw && y < vh) return null;
 
   return {
-    x: Math.max(0, Math.min(view.innerWidth - 1, x)),
-    y: Math.max(0, Math.min(view.innerHeight - 1, y)),
-    deltaX: x - view.innerWidth / 2,
-    deltaY: y - view.innerHeight / 2,
+    x: Math.max(0, Math.min(vw - 1, x)),
+    y: Math.max(0, Math.min(vh - 1, y)),
+    deltaX: x - vw / 2,
+    deltaY: y - vh / 2,
   };
 }
 
@@ -2357,6 +2491,12 @@ export function extractElementLocationDetails(el: Element): {
   isComposer?: boolean;
   isEditor?: boolean;
   isSearch?: boolean;
+  disabled?: boolean;
+  ariaDisabled?: boolean;
+  validity?: { valid: boolean };
+  invalidReason?: string;
+  checked?: boolean;
+  selected?: boolean;
 } {
   const win = el.ownerDocument?.defaultView || window;
   const initialRect = el.getBoundingClientRect();
@@ -2504,6 +2644,46 @@ export function extractElementLocationDetails(el: Element): {
 
   const semantics = detectEditorSemantics(el);
 
+  const disabled = Boolean(
+    (el as any).disabled === true ||
+      (typeof (el as any).hasAttribute === 'function' && el.hasAttribute('disabled')),
+  );
+  const ariaDisabled =
+    typeof (el as any).getAttribute === 'function' && el.getAttribute('aria-disabled') === 'true';
+  const isAriaInvalid =
+    typeof (el as any).getAttribute === 'function' && el.getAttribute('aria-invalid') === 'true';
+  const valObj =
+    typeof (el as any).validity === 'object' && (el as any).validity !== null
+      ? (el as any).validity
+      : undefined;
+  const validity = valObj
+    ? { valid: isAriaInvalid ? false : Boolean(valObj.valid) }
+    : isAriaInvalid
+      ? { valid: false }
+      : undefined;
+  const invalidReason =
+    typeof (el as any).validationMessage === 'string' && (el as any).validationMessage
+      ? (el as any).validationMessage
+      : isAriaInvalid
+        ? 'aria-invalid'
+        : undefined;
+  const checked =
+    typeof (el as any).checked === 'boolean'
+      ? (el as any).checked
+      : typeof (el as any).getAttribute === 'function' && el.getAttribute('aria-checked') === 'true'
+        ? true
+        : typeof (el as any).getAttribute === 'function' && el.getAttribute('aria-checked') === 'false'
+          ? false
+          : undefined;
+  const selected =
+    typeof (el as any).selected === 'boolean'
+      ? (el as any).selected
+      : typeof (el as any).getAttribute === 'function' && el.getAttribute('aria-selected') === 'true'
+        ? true
+        : typeof (el as any).getAttribute === 'function' && el.getAttribute('aria-selected') === 'false'
+          ? false
+          : undefined;
+
   return {
     success: true,
     x: Math.round(clickX + frameOffsetX),
@@ -2534,6 +2714,12 @@ export function extractElementLocationDetails(el: Element): {
     isComposer: semantics.isComposer || undefined,
     isEditor: semantics.isEditor || undefined,
     isSearch: semantics.isSearch || undefined,
+    disabled,
+    ariaDisabled,
+    validity,
+    invalidReason,
+    checked,
+    selected,
   };
 }
 
@@ -2548,11 +2734,21 @@ export function inPageGetElementCoordinates(refOrIndex: number | string): {
   width?: number;
   height?: number;
   tagName?: string;
+  inputType?: string;
   text?: string;
   value?: string;
   frameOffsetX?: number;
   frameOffsetY?: number;
   attributes?: Record<string, string>;
+  isComposer?: boolean;
+  isEditor?: boolean;
+  isSearch?: boolean;
+  disabled?: boolean;
+  ariaDisabled?: boolean;
+  validity?: { valid: boolean };
+  invalidReason?: string;
+  checked?: boolean;
+  selected?: boolean;
   error?: string;
 } {
   let index: number;

@@ -1,6 +1,11 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
-import { TOOL_NAMES, type BatchActionItem, type BatchActionResult } from 'chrome-mcp-shared';
+import {
+  TOOL_NAMES,
+  type BatchActionItem,
+  type BatchActionResult,
+  type CaptureNetworkOptions,
+} from 'chrome-mcp-shared';
 import { DIAGNOSTIC_REFRESH_GUIDANCE } from './dom-indexer';
 import { executeInPage } from './in-page-engine';
 import { waitForPageSettle, waitForNetworkQuiescence } from '@/utils/action-watchdog';
@@ -18,6 +23,7 @@ import { tabFaviconManager } from './tab-favicon';
 import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
 import { parseUnifiedCoordinate } from '@/utils/coordinate-parser';
 import { sessionTabAffinity } from '@/utils/session-tab-affinity';
+import { startActionNetworkCapture } from '@/utils/action-network-capture';
 
 export interface BatchActionsParams {
   actions: BatchActionItem[];
@@ -31,6 +37,8 @@ export interface BatchActionsParams {
   includeDelta?: boolean;
   sessionId?: string;
   sessionContext?: string;
+  /** Inline capture of network response triggered during batch execution */
+  captureNetwork?: CaptureNetworkOptions;
 }
 
 const KEY_ALIASES: Record<string, { key: string; code?: string; text?: string }> = {
@@ -191,13 +199,17 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
         isMac = platform?.os === 'mac';
       } catch {}
 
+      const batchNetCapture = startActionNetworkCapture(tabId, args.captureNetwork);
+
       for (let i = 0; i < actions.length; i++) {
         const item = actions[i];
+        const itemNetCapture = startActionNetworkCapture(tabId, item.captureNetwork);
 
         // Runtime URL drift guard: verify URL has not navigated to a different origin
         const currentTab = await chrome.tabs.get(tabId).catch(() => null);
         if (!currentTab) {
           interruptedReason = `Tab was closed during batch execution`;
+          batchNetCapture.dispose();
           break;
         }
         if (currentTab.url !== initialUrl) {
@@ -212,6 +224,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
           if (!sameOrigin) {
             interruptedReason = `Page URL changed or tab navigated to different origin during batch execution (from "${initialUrl}" to "${currentTab.url}")`;
+            batchNetCapture.dispose();
             break;
           } else {
             // SPA path/hash navigation within the same origin: do not abort
@@ -289,14 +302,14 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                         description: interceptRes.description,
                         reason: interceptRes.pierceReason || 'transient_mask',
                       };
-                    } else if (item.pierceOverlay === false) {
+                    } else {
                       throw new Error(
-                        `Action ${i} click intercepted by ${interceptRes.description}`,
+                        `Action ${i} click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first.`,
                       );
                     }
                   }
                 } catch (e: any) {
-                  if (item.pierceOverlay === false && e.message?.includes('intercepted')) throw e;
+                  if (e.message?.includes('intercepted')) throw e;
                 }
               }
 
@@ -1208,8 +1221,21 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
             }
 
             case 'assert': {
+              const condition = item.condition || 'contains';
+              const expected = item.expectedText ?? '';
+              const timeoutMs = typeof item.timeoutMs === 'number' ? item.timeoutMs : 300;
+              const deadline = Date.now() + Math.max(0, timeoutMs);
+
               let actualText = '';
               let isVisible = false;
+              let disabled = false;
+              let ariaDisabled = false;
+              let validity: { valid: boolean } | undefined = undefined;
+              let invalidReason: string | undefined = undefined;
+              let checked: boolean | undefined = undefined;
+              let selected: boolean | undefined = undefined;
+              let passed = false;
+
               const targetRef = item.ref ?? item.index;
               const targetIndex =
                 typeof targetRef === 'number'
@@ -1218,79 +1244,170 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     ? parseInt(targetRef, 10)
                     : undefined;
 
-              if (typeof targetIndex === 'number' && targetIndex > 0) {
-                const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [
-                  targetIndex,
-                ]);
-                let coords = res?.[0]?.result;
-                if (!coords?.success) {
-                  const frameResults = await executeInPage(
-                    { tabId, allFrames: true },
-                    'inPageGetElementCoordinates',
-                    [targetIndex],
-                  );
-                  const match = frameResults.find((r) => r.result?.success);
-                  if (match?.result) coords = match.result;
-                }
-                if (coords?.success) {
-                  isVisible = true;
-                  actualText = String(coords.text ?? coords.value ?? '');
-                }
-              } else if (item.selector) {
-                const selFunc = (sel: string) => {
-                  const el = document.querySelector(sel);
-                  if (!el) return { found: false };
-                  const rect = el.getBoundingClientRect();
-                  const visible =
-                    rect.width > 0 &&
-                    rect.height > 0 &&
-                    window.getComputedStyle(el).visibility !== 'hidden';
-                  return {
-                    found: true,
-                    visible,
-                    text: (el as HTMLElement).innerText ?? el.textContent ?? '',
-                    value: (el as HTMLInputElement).value ?? '',
+              while (true) {
+                if (typeof targetIndex === 'number' && targetIndex > 0) {
+                  const res = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [
+                    targetIndex,
+                  ]);
+                  let coords = res?.[0]?.result;
+                  if (!coords?.success) {
+                    const frameResults = await executeInPage(
+                      { tabId, allFrames: true },
+                      'inPageGetElementCoordinates',
+                      [targetIndex],
+                    );
+                    const match = frameResults.find((r) => r.result?.success);
+                    if (match?.result) coords = match.result;
+                  }
+                  if (coords?.success) {
+                    isVisible = true;
+                    actualText = String(coords.text ?? coords.value ?? '');
+                    disabled = Boolean(coords.disabled);
+                    ariaDisabled = Boolean(coords.ariaDisabled);
+                    validity = coords.validity;
+                    invalidReason = coords.invalidReason;
+                    checked = coords.checked;
+                    selected = coords.selected;
+                  } else {
+                    isVisible = false;
+                    actualText = '';
+                    disabled = false;
+                    ariaDisabled = false;
+                    validity = undefined;
+                    invalidReason = undefined;
+                    checked = undefined;
+                    selected = undefined;
+                  }
+                } else if (item.selector) {
+                  const selFunc = (sel: string) => {
+                    const el = document.querySelector(sel);
+                    if (!el) return { found: false };
+                    const rect = el.getBoundingClientRect();
+                    const visible =
+                      rect.width > 0 &&
+                      rect.height > 0 &&
+                      window.getComputedStyle(el).visibility !== 'hidden' &&
+                      window.getComputedStyle(el).display !== 'none';
+                    const isAriaInvalid = el.getAttribute('aria-invalid') === 'true';
+                    const valObj = (el as any).validity;
+                    const validity = valObj
+                      ? { valid: isAriaInvalid ? false : Boolean(valObj.valid) }
+                      : isAriaInvalid
+                        ? { valid: false }
+                        : undefined;
+                    const invalidReason =
+                      (el as any).validationMessage || (isAriaInvalid ? 'aria-invalid' : undefined);
+                    return {
+                      found: true,
+                      visible,
+                      text: (el as HTMLElement).innerText ?? el.textContent ?? '',
+                      value: (el as HTMLInputElement).value ?? '',
+                      disabled: Boolean((el as any).disabled || el.hasAttribute('disabled')),
+                      ariaDisabled: el.getAttribute('aria-disabled') === 'true',
+                      validity,
+                      invalidReason,
+                      checked:
+                        typeof (el as any).checked === 'boolean'
+                          ? (el as any).checked
+                          : el.getAttribute('aria-checked') === 'true'
+                            ? true
+                            : el.getAttribute('aria-checked') === 'false'
+                              ? false
+                              : undefined,
+                      selected:
+                        typeof (el as any).selected === 'boolean'
+                          ? (el as any).selected
+                          : el.getAttribute('aria-selected') === 'true'
+                            ? true
+                            : el.getAttribute('aria-selected') === 'false'
+                              ? false
+                              : undefined,
+                    };
                   };
-                };
-                const selRes = await this.safeExecuteScript(tabId, {
-                  target: { tabId },
-                  func: selFunc,
-                  args: [item.selector],
-                });
-                let data = selRes?.[0]?.result as any;
-                if (!data?.found) {
-                  const frameResults = await this.safeExecuteScript(tabId, {
-                    target: { tabId, allFrames: true },
+                  const selRes = await this.safeExecuteScript(tabId, {
+                    target: { tabId },
                     func: selFunc,
                     args: [item.selector],
                   });
-                  const match = frameResults.find((r: any) => r.result?.found);
-                  if (match?.result) data = match.result;
+                  let data = selRes?.[0]?.result as any;
+                  if (!data?.found) {
+                    const frameResults = await this.safeExecuteScript(tabId, {
+                      target: { tabId, allFrames: true },
+                      func: selFunc,
+                      args: [item.selector],
+                    });
+                    const match = frameResults.find((r: any) => r.result?.found);
+                    if (match?.result) data = match.result;
+                  }
+                  if (data?.found) {
+                    isVisible = Boolean(data.visible);
+                    actualText = String(data.text || data.value || '');
+                    disabled = Boolean(data.disabled);
+                    ariaDisabled = Boolean(data.ariaDisabled);
+                    validity = data.validity;
+                    invalidReason = data.invalidReason;
+                    checked = data.checked;
+                    selected = data.selected;
+                  } else {
+                    isVisible = false;
+                    actualText = '';
+                    disabled = false;
+                    ariaDisabled = false;
+                    validity = undefined;
+                    invalidReason = undefined;
+                    checked = undefined;
+                    selected = undefined;
+                  }
                 }
-                if (data?.found) {
-                  isVisible = Boolean(data.visible);
-                  actualText = String(data.text || data.value || '');
+
+                switch (condition) {
+                  case 'visible':
+                    passed = isVisible;
+                    break;
+                  case 'not_visible':
+                    passed = !isVisible;
+                    break;
+                  case 'enabled':
+                    passed = isVisible && !disabled && !ariaDisabled;
+                    break;
+                  case 'disabled':
+                    passed = disabled || ariaDisabled;
+                    break;
+                  case 'valid':
+                    passed = validity ? validity.valid : !invalidReason;
+                    break;
+                  case 'invalid':
+                    passed = validity ? !validity.valid : Boolean(invalidReason);
+                    break;
+                  case 'checked':
+                    passed = checked !== undefined ? Boolean(checked) : Boolean(selected);
+                    break;
+                  case 'unchecked':
+                    passed = checked !== undefined ? !checked : !selected;
+                    break;
+                  case 'matches':
+                    try {
+                      passed = new RegExp(expected).test(actualText);
+                    } catch {
+                      passed = false;
+                    }
+                    break;
+                  case 'equals':
+                    passed = actualText.trim() === expected.trim();
+                    break;
+                  case 'not_contains':
+                    passed = !actualText.includes(expected);
+                    break;
+                  case 'contains':
+                  default:
+                    passed = actualText.includes(expected);
+                    break;
                 }
-              }
 
-              const condition = item.condition || 'contains';
-              const expected = item.expectedText ?? '';
-              let passed = false;
-
-              switch (condition) {
-                case 'visible':
-                  passed = isVisible;
-                  break;
-                case 'not_visible':
-                  passed = !isVisible;
-                  break;
-                case 'equals':
-                  passed = actualText.trim() === expected.trim();
-                  break;
-                case 'contains':
-                default:
-                  passed = actualText.includes(expected);
-                  break;
+                if (passed || Date.now() >= deadline) break;
+                const remaining = deadline - Date.now();
+                if (remaining <= 0) break;
+                await new Promise((r) => setTimeout(r, Math.min(50, remaining)));
               }
 
               assertions.push({
@@ -1299,7 +1416,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 condition,
                 error: passed
                   ? undefined
-                  : `Assertion failed: expected "${expected}" with condition "${condition}", got "${actualText}" (visible=${isVisible})`,
+                  : `Assertion failed: expected "${expected}" with condition "${condition}", got "${actualText}" (visible=${isVisible}, disabled=${disabled || ariaDisabled}, valid=${validity ? validity.valid : !invalidReason}, checked=${checked})`,
               });
 
               if (!passed && item.abortOnFailure !== false) {
@@ -1308,7 +1425,19 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 );
               }
 
-              stepOutput = { asserted: true, passed, condition, actualText, isVisible };
+              stepOutput = {
+                asserted: true,
+                passed,
+                condition,
+                actualText,
+                isVisible,
+                disabled,
+                ariaDisabled,
+                valid: validity ? validity.valid : !invalidReason,
+                invalidReason,
+                checked,
+                selected,
+              };
               break;
             }
 
@@ -1409,12 +1538,22 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
             }
           }
 
+          const itemNetResult = await itemNetCapture.waitForResult();
+          if (itemNetResult) {
+            stepOutput = {
+              ...(typeof stepOutput === 'object' && stepOutput !== null ? stepOutput : {}),
+              networkResult: itemNetResult,
+            };
+          }
+
           actionResults.push({
             actionIndex: i,
             success: true,
             output: stepOutput,
           });
         } catch (stepErr) {
+          itemNetCapture.dispose();
+          batchNetCapture.dispose();
           if (stepErr instanceof DialogOpenedError) {
             return createDialogInterruptResponse(stepErr);
           }
@@ -1447,6 +1586,11 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
       } catch {}
       const urlChanged = Boolean(initialUrl && currentUrl && initialUrl !== currentUrl);
 
+      if (interruptedReason) {
+        batchNetCapture.dispose();
+      }
+      const batchNetResult = await batchNetCapture.waitForResult();
+
       const totalCompleted = actionResults.filter((r) => r.success).length;
       const batchResult: BatchActionResult & { spaDriftNotice?: string; networkSettled?: boolean } = {
         success: totalCompleted === actions.length,
@@ -1459,6 +1603,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
         interruptedReason,
         settle: batchSettle,
         spaDriftNotice,
+        ...(batchNetResult ? { networkResult: batchNetResult } : {}),
         ...(typeof networkSettled === 'boolean' ? { networkSettled } : {}),
         ...(Object.keys(extractedData).length > 0 ? { extractedData } : {}),
         ...(assertions.length > 0 ? { assertions } : {}),

@@ -182,16 +182,14 @@ function looksLikeQueryString(text: string): boolean {
   return pairs >= 2;
 }
 
-function sanitizeValue(
+export function sanitizeValue(
   value: unknown,
-  limits: {
-    maxDepth: number;
-    maxArrayLength: number;
-    maxObjectKeys: number;
-    maxStringLength: number;
-  },
+  limits: OutputSanitizerOptions = {},
 ): { value: unknown; redacted: boolean } {
-  const { maxDepth, maxArrayLength, maxObjectKeys, maxStringLength } = limits;
+  const maxDepth = normalizePositiveInt(limits.maxDepth, DEFAULT_MAX_DEPTH);
+  const maxArrayLength = normalizePositiveInt(limits.maxArrayLength, DEFAULT_MAX_ARRAY_LENGTH);
+  const maxObjectKeys = normalizePositiveInt(limits.maxObjectKeys, DEFAULT_MAX_OBJECT_KEYS);
+  const maxStringLength = normalizePositiveInt(limits.maxStringLength, DEFAULT_MAX_STRING_LENGTH);
   const seen = new WeakMap<object, unknown>();
   let redacted = false;
 

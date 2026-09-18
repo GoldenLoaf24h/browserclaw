@@ -133,57 +133,129 @@ export class InterceptApiTool extends BaseBrowserToolExecutor {
     let listener:
       ((source: chrome.debugger.Debuggee, method: string, params?: any) => void) | null = null;
     let timeoutTimer: any = null;
+    const fallbackTimers = new Map<string, any>();
 
     try {
       await cdpSessionManager.sendCommand(tabId, 'Network.enable');
       const capturePromise = new Promise<CapturedApiResponse>((resolve) => {
+        const pendingResponses = new Map<string, { url: string; status: number; mimeType: string }>();
+        let resolved = false;
+
+        const processBody = async (
+          requestId: string,
+          meta: { url: string; status: number; mimeType: string },
+          fromFallback = false,
+        ) => {
+          if (resolved) return;
+          try {
+            const bodyObj: any = await cdpSessionManager.sendCommand(
+              tabId,
+              'Network.getResponseBody',
+              { requestId },
+            );
+            resolved = true;
+            fallbackTimers.forEach((t) => clearTimeout(t));
+            fallbackTimers.clear();
+            if (listener) {
+              chrome.debugger.onEvent.removeListener(listener);
+              listener = null;
+            }
+            let decoded = bodyObj?.body || '';
+            if (bodyObj?.base64Encoded) {
+              try {
+                decoded = decodeBase64Utf8(decoded);
+              } catch {}
+            }
+            let parsed: any = decoded;
+            try {
+              parsed = JSON.parse(decoded);
+            } catch {}
+
+            const item: CapturedApiResponse = {
+              requestId,
+              url: meta.url,
+              status: meta.status,
+              mimeType: meta.mimeType,
+              timestamp: Date.now(),
+              data: parsed,
+            };
+            apiInterceptorStore.addResponse(tabId, item);
+            resolve(item);
+          } catch (e: any) {
+            if (!fromFallback) {
+              resolved = true;
+              fallbackTimers.forEach((t) => clearTimeout(t));
+              fallbackTimers.clear();
+              resolve({
+                requestId,
+                url: meta.url,
+                status: meta.status,
+                mimeType: 'unknown',
+                timestamp: Date.now(),
+                data: { error: e.message },
+              });
+            }
+          }
+        };
+
         listener = async (source: chrome.debugger.Debuggee, method: string, params?: any) => {
-          if (source.tabId !== tabId) return;
-          if (method === 'Network.responseReceived' && params?.response) {
+          if (source.tabId !== tabId || resolved) return;
+
+          if (method === 'Network.responseReceived' && params?.response && params?.requestId) {
             const respUrl = params.response.url || '';
             if (apiInterceptorStore.matchesPattern(respUrl, pattern)) {
-              if (listener) {
-                chrome.debugger.onEvent.removeListener(listener);
-                listener = null;
-              }
-              try {
-                const bodyObj: any = await cdpSessionManager.sendCommand(
-                  tabId,
-                  'Network.getResponseBody',
-                  { requestId: params.requestId },
-                );
-                let decoded = bodyObj?.body || '';
-                if (bodyObj?.base64Encoded) {
-                  try {
-                    decoded = decodeBase64Utf8(decoded);
-                  } catch {}
-                }
-                let parsed: any = decoded;
-                try {
-                  parsed = JSON.parse(decoded);
-                } catch {}
+              const meta = {
+                url: respUrl,
+                status: params.response.status,
+                mimeType: params.response.mimeType || 'application/json',
+              };
+              pendingResponses.set(params.requestId, meta);
 
-                const item: CapturedApiResponse = {
-                  requestId: params.requestId,
-                  url: respUrl,
-                  status: params.response.status,
-                  mimeType: params.response.mimeType || 'application/json',
-                  timestamp: Date.now(),
-                  data: parsed,
-                };
-                apiInterceptorStore.addResponse(tabId, item);
-                resolve(item);
-              } catch (e: any) {
-                resolve({
-                  requestId: params.requestId,
-                  url: respUrl,
-                  status: params.response.status,
-                  mimeType: 'unknown',
-                  timestamp: Date.now(),
-                  data: { error: e.message },
-                });
-              }
+              const t = setTimeout(() => {
+                if (!resolved && pendingResponses.has(params.requestId)) {
+                  processBody(params.requestId, meta, true);
+                }
+              }, 80);
+              fallbackTimers.set(params.requestId, t);
             }
+            return;
+          }
+
+          if (method === 'Network.loadingFinished' && params?.requestId) {
+            const meta = pendingResponses.get(params.requestId);
+            if (!meta) return;
+            const t = fallbackTimers.get(params.requestId);
+            if (t) {
+              clearTimeout(t);
+              fallbackTimers.delete(params.requestId);
+            }
+            await processBody(params.requestId, meta, false);
+            return;
+          }
+
+          if (method === 'Network.loadingFailed' && params?.requestId) {
+            const meta = pendingResponses.get(params.requestId);
+            if (!meta) return;
+            const t = fallbackTimers.get(params.requestId);
+            if (t) {
+              clearTimeout(t);
+              fallbackTimers.delete(params.requestId);
+            }
+            resolved = true;
+            fallbackTimers.forEach((tm) => clearTimeout(tm));
+            fallbackTimers.clear();
+            if (listener) {
+              chrome.debugger.onEvent.removeListener(listener);
+              listener = null;
+            }
+            resolve({
+              requestId: params.requestId,
+              url: meta.url,
+              status: meta.status,
+              mimeType: meta.mimeType || 'unknown',
+              timestamp: Date.now(),
+              data: { error: params.errorText || 'loadingFailed' },
+            });
           }
         };
         chrome.debugger.onEvent.addListener(listener);
@@ -191,6 +263,8 @@ export class InterceptApiTool extends BaseBrowserToolExecutor {
 
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutTimer = setTimeout(() => {
+          fallbackTimers.forEach((t) => clearTimeout(t));
+          fallbackTimers.clear();
           if (
             listener &&
             typeof chrome !== 'undefined' &&
@@ -220,6 +294,8 @@ export class InterceptApiTool extends BaseBrowserToolExecutor {
       clearTimeout(timeoutTimer);
       return createErrorResponse('API intercept failed: ' + e.message);
     } finally {
+      fallbackTimers.forEach((t) => clearTimeout(t));
+      fallbackTimers.clear();
       if (listener && typeof chrome !== 'undefined' && chrome.debugger?.onEvent?.removeListener) {
         try {
           chrome.debugger.onEvent.removeListener(listener);

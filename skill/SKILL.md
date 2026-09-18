@@ -76,7 +76,8 @@ Mouse and keyboard input dispatched through the CDP path (`chrome_interact_index
   [4] <button "Submit" disabled="false">
   ```
 - **Default response is the pruned tree + counters** (compact JSON). The bulky `indexedElements`/`indexMap` detail blocks are omitted to keep the payload small; pass `includeDetails: true` only when you need per-element `rect`, `isOccluded`, or `safeClickPoint`.
-- **Targeted Container Scoping (`selector`) & Exclusion (`exclude`)**: Eliminate dumping whole-page DOM by specifying a container selector (e.g. `selector: "#main-cart"` or `selector: ".dialog-box"`) or pruning noise subtrees (e.g. `exclude: "#footer, #recommendations, .ad-banner"`).
+- **Targeted Container Scoping (`selector` / `scope`) & Exclusion (`exclude`)**: Eliminate dumping whole-page DOM by specifying a container selector (e.g. `scope: "#main-cart"` or `selector: ".dialog-box"`) or pruning noise subtrees (e.g. `exclude: "#footer, #recommendations, .ad-banner"`). `scope` is a convenient direct alias for `selector`.
+- **Safe Modal Isolation (`isolateModal: true`)**: When an active modal dialog is detected, restricts indexing strictly to the active modal while protecting Top-Layer containers, real backdrop nodes, Portal dropdown containers (`.ant-select-dropdown`, `[data-radix-popper-content-wrapper]`, `[popover]`, `.MuiMenu-root`, etc.), and Toast/Alert containers (`#toast-root`, `.ant-message`, etc.). Form dropdowns and error messages inside the modal are never pruned.
 - **Hardened Delta Diffing (`deltaOnly: true`)**: Repeated reads return minimal changed element diffs. Automatic noise gating suppresses countdown timers, clocks, and dynamic ad feeds, while capping changes at 25 items to prevent context explosion on complex modern web pages.
 - **Pagination**: `cursor` + `limit` slice the tree lines, so large pages can be read incrementally without re-shipping the whole tree.
 - **Never guess long CSS selectors or brittle XPath**. Always use the numeric `index` from `chrome_read_dom`.
@@ -142,6 +143,30 @@ When filling multiple fields or executing consecutive actions, **always prefer `
   "waitForSettle": true
 }
 ```
+
+#### Assertions & Reactive Settling
+`chrome_batch_actions` supports state assertions with async debounce settling (`timeoutMs`, default 300ms) to eliminate race conditions with React/Vue reactive form validation:
+- Conditions: `enabled`, `disabled`, `valid`, `invalid`, `checked`, `unchecked`, `matches` (regex), `contains`, `not_contains`, `equals`, `visible`, `not_visible`.
+- Elements with `aria-invalid="true"` are automatically evaluated as `invalid="true"`.
+- Occlusion Halt: If an element is blocked by a modal backdrop or dialog and cannot be pierced, execution immediately halts with the blocker description.
+
+#### Inline Network Capture (`captureNetwork`)
+Both `chrome_interact_index` and `chrome_batch_actions` support capturing HTTP response payloads triggered by interactions in a single roundtrip:
+```json
+{
+  "index": 4,
+  "action": "click",
+  "captureNetwork": {
+    "urlPattern": "*/api/order*",
+    "method": "POST",
+    "statusCodes": [200, 201],
+    "timeoutMs": 5000
+  }
+}
+```
+- Decodes and parses JSON/text response bodies safely using `Network.loadingFinished`.
+- Memory safety: 2MB total buffer cap, 50KB response body slice limit.
+- Telemetry/analytics filtering (`google-analytics`, `sentry`, `doubleclick`) and auto-masking of sensitive credentials (`password`, `token`, `apiKey`).
 
 #### C. Code-Driven Chained Execution (`chrome_javascript` with in-page `mcp.*`)
 
