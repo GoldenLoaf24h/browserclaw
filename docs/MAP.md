@@ -26,7 +26,7 @@ Welcome to the **BrowserClaw** Project Map. Whether you are an end-user, an AI a
   3. Copy your client JSON from **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)** into Cursor, Claude, or Codex.
 - **I am an AI Agent / Prompt Engineer integrating BrowserClaw**:
   1. Study **[skill/SKILL.md](../skill/SKILL.md)**: Encodes dual-engine workflows (DOM-First vs Visual Fallback), the Escalation Ladder, and recovery patterns.
-  2. Consult **[docs/TOOLS.md](./TOOLS.md)**: Auto-generated parameter references for all 45 canonical tools across Core (14), Crawl (12), and Full (45) profiles.
+  2. Consult **[docs/TOOLS.md](./TOOLS.md)**: Auto-generated parameter references for all 46 canonical tools across Core (14), Crawl (12), and Full (46) profiles.
   3. Follow the 6 interaction rules in **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)** (especially `includeDelta: true` and `chrome_grep`).
 - **I want to contribute or audit the architecture**:
   1. Inspect **[docs/ARCHITECTURE.md](./ARCHITECTURE.md)**: Complete system topology, IPC buffer guards, and sequence diagrams.
@@ -42,15 +42,15 @@ mcp-chrome-master/
 ├── packages/
 │   └── shared/                  # 🌟 Single Source of Truth
 │       └── src/
-│           ├── tools.ts         # All 45 canonical tool schemas, tool names
-│           ├── tool-profiles.ts # Profile definitions (Core 14, Crawl 12, Full 45)
+│           ├── tools.ts         # All 46 canonical tool schemas, tool names
+│           ├── tool-profiles.ts # Profile definitions (Core 14, Crawl 12, Full 46)
 │           ├── types.ts         # Universal coordinate, batch item & diff result types
 │           └── error-format.ts  # Standardized error reporting with stack control
 │
 ├── app/
 │   ├── chrome-extension/        # 🧩 Chrome MV3 Extension (WXT + Vue 3)
 │   │   ├── entrypoints/
-│   │   │   ├── background/      # Main Service Worker (45 Canonical Tool Executors)
+│   │   │   ├── background/      # Main Service Worker (46 Canonical Tool Executors)
 │   │   │   │   └── tools/browser/tab-group-manager.ts # Tab grouping & orphan cleanup
 │   │   │   ├── agent-cursor.content.ts # Closed Shadow DOM virtual mouse overlay
 │   │   │   ├── inpage-engine.ts # Isolated-world DOM indexing & pruning engine
@@ -78,7 +78,7 @@ mcp-chrome-master/
 | **[README.md](../README.md)**                         | 英文 |  所有人 / 社区  | 项目主页、痛点背景、1 分钟快速开始、6 大核心功能全览            | 手动维护                      |
 | **[README.zh-CN.md](../README.zh-CN.md)**             | 中文 |   中文开发者    | 详尽中文主页，完整覆盖 Windows 排他锁困境与极速上手指南         | 与主 README 同步              |
 | **[docs/MAP.md](./MAP.md)**                           | 中英 |   所有人 / AI   | **项目地图导览中心**：全工程拓扑、阅读路线、文档矩阵与工具雷达  | 本文档                        |
-| **[docs/TOOLS.md](./TOOLS.md)**                       | 英文 | Agent / 开发者  | 全量 45 个规范工具的完整参数输入/输出字典（按分类展示）         | `npm run docs:tools` 自动生成 |
+| **[docs/TOOLS.md](./TOOLS.md)**                       | 英文 | Agent / 开发者  | 全量 46 个规范工具的完整参数输入/输出字典（按分类展示）         | `npm run docs:tools` 自动生成 |
 | **[docs/ARCHITECTURE.md](./ARCHITECTURE.md)**         | 英文 | 架构师 / 审核者 | 三层架构拓扑、Native Messaging 通信协议、CDP 状态流转时序图     | 架构变更时更新                |
 | **[docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md)**   | 中英 |  运维 / 排障者  | 常见报错代码速查（12306 连不上、401、CDP 超时、域校验失败等）   | 排障沉淀更新                  |
 | **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)** | 中文 | Agent / 开发者  | Claude Desktop、Cursor、Windsurf 客户端配置 JSON 与六大交互准则 | 客户端适配更新                |
@@ -88,13 +88,13 @@ mcp-chrome-master/
 
 ---
 
-## 🛠️ 4. 45 Canonical Tools Capability Radar (45 工具能力全景雷达)
+## 🛠️ 4. 46 Canonical Tools Capability Radar (46 工具能力全景雷达)
 
 BrowserClaw 支持 **Profile 动态分层**，平衡初阶模型的 Token 负担与高阶模型的极致掌控力：
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│                              45 MCP TOOLS                              │
+│                              46 MCP TOOLS                              │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 🟢 CORE (14 Tools) - High-Frequency Semantic & Visual Interaction     │
 │   • Navigate (4): navigate, switch_tab, close_tabs, get_windows_and_tabs
@@ -108,7 +108,7 @@ BrowserClaw 支持 **Profile 动态分层**，平衡初阶模型的 Token 负担
 │   • Navigation & Storage: navigate, smart_scroll, storage...           │
 │   • Network & Low-level: cdp_execute, network_request, screenshot...   │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 🟣 FULL (45 Tools) - Comprehensive Low-Level & Enterprise Control      │
+│ 🟣 FULL (46 Tools) - Comprehensive Low-Level & Enterprise Control      │
 │   • Advanced CDP: cdp_execute (Target polymorphic routing + Anti-Hang) │
 │   • Human-in-the-Loop: request_human_intervention, undo_last_action   │
 │   • Network & Console: network_capture, get_console_logs, storage...   │

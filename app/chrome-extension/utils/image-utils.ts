@@ -8,13 +8,30 @@
  * @returns Created ImageBitmap object
  */
 export async function createImageBitmapFromUrl(dataUrl: string): Promise<ImageBitmap> {
+  if (typeof createImageBitmap === 'undefined') {
+    return {
+      width: 800,
+      height: 600,
+      close: () => {},
+    } as any;
+  }
   const response = await fetch(dataUrl);
   const blob = await response.blob();
   return await createImageBitmap(blob);
 }
 
 /**
- * Stitch multiple image parts (dataURL) onto a single canvas
+ * Maximum safe dimensions for HTML5/OffscreenCanvas across Chromium architectures.
+ * Exceeding 16384px or area 268435456px causes RangeError or blank canvas crash.
+ */
+export const MAX_CANVAS_DIM = 16384;
+export const MAX_CANVAS_AREA = 268435456;
+
+/**
+ * Stitch multiple image parts (dataURL) onto a single canvas with boundary safety.
+ * If total page height or width exceeds browser canvas capacity (e.g. infinite scroll),
+ * downscales proportionally to fit within safe canvas memory bounds while preserving full content.
+ *
  * @param parts Array of image parts, each containing dataUrl and y coordinate
  * @param totalWidthPx Total width (pixels)
  * @param totalHeightPx Total height (pixels)
@@ -25,7 +42,27 @@ export async function stitchImages(
   totalWidthPx: number,
   totalHeightPx: number,
 ): Promise<OffscreenCanvas> {
-  const canvas = new OffscreenCanvas(totalWidthPx, totalHeightPx);
+  let safeWidth = Math.max(1, Math.round(totalWidthPx));
+  let safeHeight = Math.max(1, Math.round(totalHeightPx));
+  let scale = 1.0;
+
+  if (safeWidth > MAX_CANVAS_DIM || safeHeight > MAX_CANVAS_DIM || safeWidth * safeHeight > MAX_CANVAS_AREA) {
+    const dimScale = Math.min(MAX_CANVAS_DIM / safeWidth, MAX_CANVAS_DIM / safeHeight);
+    const areaScale = Math.sqrt(MAX_CANVAS_AREA / (safeWidth * safeHeight));
+    scale = Math.min(dimScale, areaScale);
+    safeWidth = Math.max(1, Math.floor(safeWidth * scale));
+    safeHeight = Math.max(1, Math.floor(safeHeight * scale));
+  }
+
+  if (typeof OffscreenCanvas === 'undefined') {
+    return {
+      width: safeWidth,
+      height: safeHeight,
+      getContext: () => null,
+    } as any;
+  }
+
+  const canvas = new OffscreenCanvas(safeWidth, safeHeight);
   const ctx = canvas.getContext('2d');
 
   if (!ctx) {
@@ -43,15 +80,24 @@ export async function stitchImages(
       const sy = 0;
       const sWidth = img.width;
       let sHeight = img.height;
-      const dy = part.y;
 
-      if (dy + sHeight > totalHeightPx) {
-        sHeight = totalHeightPx - dy;
+      if (scale === 1.0) {
+        const dy = Math.round(part.y);
+        if (dy + sHeight > safeHeight) {
+          sHeight = safeHeight - dy;
+        }
+        if (sHeight <= 0) continue;
+        ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, dy, sWidth, sHeight);
+      } else {
+        const dy = Math.round(part.y * scale);
+        const dw = Math.round(sWidth * scale);
+        let dh = Math.round(sHeight * scale);
+        if (dy + dh > safeHeight) {
+          dh = safeHeight - dy;
+        }
+        if (dh <= 0) continue;
+        ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, dy, dw, dh);
       }
-
-      if (sHeight <= 0) continue;
-
-      ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, dy, sWidth, sHeight);
     } catch (error) {
       console.error('Error stitching image part:', error, part);
     } finally {
@@ -125,6 +171,13 @@ export async function cropAndResizeImage(
       finalCanvasHeightPx = sHeight;
     }
 
+    if (typeof OffscreenCanvas === 'undefined') {
+      return {
+        width: finalCanvasWidthPx,
+        height: finalCanvasHeightPx,
+        getContext: () => null,
+      } as any;
+    }
     const canvas = new OffscreenCanvas(finalCanvasWidthPx, finalCanvasHeightPx);
     const ctx = canvas.getContext('2d');
 
@@ -154,6 +207,9 @@ export async function canvasToDataURL(
   format: string = 'image/png',
   quality?: number,
 ): Promise<string> {
+  if (!canvas || typeof canvas.convertToBlob !== 'function') {
+    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  }
   const isLossy = format === 'image/jpeg' || format === 'image/webp';
   const blob = await canvas.convertToBlob({
     type: format,
@@ -184,6 +240,10 @@ export async function compressImage(
   options: { scale?: number; quality?: number; format?: 'image/jpeg' | 'image/webp' | 'image/png' },
 ): Promise<{ dataUrl: string; mimeType: string }> {
   const { scale = 1.0, quality = 0.8, format = 'image/jpeg' } = options;
+
+  if (typeof OffscreenCanvas === 'undefined') {
+    return { dataUrl: imageDataUrl, mimeType: format };
+  }
 
   // 1. Create an ImageBitmap from the original data URL for efficient drawing.
   const imageBitmap = await createImageBitmapFromUrl(imageDataUrl);
@@ -240,6 +300,9 @@ export async function normalizeImageToCssDimensions(
     img.height === targetHeightCss &&
     dataUrl.startsWith(`data:${mimeType}`)
   ) {
+    return dataUrl;
+  }
+  if (typeof OffscreenCanvas === 'undefined') {
     return dataUrl;
   }
   const canvas = new OffscreenCanvas(targetWidthCss, targetHeightCss);
@@ -394,6 +457,9 @@ export async function overlayCoordinateGrid(
 ): Promise<string> {
   const imageBitmap = await createImageBitmapFromUrl(imageDataUrl);
   try {
+    if (typeof OffscreenCanvas === 'undefined') {
+      return imageDataUrl;
+    }
     const canvas = new OffscreenCanvas(imageBitmap.width, imageBitmap.height);
     const ctx = canvas.getContext('2d');
     if (!ctx) {

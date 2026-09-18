@@ -505,7 +505,11 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Name for the screenshot, if saving to disk' },
+        name: {
+          type: 'string',
+          description:
+            'Name or label for the screenshot. Purely in-memory by default; only written to disk if savePng/saveToDisk is explicitly set to true.',
+        },
         selector: { type: 'string', description: 'CSS selector for element to screenshot' },
         assetIndex: {
           type: 'number',
@@ -538,7 +542,13 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         },
         fullPage: {
           type: 'boolean',
-          description: 'Store screenshot of the entire page (default: false)',
+          description:
+            'Capture a full-page scroll screenshot with GoFullPage-grade industrial stitching: automatic StyleStack fixed/sticky header de-duplication, page warmup for lazy-loading/skeletons, dynamic height change recovery, and captureVisibleTab quota backoff retry (default: false).',
+        },
+        maxHeight: {
+          type: 'number',
+          description:
+            'Maximum height in pixels to capture for full-page screenshots (default: 50000, protects against infinite scroll runaway).',
         },
         savePng: {
           type: 'boolean',
@@ -548,7 +558,7 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         saveToDisk: {
           type: 'boolean',
           description:
-            'Deprecated alias for savePng; still accepted but hidden from the schema to keep it small. Prefer savePng.',
+            'Deprecated alias for savePng (default: false, zero disk write by default; saves to system temp, not Downloads). Prefer savePng.',
         },
         som: {
           type: 'boolean',
@@ -564,6 +574,11 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           type: 'number',
           description:
             'Compact 1-based numeric index of target element from chrome_read_dom to crop and capture only this specific region of interest',
+        },
+        index: {
+          type: 'number',
+          description:
+            'Alias for targetIndex: compact 1-based numeric index of target element from chrome_read_dom to crop and capture',
         },
         padding: {
           type: 'number',
@@ -588,6 +603,11 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           type: 'boolean',
           description:
             'Overlay semi-transparent coordinate reference grid with perimeter tape measure rulers (20/50/100px ticks) and interior reticle crosshairs (+) to eliminate visual estimation hallucination (default: false)',
+        },
+        enableGrid: {
+          type: 'boolean',
+          description:
+            'Alias for grid: overlay semi-transparent coordinate reference grid with perimeter tape measure rulers and crosshairs',
         },
         expandSearchArea: {
           type: 'boolean',
@@ -1775,7 +1795,7 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
       openWorldHint: true,
     },
     description:
-      'Fill text into an input or textarea element using its compact 1-based numeric index. When filling multiple fields in a form, prefer chrome_batch_actions to fill and submit the entire form in 1 turn.',
+      'Fill text into an input or textarea element using its compact 1-based numeric index. For single search/form submission, pass pressEnter: true to fill and submit in 1 turn without needing a separate click. When filling multiple fields or clicking submit, use chrome_batch_actions to pipeline in 1 turn.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1792,7 +1812,12 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         pressEnter: {
           type: 'boolean',
           description:
-            'Whether to dispatch an Enter key event immediately after filling the text (default: false)',
+            'Whether to dispatch an Enter key event immediately after filling the text (default: false). Strongly recommended for search boxes and single-input queries to trigger immediate submission in 1 turn.',
+        },
+        submit: {
+          type: 'boolean',
+          description:
+            'Whether to automatically submit the form after filling (default: false). If true, clicks the detected submit button or presses Enter, completing fill + submit in 1 turn.',
         },
         tabId: { type: 'number', description: 'Target tab ID (optional)' },
         windowId: { type: 'number', description: 'Target window ID (optional)' },
@@ -1875,6 +1900,11 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
                 type: 'boolean',
                 description:
                   'Whether to dispatch an Enter key event immediately after filling the text (for type: fill)',
+              },
+              submit: {
+                type: 'boolean',
+                description:
+                  'Whether to automatically submit the form after filling (clicks detected submit button or presses Enter) (for type: fill)',
               },
               fields: {
                 type: 'array',

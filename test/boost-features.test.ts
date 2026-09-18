@@ -2373,6 +2373,63 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
           assert.ok(props.coordinateSpace, 'coordinateSpace property must exist in schema');
           assert.deepStrictEqual(props.coordinateSpace.enum, ['viewport', 'screenshot']);
         });
+
+        it('GoFullPage Engine: TOOL_SCHEMAS includes fullPage and maxHeight under chrome_screenshot', () => {
+          const screenshotSchema = (RAW_TOOL_SCHEMAS || TOOL_SCHEMAS).find((t) => t.name === 'chrome_screenshot');
+          assert.ok(screenshotSchema, 'chrome_screenshot schema must exist');
+          const props = screenshotSchema.inputSchema.properties;
+          assert.ok(props.fullPage, 'fullPage property must exist in schema');
+          assert.strictEqual(props.fullPage.type, 'boolean');
+          assert.ok(props.fullPage.description.includes('GoFullPage-grade'), 'fullPage description should highlight GoFullPage industrial capabilities');
+          assert.ok(props.maxHeight, 'maxHeight property must exist in schema');
+          assert.strictEqual(props.maxHeight.type, 'number');
+        });
+
+        it('GoFullPage Engine: MAX_CANVAS_DIM and MAX_CANVAS_AREA safety constants and downscaling logic', async () => {
+          const { MAX_CANVAS_DIM, MAX_CANVAS_AREA, stitchImages } = await import(
+            '../app/chrome-extension/utils/image-utils.ts'
+          );
+          assert.strictEqual(MAX_CANVAS_DIM, 16384);
+          assert.strictEqual(MAX_CANVAS_AREA, 268435456);
+
+          // Test extreme dimensions clamping
+          const canvas = await stitchImages([], 20000, 20000);
+          assert.ok(canvas.width <= MAX_CANVAS_DIM, `Width ${canvas.width} must be <= ${MAX_CANVAS_DIM}`);
+          assert.ok(canvas.height <= MAX_CANVAS_DIM, `Height ${canvas.height} must be <= ${MAX_CANVAS_DIM}`);
+          assert.ok(
+            canvas.width * canvas.height <= MAX_CANVAS_AREA,
+            `Area ${canvas.width * canvas.height} must be <= ${MAX_CANVAS_AREA}`,
+          );
+        });
+
+        it('GoFullPage Engine: TOOL_MESSAGE_TYPES includes SCREENSHOT_PREPARE_SLICE and SCREENSHOT_WARMUP_PAGE', () => {
+          const content = fs.readFileSync(
+            path.resolve(process.cwd(), 'app/chrome-extension/common/message-types.ts'),
+            'utf8',
+          );
+          assert.ok(content.includes("SCREENSHOT_PREPARE_SLICE: 'prepareSlice'"));
+          assert.ok(content.includes("SCREENSHOT_WARMUP_PAGE: 'warmupPage'"));
+        });
+
+        it('GoFullPage Engine: screenshotContextManager retains dimensions for fullPage captures', () => {
+          const testTabId = 88888;
+          screenshotContextManager.setContext(testTabId, {
+            screenshotWidth: 1280,
+            screenshotHeight: 3600,
+            viewportWidth: 1280,
+            viewportHeight: 800,
+            devicePixelRatio: 2,
+            hostname: 'example.com',
+          });
+
+          const ctx = screenshotContextManager.getContext(testTabId);
+          assert.ok(ctx);
+          assert.strictEqual(ctx.screenshotWidth, 1280);
+          assert.strictEqual(ctx.screenshotHeight, 3600);
+          assert.strictEqual(ctx.viewportWidth, 1280);
+          assert.strictEqual(ctx.viewportHeight, 800);
+          screenshotContextManager.clear(testTabId);
+        });
       });
     });
   });

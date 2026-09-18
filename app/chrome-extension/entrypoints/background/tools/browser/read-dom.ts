@@ -333,6 +333,8 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         ...(args.exclude !== undefined ? { exclude: args.exclude } : {}),
         ...(mergedData.modalIsolated ? { modalIsolated: true } : {}),
         ...(mergedData.isConfirmationTrap ? { isConfirmationTrap: true } : {}),
+        pipelineHint:
+          '1-Turn Optimal Paradigm: Pipeline fill + submit in 1 turn via chrome_batch_actions([{type: "fill", index: ..., text: "..."}, {type: "click", index: ...}]) or chrome_fill_index({ index, text, pressEnter: true }). Avoid splitting fill and submit into separate LLM turns.',
       };
 
       // Default response is the pruned tree plus counters only. The detail

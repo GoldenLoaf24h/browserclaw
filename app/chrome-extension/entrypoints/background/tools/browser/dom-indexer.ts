@@ -330,17 +330,17 @@ export function findIndexedElement(index: number): Element | null {
   const isolatedMap = getIsolatedIndexMap();
   if (isolatedMap.has(index)) {
     const el = derefElement(isolatedMap.get(index));
-    if (el) {
+    if (el && (typeof Element === 'undefined' || el instanceof Element)) {
       const doc = typeof document !== 'undefined' ? document : undefined;
       const isConnected =
         typeof (el as any).isConnected === 'boolean'
           ? (el as any).isConnected
-          : !doc ||
-            typeof doc.contains !== 'function' ||
-            doc.contains(el) ||
-            (typeof el.getRootNode === 'function' &&
-              typeof ShadowRoot !== 'undefined' &&
-              el.getRootNode() instanceof ShadowRoot);
+          : doc && typeof doc.contains === 'function'
+            ? doc.contains(el) ||
+              (typeof el.getRootNode === 'function' &&
+                typeof ShadowRoot !== 'undefined' &&
+                el.getRootNode() instanceof ShadowRoot)
+            : !doc;
       if (isConnected) {
         return el;
       }
@@ -2508,6 +2508,7 @@ export function scrollRequestForPoint(
 
 export function extractElementLocationDetails(el: Element): {
   success: boolean;
+  index?: number;
   x: number;
   y: number;
   width: number;
@@ -2516,6 +2517,8 @@ export function extractElementLocationDetails(el: Element): {
   inputType?: string;
   text?: string;
   value?: string;
+  role?: string;
+  isClickable?: boolean;
   frameOffsetX: number;
   frameOffsetY: number;
   attributes?: Record<string, string>;
@@ -2715,13 +2718,60 @@ export function extractElementLocationDetails(el: Element): {
           ? false
           : undefined;
 
+  let matchedIndex: number | undefined;
+  try {
+    const isolatedMap = getIsolatedIndexMap();
+    // Pass 1: exact element match
+    for (const [idx, entry] of isolatedMap.entries()) {
+      const target = derefElement(entry);
+      if (target === el) {
+        matchedIndex = idx;
+        break;
+      }
+    }
+    // Pass 2: interactive wrapper match (e.g. inner icon/span of button/link)
+    if (matchedIndex === undefined) {
+      const interactiveEl = typeof el.closest === 'function'
+        ? el.closest('button, a, input, select, textarea, [role="button"]')
+        : null;
+      if (interactiveEl && interactiveEl !== el) {
+        for (const [idx, entry] of isolatedMap.entries()) {
+          const target = derefElement(entry);
+          if (target === interactiveEl) {
+            matchedIndex = idx;
+            break;
+          }
+        }
+      }
+    }
+    // Pass 3: allocate new index if still unindexed
+    if (matchedIndex === undefined) {
+      const maxIdx = isolatedMap.size > 0 ? Math.max(...isolatedMap.keys()) : 0;
+      matchedIndex = maxIdx + 1;
+      isolatedMap.set(matchedIndex, wrapElement(el));
+    }
+  } catch {}
+
+  const elTag = el.tagName.toLowerCase();
+  const elRole = typeof el.getAttribute === 'function' ? el.getAttribute('role')?.toLowerCase() || undefined : undefined;
+  const isClickable = Boolean(
+    elTag === 'button' ||
+    elTag === 'a' ||
+    elRole === 'button' ||
+    (el as HTMLInputElement).type === 'submit' ||
+    (el as HTMLInputElement).type === 'button' ||
+    typeof (el as any).onclick === 'function' ||
+    (typeof window !== 'undefined' && window.getComputedStyle && window.getComputedStyle(el).cursor === 'pointer')
+  );
+
   return {
     success: true,
+    ...(typeof matchedIndex === 'number' ? { index: matchedIndex } : {}),
     x: Math.round(clickX + frameOffsetX),
     y: Math.round(clickY + frameOffsetY),
     width: Math.round(rect.width),
     height: Math.round(rect.height),
-    tagName: el.tagName.toLowerCase(),
+    tagName: elTag,
     inputType:
       typeof (el as HTMLInputElement).type === 'string'
         ? (el as HTMLInputElement).type.toLowerCase()
@@ -2734,6 +2784,8 @@ export function extractElementLocationDetails(el: Element): {
         : typeof (el as any)?.value === 'string'
           ? (el as any).value
           : undefined,
+    role: elRole,
+    isClickable,
     frameOffsetX,
     frameOffsetY,
     attributes:
@@ -3091,25 +3143,48 @@ export function inPageLocateBySelector(
   }
 }
 
+export interface LocateByTextOptions {
+  role?: string;
+  exact?: boolean;
+  visibleOnly?: boolean;
+  threshold?: number;
+}
+
 /**
  * Locate element coordinates and info by visible text content and/or ARIA role.
  */
 export function inPageLocateByText(
   text: string,
-  role?: string,
+  roleOrOptions?: string | LocateByTextOptions,
 ): {
   success: boolean;
+  index?: number;
   x?: number;
   y?: number;
   width?: number;
   height?: number;
   tagName?: string;
+  inputType?: string;
   text?: string;
   value?: string;
+  role?: string;
+  isClickable?: boolean;
   frameOffsetX?: number;
   frameOffsetY?: number;
   error?: string;
 } {
+  const role =
+    typeof roleOrOptions === 'string'
+      ? roleOrOptions
+      : roleOrOptions && typeof roleOrOptions === 'object' && typeof roleOrOptions.role === 'string'
+        ? roleOrOptions.role
+        : undefined;
+
+  const isExact =
+    typeof roleOrOptions === 'object' && roleOrOptions !== null
+      ? Boolean(roleOrOptions.exact)
+      : false;
+
   if (!text && !role) {
     return { success: false, error: 'Either text or role must be provided' };
   }
@@ -3167,7 +3242,7 @@ export function inPageLocateByText(
         if (!semantics.isComposer && !semantics.isEditor) continue;
       } else if (role === 'editor') {
         if (!semantics.isEditor && !semantics.isComposer) continue;
-      } else if (role) {
+      } else if (typeof role === 'string' && role.length > 0) {
         const elRole = el.getAttribute('role')?.toLowerCase() || el.tagName.toLowerCase();
         if (elRole !== role.toLowerCase()) continue;
       }
@@ -3188,7 +3263,7 @@ export function inPageLocateByText(
           placeholder === normalizedTarget
         ) {
           matchScore = 100;
-        } else if (elText.includes(normalizedTarget) || ariaLabel.includes(normalizedTarget)) {
+        } else if (!isExact && (elText.includes(normalizedTarget) || ariaLabel.includes(normalizedTarget))) {
           matchScore = 50;
         }
 
@@ -3922,6 +3997,7 @@ export function inPageVerifyInputCommitment(
     found: boolean;
     disabled?: boolean;
     text?: string;
+    index?: number;
   };
   diagnostics?: string;
 } {
@@ -3961,31 +4037,86 @@ export function inPageVerifyInputCommitment(
   }
 
   // Check nearby submit/action button state
-  let submitButtonState: { found: boolean; disabled?: boolean; text?: string } = { found: false };
+  let submitButtonState: { found: boolean; disabled?: boolean; text?: string; index?: number } = { found: false };
   try {
     let container: Element | null =
       el.closest('form') ||
+      el.closest('[role="search"]') ||
+      el.closest('[role="form"]') ||
       el.closest('[role="dialog"]') ||
       el.closest('[data-testid*="tweet" i]') ||
       el.closest('[class*="composer" i]') ||
+      el.closest('[class*="search" i]') ||
+      el.closest('[class*="form" i]') ||
+      el.closest('[class*="input-group" i]') ||
+      el.closest('[class*="search-box" i]') ||
+      el.closest('[class*="search-bar" i]') ||
+      el.parentElement?.parentElement ||
       el.parentElement;
     if (!container) container = el.ownerDocument.body;
 
-    const buttons = Array.from(container.querySelectorAll('button, [role="button"], input[type="submit"]'));
-    const candidateBtn = buttons.find((b) => {
-      const type = b.getAttribute('type');
+    const candidateButtons: Element[] = Array.from(
+      container.querySelectorAll(
+        'button, [role="button"], input[type="submit"], input[type="button"], a.btn, a[class*="btn" i], a[class*="button" i], a[class*="submit" i], a[href*="doPostBack" i]'
+      ),
+    );
+
+    // If container is within a form with an ID, also check external submit buttons with form="formId"
+    const formEl = el.closest('form');
+    if (formEl && formEl.id) {
+      const extButtons = Array.from(
+        el.ownerDocument.querySelectorAll(`button[form="${formEl.id}"], input[form="${formEl.id}"]`),
+      );
+      for (const eb of extButtons) {
+        if (!candidateButtons.includes(eb)) candidateButtons.push(eb);
+      }
+    }
+
+    // If still no buttons found and container is narrow, expand search to parentElement's parentElement
+    if (candidateButtons.length === 0 && el.parentElement?.parentElement) {
+      const expanded = Array.from(
+        el.parentElement.parentElement.querySelectorAll(
+          'button, [role="button"], input[type="submit"], input[type="button"], a.btn, a[class*="btn" i], a[class*="button" i]'
+        ),
+      );
+      candidateButtons.push(...expanded);
+    }
+
+    const candidateBtn = candidateButtons.find((b) => {
+      const type = (b.getAttribute('type') || '').toLowerCase();
       const text = (b.textContent || (b as HTMLInputElement).value || '').trim().toLowerCase();
       const testId = (b.getAttribute('data-testid') || '').toLowerCase();
       const ariaLabel = (b.getAttribute('aria-label') || '').toLowerCase();
+      const name = (b.getAttribute('name') || '').toLowerCase();
+      const id = (b.getAttribute('id') || '').toLowerCase();
+      const href = (b.getAttribute('href') || '').toLowerCase();
+
       return (
         type === 'submit' ||
         testId.includes('tweet') ||
         testId.includes('submit') ||
         testId.includes('send') ||
         testId.includes('post') ||
+        testId.includes('search') ||
+        testId.includes('query') ||
         ariaLabel.includes('tweet') ||
         ariaLabel.includes('post') ||
-        /^(tweet|post|reply|send|submit|发布|发帖|发送|提交|ok|next|continue|确认)/i.test(text)
+        ariaLabel.includes('submit') ||
+        ariaLabel.includes('send') ||
+        ariaLabel.includes('search') ||
+        ariaLabel.includes('query') ||
+        ariaLabel.includes('搜索') ||
+        ariaLabel.includes('查询') ||
+        ariaLabel.includes('提交') ||
+        name.includes('submit') ||
+        name.includes('search') ||
+        name.includes('query') ||
+        name.includes('btnsearch') ||
+        id.includes('submit') ||
+        id.includes('search') ||
+        id.includes('btnsearch') ||
+        href.includes('dopostback') ||
+        /(tweet|post|reply|send|submit|发布|发帖|发送|提交|ok|next|continue|确认|确定|查询|搜索|search|query|find|go|enter)/i.test(text)
       );
     });
 
@@ -3994,10 +4125,44 @@ export function inPageVerifyInputCommitment(
         (candidateBtn as HTMLButtonElement).disabled === true ||
         candidateBtn.getAttribute('aria-disabled') === 'true' ||
         candidateBtn.classList.contains('disabled');
+      let candidateBtnIndex: number | undefined;
+      try {
+        const isolatedMap = getIsolatedIndexMap();
+        // Pass 1: exact element match
+        for (const [idx, ref] of isolatedMap.entries()) {
+          const deref = derefElement(ref);
+          if (deref === candidateBtn) {
+            candidateBtnIndex = idx;
+            break;
+          }
+        }
+        // Pass 2: interactive wrapper match (e.g. inner icon/span of button/link)
+        if (candidateBtnIndex === undefined) {
+          const interactiveEl = typeof candidateBtn.closest === 'function'
+            ? candidateBtn.closest('button, a, input, select, textarea, [role="button"]')
+            : null;
+          if (interactiveEl && interactiveEl !== candidateBtn) {
+            for (const [idx, ref] of isolatedMap.entries()) {
+              const deref = derefElement(ref);
+              if (deref === interactiveEl) {
+                candidateBtnIndex = idx;
+                break;
+              }
+            }
+          }
+        }
+        // Pass 3: allocate new index if still unindexed
+        if (candidateBtnIndex === undefined) {
+          const maxIdx = isolatedMap.size > 0 ? Math.max(...isolatedMap.keys()) : 0;
+          candidateBtnIndex = maxIdx + 1;
+          isolatedMap.set(candidateBtnIndex, wrapElement(candidateBtn));
+        }
+      } catch {}
       submitButtonState = {
         found: true,
         disabled,
         text: (candidateBtn.textContent || (candidateBtn as HTMLInputElement).value || '').trim(),
+        ...(typeof candidateBtnIndex === 'number' ? { index: candidateBtnIndex } : {}),
       };
     }
   } catch {}
@@ -4260,6 +4425,8 @@ export function inPageDetectPerceptiveSignature(): PerceptiveSignature {
     doc.querySelectorAll('input:not([type="hidden"]), textarea, select, [contenteditable="true"], [role="textbox"]')
   ).filter(isVisibleInViewport);
 
+  let maxIdx = isolatedMap.size > 0 ? Math.max(...isolatedMap.keys()) : 0;
+
   for (const inp of inputElements) {
     const tag = inp.tagName.toLowerCase();
     const type = (inp as HTMLInputElement).type?.toLowerCase();
@@ -4271,8 +4438,16 @@ export function inPageDetectPerceptiveSignature(): PerceptiveSignature {
         ? inp.value
         : (inp as HTMLElement).innerText?.trim() || undefined;
 
+    let inpIndex = indexLookup.get(inp);
+    if (typeof inpIndex !== 'number') {
+      maxIdx++;
+      inpIndex = maxIdx;
+      isolatedMap.set(inpIndex, wrapElement(inp));
+      indexLookup.set(inp, inpIndex);
+    }
+
     activeInputs.push({
-      index: indexLookup.get(inp),
+      index: inpIndex,
       tagName: tag,
       type,
       name,

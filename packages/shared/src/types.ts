@@ -146,6 +146,7 @@ export interface BatchActionItem {
   amount?: number;
   clear?: boolean;
   pressEnter?: boolean;
+  submit?: boolean;
   waitForSettle?: boolean;
   settleTimeoutMs?: number;
   /** Wait for in-flight network requests to reach quiescence before proceeding */
@@ -285,10 +286,13 @@ export interface UnifiedLocatorResult {
   x: number;
   y: number;
   resolutionPath: 'ref' | 'selector' | 'text' | 'role' | 'coordinate';
+  index?: number;
   tagName?: string;
   inputType?: string;
   text?: string;
   value?: string;
+  role?: string;
+  isClickable?: boolean;
   frameId?: number;
   frameOffsetX?: number;
   frameOffsetY?: number;

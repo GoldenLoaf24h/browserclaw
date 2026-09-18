@@ -225,7 +225,7 @@ See **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** for detailed topology and
 ## 📚 Documentation Map
 
 - **[Project Map & Index](./docs/MAP.md)**: 🗺️ Master navigation hub, reading paths by role, and code topology.
-- **[Tool Reference](./docs/TOOLS.md)**: Auto-generated parameter dictionary for all 45 tools.
+- **[Tool Reference](./docs/TOOLS.md)**: Auto-generated parameter dictionary for all 46 tools.
 - **[Agent Integration Guide](./AGENT_CONFIG_GUIDE.md)**: 6 core interaction rules and client configurations.
 - **[Architecture Deep-Dive](./docs/ARCHITECTURE.md)**: Monorepo design, security boundaries, and ADR records.
 - **[Troubleshooting](./docs/TROUBLESHOOTING.md)**: Instant diagnosis checklist for connection or execution errors.

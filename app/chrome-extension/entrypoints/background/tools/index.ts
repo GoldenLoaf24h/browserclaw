@@ -14,7 +14,7 @@ const tools = { ...browserTools } as any;
 const declaredToolNames = new Set(TOOL_SCHEMAS.map((t) => t.name));
 const toolsMap = new Map(
   Object.values(tools)
-    .filter((tool: any) => declaredToolNames.has(tool.name))
+    .filter((tool: any) => tool && declaredToolNames.has(tool.name))
     .map((tool: any) => [tool.name, tool]),
 );
 
@@ -69,7 +69,12 @@ export const handleCallTool = async (param: ToolCallParam) => {
             key === 'verbose' ||
             key === 'activeViewportOnly' ||
             key === 'viewportOnly' ||
-            key === 'autoAdvance') &&
+            key === 'autoAdvance' ||
+            key === 'submit' ||
+            key === 'pressEnter' ||
+            key === 'savePng' ||
+            key === 'saveToDisk' ||
+            key === 'waitForSettle') &&
           (trimmed === 'true' || trimmed === 'false')
         ) {
           args[key] = trimmed === 'true';

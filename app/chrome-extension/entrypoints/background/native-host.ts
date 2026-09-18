@@ -193,7 +193,10 @@ function syncKeepaliveHold(): void {
  */
 async function loadNativeAutoConnectEnabled(): Promise<boolean> {
   try {
-    const result = await chrome.storage.local.get([STORAGE_KEYS.NATIVE_AUTO_CONNECT_ENABLED]);
+    const rawResult = await Promise.resolve(
+      chrome?.storage?.local?.get?.([STORAGE_KEYS.NATIVE_AUTO_CONNECT_ENABLED]),
+    ).catch(() => ({}));
+    const result: Record<string, any> = rawResult || {};
     const raw = result[STORAGE_KEYS.NATIVE_AUTO_CONNECT_ENABLED];
     if (typeof raw === 'boolean') return raw;
   } catch (error) {
@@ -228,10 +231,13 @@ async function getPreferredPort(override?: unknown): Promise<number> {
   if (explicit) return explicit;
 
   try {
-    const result = await chrome.storage.local.get([
-      STORAGE_KEYS.NATIVE_SERVER_PORT,
-      STORAGE_KEYS.SERVER_STATUS,
-    ]);
+    const rawResult = await Promise.resolve(
+      chrome?.storage?.local?.get?.([
+        STORAGE_KEYS.NATIVE_SERVER_PORT,
+        STORAGE_KEYS.SERVER_STATUS,
+      ]),
+    ).catch(() => ({}));
+    const result: Record<string, any> = rawResult || {};
 
     const userPort = normalizePort(result[STORAGE_KEYS.NATIVE_SERVER_PORT]);
     if (userPort) return userPort;
@@ -305,7 +311,7 @@ async function markServerStopped(reason: string): Promise<void> {
  * @param portOverride - Optional explicit port to use
  * @returns Whether the connection is now established
  */
-async function ensureNativeConnected(trigger: string, portOverride?: unknown): Promise<boolean> {
+export async function ensureNativeConnected(trigger: string, portOverride?: unknown): Promise<boolean> {
   // Concurrency protection: only one ensure flow at a time
   if (ensurePromise) return ensurePromise;
 
@@ -369,8 +375,11 @@ export function sendFileOperationToNative(
   if (callback && message.requestId) {
     fileOperationCallbacks.set(message.requestId, callback);
   }
-  safePostMessage(nativePort, message);
-  return true;
+  const posted = safePostMessage(nativePort, message);
+  if (!posted && callback && message.requestId) {
+    fileOperationCallbacks.delete(message.requestId);
+  }
+  return posted;
 }
 
 export function cancelFileOperation(requestId: string): void {
@@ -384,6 +393,10 @@ export function cancelFileOperation(requestId: string): void {
 export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): boolean {
   if (nativePort) {
     return true;
+  }
+
+  if (typeof chrome === 'undefined' || typeof chrome.runtime?.connectNative !== 'function') {
+    return false;
   }
 
   try {

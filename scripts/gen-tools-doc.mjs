@@ -22,7 +22,7 @@ const toolDoc = (t) => {
   const params = Object.entries(props).map(([k, v]) => {
     const en = v.enum ? ':' + v.enum.join('|') : '';
     const rq = req.includes(k) ? '（必填）' : '';
-    const desc = (v.description || '').split('\n')[0].slice(0, 150);
+    const desc = (v.description || '').split('\n')[0];
     return '- `' + k + en + '`' + rq + ' — ' + desc;
   });
   const desc = (t.description || '').split('\n')[0];

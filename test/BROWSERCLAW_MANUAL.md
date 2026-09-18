@@ -276,9 +276,9 @@ CLICK VECTOR"</button>
 
 #### 2.4.6 chrome_screenshot
 
-- 参数:`storeBase64`(推荐 true)、`savePng`(默认 true,想省 IO 设 false)、`fullPage`(默认 true)、`som`/`highlight`(Set-of-Mark 徽标)、`grid`(参考网格)、`targetIndex`+`padding`(按索引裁剪)、`format`(png/jpeg/webp)、`quality`(默认 80)、`selector`、`width`/`height`、`background`。
-- 返回(实测):`{base64Data, mimeType, format, quality, grid, somApplied}` —— **base64 内嵌在 JSON text 里,不是 image block**。
-- 限制:Native Messaging 单帧 800KB 上限,超限自动存 Downloads(文本类同理,>800KB 截断到 500KB 并附 warning)。
+- 参数:`storeBase64`(默认 false,需文本 base64 时设 true)、`savePng`/`saveToDisk`(默认 false 纯内存零落盘，设为 true 时走系统 Temp 临时目录调试)、`fullPage`(默认 false)、`som`/`highlight`(Set-of-Mark 徽标)、`grid`(参考网格)、`targetIndex`+`padding`(按索引裁剪)、`format`(png/jpeg/webp)、`quality`(默认 80)、`selector`、`width`/`height`、`background`。
+- 返回:`{image block (MCP 协议直出), text block (元数据 JSON)}` —— **默认通过纯内存 image block 直出，无物理落盘，绝不污染用户 Downloads 目录**。
+- 限制:单张截图 450KB 安全预算，超限自动启动保真 WebP 压缩；显式 `savePng: true` 时经 native host 落盘至系统 Temp 目录 (`os.tmpdir()/chrome-mcp-uploads`)。
 - `targetIndex` 裁剪对 <100x100 元素有 `expandSearchArea`(自动扩 200x200 上下文)。
 
 #### 2.4.7 chrome_keyboard
@@ -355,7 +355,7 @@ CLICK VECTOR"</button>
 
 - `in-page-engine.ts`:executeInPage = 注入 inpage-engine.js + start/poll/retrieve 三次 executeScript 往返(15s 超时,10ms 轮询);异步函数经 promise box 协议。
 - `cdp-session-manager.ts`:refcount + owner、每 tab 串行队列;refCount=0 后**延迟 5s detach**(保 hover 状态);断线自动重连一次;DevTools 等外部占用则拒绝 attach。
-- `screenshot.ts`:storeBase64 走 JSON text;800KB 上限;savePng 默认 true。
+- `screenshot.ts`:纯内存 image block 直通;450KB 智能压缩预算;savePng 默认 false (零磁盘写入,绝不污染 Downloads)。
 - `web-fetcher.ts`:>800KB 文本截断到 500KB + warning。
 - native host:`native-messaging-host.ts`,stdin 4 字节 LE 长度前缀帧,16MB 上限,requestId 关联;扩展经 native-port 连接,START 指令起 HTTP 服务。
 - stdio 代理:`mcp-server-stdio.ts` = stdio → HTTP(12306) 桥,供 Claude CLI 等使用。

@@ -52,6 +52,7 @@ interface ScreenshotToolParams {
   name?: string;
   selector?: string;
   targetIndex?: number;
+  index?: number; // Alias for targetIndex
   padding?: number;
   format?: 'png' | 'jpeg' | 'webp';
   quality?: number; // 0-100
@@ -63,8 +64,10 @@ interface ScreenshotToolParams {
   storeBase64?: boolean;
   fullPage?: boolean;
   savePng?: boolean;
+  saveToDisk?: boolean;
   maxHeight?: number; // Maximum height to capture in pixels (for infinite scroll pages)
   grid?: boolean | string; // Overlay coordinate reference grid ('ruler' | 'crosshair' | 'classic' | '1000' | true)
+  enableGrid?: boolean | string; // Alias for grid
   expandSearchArea?: boolean; // Adaptively expand crop box for small elements (<100x100)
   autoExpand?: boolean;
   som?: boolean; // Overlay Set-of-Mark numbered badges on interactive elements before capture
@@ -76,6 +79,7 @@ interface ScreenshotToolParams {
   region?: { x0?: number; y0?: number; x1?: number; y1?: number; xmin?: number; ymin?: number; xmax?: number; ymax?: number } | [number, number, number, number] | any;
   crop?: { x0?: number; y0?: number; x1?: number; y1?: number; xmin?: number; ymin?: number; xmax?: number; ymax?: number } | [number, number, number, number] | any;
   highClarity?: boolean; // Prioritize 100% full-resolution clarity without downsampling
+  allowDimensionScaling?: boolean; // Allow downscaling image dimensions for transport budget
   sessionId?: string;
   sessionContext?: string;
 }
@@ -136,19 +140,26 @@ export async function normalizeImageToCssDimensions(
   mimeType: string = 'image/webp',
   quality: number = 0.8,
 ): Promise<string> {
-  const img = await createImageBitmapFromUrl(dataUrl);
-  if (
-    img.width === targetWidthCss &&
-    img.height === targetHeightCss &&
-    dataUrl.startsWith(`data:${mimeType}`)
-  ) {
+  if (typeof createImageBitmap === 'undefined' || typeof OffscreenCanvas === 'undefined') {
     return dataUrl;
   }
-  const canvas = new OffscreenCanvas(targetWidthCss, targetHeightCss);
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Failed to get 2D context from OffscreenCanvas');
-  ctx.drawImage(img, 0, 0, targetWidthCss, targetHeightCss);
-  return await canvasToDataURL(canvas, mimeType, quality);
+  try {
+    const img = await createImageBitmapFromUrl(dataUrl);
+    if (
+      img.width === targetWidthCss &&
+      img.height === targetHeightCss &&
+      dataUrl.startsWith(`data:${mimeType}`)
+    ) {
+      return dataUrl;
+    }
+    const canvas = new OffscreenCanvas(targetWidthCss, targetHeightCss);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Failed to get 2D context from OffscreenCanvas');
+    ctx.drawImage(img, 0, 0, targetWidthCss, targetHeightCss);
+    return await canvasToDataURL(canvas, mimeType, quality);
+  } catch {
+    return dataUrl;
+  }
 }
 
 /**
@@ -185,6 +196,93 @@ async function hasBlackBars(dataUrl: string): Promise<boolean> {
   }
 }
 
+const pendingScreenshotFilenames = new Map<number, string>();
+
+if (typeof chrome !== 'undefined' && chrome.downloads?.onDeterminingFilename) {
+  try {
+    chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+      const designatedName = pendingScreenshotFilenames.get(item.id);
+      if (designatedName) {
+        pendingScreenshotFilenames.delete(item.id);
+        suggest({ filename: designatedName, conflictAction: 'uniquify' });
+      }
+    });
+  } catch {}
+}
+
+/**
+ * Saves screenshot base64 data to the system temporary directory via Native Messaging Host.
+ * Strictly avoids polluting the user's personal Downloads folder.
+ */
+async function saveScreenshotToNativeTemp(
+  base64Data: string,
+  filename: string,
+  fullDataUrl?: string,
+): Promise<{ filename?: string; fullPath?: string } | undefined> {
+  try {
+    const { sendFileOperationToNative, cancelFileOperation, ensureNativeConnected } = await import(
+      '../../native-host'
+    );
+    if (typeof ensureNativeConnected === 'function') {
+      await ensureNativeConnected('save_screenshot').catch(() => false);
+    }
+    let cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
+    // If base64 payload exceeds 600KB, compress using smartCompressForTransport so it comfortably fits within the 1MB Native Messaging ceiling
+    const sourceDataUrl =
+      fullDataUrl || (base64Data.startsWith('data:') ? base64Data : `data:image/png;base64,${cleanBase64}`);
+    if (cleanBase64.length > 600 * 1024 && typeof OffscreenCanvas !== 'undefined') {
+      try {
+        const compressed = await smartCompressForTransport(sourceDataUrl, {
+          maxBytes: 550 * 1024,
+          preferredFormat: 'image/webp',
+          allowDimensionScaling: true,
+        });
+        cleanBase64 = compressed.dataUrl.replace(/^data:[^;]+;base64,/, '');
+        filename = filename.replace(/\.[a-z0-9]+$/i, '.webp');
+      } catch (compressErr) {
+        console.warn('saveScreenshotToNativeTemp compression fallback failed:', compressErr);
+      }
+    }
+
+    const requestId = `screenshot-temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const timeoutMs = 20000;
+    const resp = await new Promise<any>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cancelFileOperation(requestId);
+        reject(new Error('Native temp save timed out'));
+      }, timeoutMs);
+
+      const ok = sendFileOperationToNative(
+        {
+          type: 'file_operation',
+          requestId,
+          payload: {
+            action: 'prepareFile',
+            base64Data: cleanBase64,
+            fileName: filename,
+          },
+        },
+        (message: any) => {
+          clearTimeout(timer);
+          resolve(message?.payload);
+        },
+      );
+
+      if (!ok) {
+        clearTimeout(timer);
+        reject(new Error('Native host not connected'));
+      }
+    });
+
+    if (resp && resp.success && resp.filePath) {
+      return { filename, fullPath: resp.filePath };
+    }
+  } catch (err) {
+    console.warn('saveScreenshotToNativeTemp failed, falling back:', err);
+  }
+  return undefined;
+}
+
 /**
  * Tool for capturing screenshots of web pages
  */
@@ -194,13 +292,33 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
   /**
    * Execute screenshot operation
    */
-  async execute(args: ScreenshotToolParams): Promise<ToolResult> {
+  async execute(rawArgs: ScreenshotToolParams): Promise<ToolResult> {
+    const targetIndex =
+      typeof rawArgs.targetIndex === 'number'
+        ? rawArgs.targetIndex
+        : typeof (rawArgs as any).index === 'number'
+          ? (rawArgs as any).index
+          : undefined;
+    const grid = rawArgs.grid ?? (rawArgs as any).enableGrid;
+    const som =
+      rawArgs.som === true ||
+      (rawArgs as any).highlight === true ||
+      (rawArgs as any).setOfMark === true;
+
+    const args: ScreenshotToolParams = {
+      ...rawArgs,
+      targetIndex,
+      grid,
+      som,
+    };
+
     const {
       name = 'screenshot',
       selector,
       storeBase64 = false,
       fullPage = false,
       savePng = false,
+      saveToDisk = false,
       format = args.format || 'webp',
     } = args;
 
@@ -595,31 +713,10 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
 
         if (fullPage) {
           this.logInfo('Capturing full page...');
-          finalImageDataUrl = await this._captureFullPage(tab.id!, args, pageDetails, tab.windowId);
-          if (format !== 'png') {
-            const converted = await compressImage(finalImageDataUrl, {
-              scale: 1.0,
-              quality: qualityFraction,
-              format: targetMimeType as any,
-            });
-            finalImageDataUrl = converted.dataUrl;
-          }
-          // Compute final CSS size
-          if (args.width && args.height) {
-            finalImageWidthCss = args.width;
-            finalImageHeightCss = args.height;
-          } else if (args.width && !args.height) {
-            finalImageWidthCss = args.width;
-            const ratio = pageDetails.totalHeight / pageDetails.totalWidth;
-            finalImageHeightCss = Math.round(args.width * ratio);
-          } else if (!args.width && args.height) {
-            finalImageHeightCss = args.height;
-            const ratio = pageDetails.totalWidth / pageDetails.totalHeight;
-            finalImageWidthCss = Math.round(args.height * ratio);
-          } else {
-            finalImageWidthCss = pageDetails.totalWidth;
-            finalImageHeightCss = pageDetails.totalHeight;
-          }
+          const fullCapture = await this._captureFullPage(tab.id!, args, pageDetails, tab.windowId);
+          finalImageDataUrl = fullCapture.dataUrl;
+          finalImageWidthCss = fullCapture.widthCss;
+          finalImageHeightCss = fullCapture.heightCss;
         } else if (selector || typeof args.targetIndex === 'number') {
           this.logInfo(`Capturing element (selector=${selector}, targetIndex=${args.targetIndex})`);
           const elementCapture = await this._captureElement(
@@ -635,7 +732,7 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
         } else {
           // Visible area only
           this.logInfo('Capturing visible area...');
-          const rawVisibleDataUrl = await this.captureTabPng(tab);
+          const rawVisibleDataUrl = await this.captureTabPngWithRetry(tab);
           if (!rawVisibleDataUrl) throw new Error('captureVisibleTab returned empty image');
           // Enforce DPR 1:1 Normalization: resample from physical pixels to exact CSS viewport dimensions
           finalImageDataUrl = await normalizeImageToCssDimensions(
@@ -710,42 +807,61 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
         console.warn('Failed to set screenshot context:', e);
       }
 
-      const shouldSaveDisk = savePng === true || (args as any).saveToDisk === true;
+      const shouldSaveDisk =
+        (savePng === true || saveToDisk === true || (args as any).saveToDisk === true) &&
+        args.savePng !== false &&
+        (args as any).saveToDisk !== false;
       if (shouldSaveDisk) {
-        // Save file to downloads
-        this.logInfo(`Saving ${format.toUpperCase()}...`);
+        this.logInfo(`Saving ${format.toUpperCase()} to temporary storage...`);
         try {
-          const ext = format === 'webp' ? 'webp' : format === 'jpeg' ? 'jpg' : 'png';
+          const actualMime =
+            finalImageDataUrl?.match(/^data:(image\/[^;]+);base64,/)?.[1] || targetMimeType;
+          const ext =
+            actualMime === 'image/webp' ? 'webp' : actualMime === 'image/jpeg' ? 'jpg' : 'png';
           const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          const filename = `${name.replace(/[^a-z0-9_-]/gi, '_') || 'screenshot'}_${timestamp}.${ext}`;
+          const safeName = (name || 'screenshot').replace(/[^a-z0-9_-]/gi, '_');
+          const filename = `${safeName}_${timestamp}.${ext}`;
+          const rawBase64 = finalImageDataUrl ? finalImageDataUrl.replace(/^data:[^;]+;base64,/, '') : '';
 
-          // Use Chrome's download API to save the file
-          const downloadId = await chrome.downloads.download({
-            url: finalImageDataUrl,
-            filename: filename,
-            saveAs: false,
-          });
+          // Primary: save to system temporary directory via native messaging host (zero Downloads pollution)
+          const tempSaved = await saveScreenshotToNativeTemp(
+            rawBase64,
+            filename,
+            finalImageDataUrl,
+          );
 
-          results.downloadId = downloadId;
-          results.filename = filename;
-          results.fileSaved = true;
+          if (tempSaved && tempSaved.fullPath) {
+            results.filename = tempSaved.filename;
+            results.fullPath = tempSaved.fullPath;
+            results.fileSaved = true;
+            results.savedTo = 'system_temp';
+          } else if (typeof chrome !== 'undefined' && chrome.downloads?.download) {
+            // Secondary fallback: only if native host is unreachable and user explicitly requested disk save
+            const downloadId = await chrome.downloads.download({
+              url: finalImageDataUrl,
+              filename: filename,
+              saveAs: false,
+              conflictAction: 'uniquify',
+            });
+            pendingScreenshotFilenames.set(downloadId, filename);
 
-          // Try to get the full file path
-          try {
-            // Wait a moment to ensure download info is updated
-            await new Promise((resolve) => setTimeout(resolve, 100));
+            results.downloadId = downloadId;
+            results.filename = filename;
+            results.fileSaved = true;
+            results.savedTo = 'downloads';
 
-            // Search for download item to get full path
-            const [downloadItem] = await chrome.downloads.search({ id: downloadId });
-            if (downloadItem && downloadItem.filename) {
-              // Add full path to response
-              results.fullPath = downloadItem.filename;
+            try {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+              const [downloadItem] = await chrome.downloads.search({ id: downloadId });
+              if (downloadItem && downloadItem.filename) {
+                results.fullPath = downloadItem.filename;
+              }
+            } catch (pathError) {
+              console.warn('Could not get full file path:', pathError);
             }
-          } catch (pathError) {
-            console.warn('Could not get full file path:', pathError);
           }
         } catch (error) {
-          console.error('Error saving PNG file:', error);
+          console.error('Error saving screenshot file:', error);
           results.saveError = String(error instanceof Error ? error.message : error);
         }
       }
@@ -797,12 +913,15 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
 
     if (finalBase64 && finalBase64.length > 450 * 1024 && finalImageDataUrl) {
       try {
-        const isHighClarity = args.highClarity === true;
+        const isHighClarity = args.highClarity === true || fullPage === true;
+        const maxBudget = fullPage
+          ? (args.highClarity ? 2000 * 1024 : 1500 * 1024)
+          : (args.highClarity ? 800 * 1024 : 450 * 1024);
         const compressed = await smartCompressForTransport(finalImageDataUrl, {
-          maxBytes: isHighClarity ? 800 * 1024 : 450 * 1024,
+          maxBytes: maxBudget,
           preferredFormat: finalMime,
           quality: isHighClarity ? 0.92 : qualityFraction,
-          allowDimensionScaling: !isHighClarity,
+          allowDimensionScaling: fullPage ? Boolean(args.allowDimensionScaling) : !isHighClarity,
         });
         finalBase64 = compressed.dataUrl.replace(/^data:[^;]+;base64,/, '');
         finalMime = compressed.mimeType as any;
@@ -960,6 +1079,37 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
     return dataUrl;
   }
 
+  /**
+   * Quota error retry with exponential backoff for captureVisibleTab
+   * Protects against Chrome's MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND rate limit.
+   */
+  private async captureTabPngWithRetry(tab: chrome.tabs.Tab, maxRetries = 5): Promise<string> {
+    let delay = 60;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.captureTabPng(tab);
+      } catch (err) {
+        const isQuota =
+          err &&
+          typeof err === 'object' &&
+          typeof (err as any).message === 'string' &&
+          ((err as any).message.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') ||
+            (err as any).message.includes('quota') ||
+            (err as any).message.includes('Quota'));
+        if (isQuota && attempt < maxRetries) {
+          this.logInfo(
+            `captureVisibleTab quota limit hit (attempt ${attempt + 1}/${maxRetries}), backing off ${delay}ms`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          delay = Math.min(1000, delay * 2);
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error('captureVisibleTab quota exceeded after retries');
+  }
+
   async _captureElement(
     tabId: number,
     options: ScreenshotToolParams,
@@ -1023,9 +1173,11 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
     // Small delay to ensure element is fully rendered after scrollIntoView
     await new Promise((resolve) => setTimeout(resolve, SCREENSHOT_CONSTANTS.SCRIPT_INIT_DELAY));
 
-    const targetTab = await chrome.tabs.get(tabId).catch(() => null);
+    const targetTab = await Promise.resolve(
+      typeof chrome !== 'undefined' && chrome.tabs?.get ? chrome.tabs.get(tabId) : null,
+    ).catch(() => null);
     const visibleCaptureDataUrl = targetTab
-      ? await this.captureTabPng(targetTab)
+      ? await this.captureTabPngWithRetry(targetTab)
       : typeof windowId === 'number'
         ? await chrome.tabs.captureVisibleTab(windowId, { format: 'png' })
         : await chrome.tabs.captureVisibleTab({ format: 'png' });
@@ -1071,26 +1223,47 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
   }
 
   /**
-   * Capture full page
+   * Capture full page with GoFullPage-grade industrial features:
+   * - StyleStack fixed/sticky header de-duplication across slices
+   * - Page warmup to trigger lazy loading / IntersectionObserver / skeletons
+   * - Dynamic height change auto-recovery during scrolling
+   * - captureVisibleTab quota error exponential backoff retry
+   * - Safe OffscreenCanvas stitching with max dimension bounds
+   * - DPR 1:1 CSS pixel normalization
    */
   async _captureFullPage(
     tabId: number,
     options: ScreenshotToolParams,
     initialPageDetails: any,
     windowId?: number,
-  ): Promise<string> {
-    const dpr = initialPageDetails.devicePixelRatio;
-    const totalWidthCss = options.width || initialPageDetails.totalWidth; // Use option width if provided
-    const totalHeightCss = initialPageDetails.totalHeight; // Full page always uses actual height
+  ): Promise<{ dataUrl: string; widthCss: number; heightCss: number }> {
+    // 1. Warmup page: quick down-and-up scroll to trigger lazy loading, IntersectionObserver & skeleton screens
+    try {
+      this.logInfo('Warming up page for lazy loading and skeleton rendering...');
+      const warmupResp = await this.sendToHelperWithRetry(tabId, {
+        action: TOOL_MESSAGE_TYPES.SCREENSHOT_WARMUP_PAGE,
+      });
+      if (warmupResp && typeof warmupResp.totalHeight === 'number' && warmupResp.totalHeight > 0) {
+        initialPageDetails.totalHeight = warmupResp.totalHeight;
+        if (typeof warmupResp.totalWidth === 'number' && warmupResp.totalWidth > 0) {
+          initialPageDetails.totalWidth = warmupResp.totalWidth;
+        }
+      }
+    } catch (warmupErr) {
+      console.warn('Page warmup failed, proceeding with initial dimensions:', warmupErr);
+    }
+
+    const dpr = initialPageDetails.devicePixelRatio || 1;
+    let totalWidthCss = options.width || initialPageDetails.totalWidth;
+    let totalHeightCss = initialPageDetails.totalHeight;
 
     // Apply maximum height limit for infinite scroll pages
     const maxHeightPx = options.maxHeight || SCREENSHOT_CONSTANTS.MAX_CAPTURE_HEIGHT_PX;
-    const limitedHeightCss = Math.min(totalHeightCss, maxHeightPx / dpr);
+    let limitedHeightCss = Math.min(totalHeightCss, maxHeightPx / dpr);
 
-    const totalWidthPx = totalWidthCss * dpr;
-    const totalHeightPx = limitedHeightCss * dpr;
+    let totalWidthPx = totalWidthCss * dpr;
+    let totalHeightPx = limitedHeightCss * dpr;
 
-    // Viewport dimensions (CSS pixels) - logged for debugging
     this.logInfo(
       `Viewport size: ${initialPageDetails.viewportWidth}x${initialPageDetails.viewportHeight} CSS pixels`,
     );
@@ -1100,36 +1273,78 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
 
     const viewportHeightCss = initialPageDetails.viewportHeight;
 
-    const capturedParts = [];
+    // Ensure initial scroll position is (0, 0) before slice 0
+    await this.sendMessageToTab(tabId, {
+      action: TOOL_MESSAGE_TYPES.SCREENSHOT_SCROLL_PAGE,
+      x: 0,
+      y: 0,
+      scrollDelay: 50,
+    }).catch(() => {});
+
+    const capturedParts: { dataUrl: string; y: number }[] = [];
     let currentScrollYCss = 0;
     let capturedHeightPx = 0;
     let partIndex = 0;
 
     while (capturedHeightPx < totalHeightPx && partIndex < SCREENSHOT_CONSTANTS.MAX_CAPTURE_PARTS) {
+      const isLastStep =
+        currentScrollYCss + viewportHeightCss >= limitedHeightCss - SCREENSHOT_CONSTANTS.PIXEL_TOLERANCE;
+
       this.logInfo(
-        `Capturing part ${partIndex + 1}... (${Math.round((capturedHeightPx / totalHeightPx) * 100)}%)`,
+        `Capturing part ${partIndex + 1}... (${Math.round((capturedHeightPx / totalHeightPx) * 100)}%) [lastStep: ${isLastStep}]`,
       );
 
+      // 1. Scroll to slice position FIRST (part 0 skips scroll if already at top)
+      // Executing scroll first triggers scroll events, lazy loading, and sticky header activation
       if (currentScrollYCss > 0) {
-        // Don't scroll for the first part if already at top
         const scrollResp = await this.sendMessageToTab(tabId, {
           action: TOOL_MESSAGE_TYPES.SCREENSHOT_SCROLL_PAGE,
           x: 0,
           y: currentScrollYCss,
           scrollDelay: SCREENSHOT_CONSTANTS.SCROLL_DELAY_MS,
         });
-        // Update currentScrollYCss based on actual scroll achieved
-        currentScrollYCss = scrollResp.newScrollY;
+
+        // 2. Dynamic height change recovery: detect page expansion/collapse between steps
+        if (
+          scrollResp &&
+          typeof scrollResp.totalHeight === 'number' &&
+          Math.abs(scrollResp.totalHeight - totalHeightCss) > 5
+        ) {
+          const diff = scrollResp.totalHeight - totalHeightCss;
+          this.logInfo(
+            `Dynamic height change detected: ${diff > 0 ? '+' : ''}${diff}px (old: ${totalHeightCss}, new: ${scrollResp.totalHeight})`,
+          );
+          totalHeightCss = scrollResp.totalHeight;
+          limitedHeightCss = Math.min(totalHeightCss, maxHeightPx / dpr);
+          totalHeightPx = limitedHeightCss * dpr;
+        }
+
+        if (scrollResp && typeof scrollResp.newScrollY === 'number') {
+          currentScrollYCss = scrollResp.newScrollY;
+        }
       }
 
-      // Ensure rendering after scroll
+      // 3. Prepare slice in DOM: GoFullPage StyleStack fixed header hiding / sticky conversion / bottom banner management
+      // Executed AFTER scrolling so elements that become sticky/fixed on scroll are accurately detected and handled
+      await this.sendToHelperWithRetry(tabId, {
+        action: TOOL_MESSAGE_TYPES.SCREENSHOT_PREPARE_SLICE,
+        stepIndex: partIndex,
+        isLastStep,
+      }).catch((err) => {
+        console.warn(`prepareSlice failed on step ${partIndex}:`, err);
+      });
+
+      // 4. Ensure rendering after DOM updates
       await new Promise((resolve) =>
         setTimeout(resolve, SCREENSHOT_CONSTANTS.CAPTURE_STITCH_DELAY_MS),
       );
 
-      const targetTab = await chrome.tabs.get(tabId).catch(() => null);
+      // 5. Capture with quota retry
+      const targetTab = await Promise.resolve(
+        typeof chrome !== 'undefined' && chrome.tabs?.get ? chrome.tabs.get(tabId) : null,
+      ).catch(() => null);
       const dataUrl = targetTab
-        ? await this.captureTabPng(targetTab)
+        ? await this.captureTabPngWithRetry(targetTab)
         : typeof windowId === 'number'
           ? await chrome.tabs.captureVisibleTab(windowId, { format: 'png' })
           : await chrome.tabs.captureVisibleTab({ format: 'png' });
@@ -1138,9 +1353,14 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
       const yOffsetPx = currentScrollYCss * dpr;
       capturedParts.push({ dataUrl, y: yOffsetPx });
 
-      const imgForHeight = await createImageBitmapFromUrl(dataUrl); // To get actual captured height
-      const lastPartEffectiveHeightPx = Math.min(imgForHeight.height, totalHeightPx - yOffsetPx);
+      // 6. Immediately pop slice-specific fixed modifications so DOM returns to natural state before next scroll
+      await this.sendMessageToTab(tabId, {
+        action: TOOL_MESSAGE_TYPES.SCREENSHOT_POP_SLICE_FIXED,
+      }).catch(() => {});
 
+      const imgForHeight = await createImageBitmapFromUrl(dataUrl);
+      const lastPartEffectiveHeightPx = Math.min(imgForHeight.height, totalHeightPx - yOffsetPx);
+      imgForHeight.close?.();
       capturedHeightPx = yOffsetPx + lastPartEffectiveHeightPx;
 
       if (capturedHeightPx >= totalHeightPx - SCREENSHOT_CONSTANTS.PIXEL_TOLERANCE) break;
@@ -1148,15 +1368,14 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
       currentScrollYCss += viewportHeightCss;
       // Prevent overscrolling past the document height for the next scroll command
       if (
-        currentScrollYCss > totalHeightCss - viewportHeightCss &&
-        currentScrollYCss < totalHeightCss
+        currentScrollYCss > limitedHeightCss - viewportHeightCss &&
+        currentScrollYCss < limitedHeightCss
       ) {
-        currentScrollYCss = totalHeightCss - viewportHeightCss;
+        currentScrollYCss = limitedHeightCss - viewportHeightCss;
       }
       partIndex++;
     }
 
-    // Check if we hit any limits
     if (partIndex >= SCREENSHOT_CONSTANTS.MAX_CAPTURE_PARTS) {
       this.logInfo(
         `Reached maximum number of capture parts (${SCREENSHOT_CONSTANTS.MAX_CAPTURE_PARTS}). This may be an infinite scroll page.`,
@@ -1168,7 +1387,7 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
       );
     }
 
-    this.logInfo('Stitching image...');
+    this.logInfo('Stitching image with canvas boundary safety...');
     const finalCanvas = await stitchImages(capturedParts, totalWidthPx, totalHeightPx);
 
     // DPR 1:1 Normalization: enforce output dimensions to standard CSS pixels
@@ -1188,10 +1407,29 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
       targetHeightCss = options.height;
     }
 
-    const outputCanvas = new OffscreenCanvas(targetWidthCss, targetHeightCss);
-    const ctx = outputCanvas.getContext('2d');
-    if (ctx) {
-      ctx.drawImage(finalCanvas, 0, 0, targetWidthCss, targetHeightCss);
+    const MAX_CANVAS_DIM = 16384;
+    const MAX_CANVAS_AREA = 268435456;
+    if (
+      targetWidthCss > MAX_CANVAS_DIM ||
+      targetHeightCss > MAX_CANVAS_DIM ||
+      targetWidthCss * targetHeightCss > MAX_CANVAS_AREA
+    ) {
+      const dimScale = Math.min(MAX_CANVAS_DIM / targetWidthCss, MAX_CANVAS_DIM / targetHeightCss);
+      const areaScale = Math.sqrt(MAX_CANVAS_AREA / (targetWidthCss * targetHeightCss));
+      const scale = Math.min(dimScale, areaScale);
+      targetWidthCss = Math.max(1, Math.floor(targetWidthCss * scale));
+      targetHeightCss = Math.max(1, Math.floor(targetHeightCss * scale));
+    }
+
+    let outputCanvas: any;
+    if (typeof OffscreenCanvas !== 'undefined') {
+      outputCanvas = new OffscreenCanvas(targetWidthCss, targetHeightCss);
+      const ctx = outputCanvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(finalCanvas, 0, 0, targetWidthCss, targetHeightCss);
+      }
+    } else {
+      outputCanvas = finalCanvas;
     }
 
     const format = options.format || 'webp';
@@ -1199,7 +1437,13 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
       format === 'webp' ? 'image/webp' : format === 'jpeg' ? 'image/jpeg' : 'image/png';
     const qualityFraction =
       typeof options.quality === 'number' ? Math.max(0, Math.min(1, options.quality / 100)) : 0.8;
-    return canvasToDataURL(outputCanvas, targetMime, qualityFraction);
+    const finalDataUrl = await canvasToDataURL(outputCanvas, targetMime, qualityFraction);
+
+    return {
+      dataUrl: finalDataUrl,
+      widthCss: targetWidthCss,
+      heightCss: targetHeightCss,
+    };
   }
 }
 

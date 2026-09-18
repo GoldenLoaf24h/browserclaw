@@ -152,22 +152,34 @@ _脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Goog
   - 严禁在大模型中盲猜长 CSS 选择器（如 `div.app-container > section:nth-child(3)...`）或脆弱的绝对 XPath。
   - 严禁假设宿主 DOM 含有 `data-mcp-idx` 属性。
 
-### 准则二：强推批量操作流水线（Batch Actions Pipeline）
+### 准则二：强推批量操作流水线与极速 1 回合规范 (Zero-RTT Submission)
 
-- **面对复杂表单、登录或多步连续任务时**：
-  - 严禁单步循环往返（例如：第一轮点输入框 -> 第二轮等大模型决策 -> 第三轮打字 -> 第四轮回车）。这会导致 3-5 次大模型决策往返延迟（10s+）。
-  - **强制优先使用 `chrome_batch_actions`**，在单次工具调用中按序编排复合操作，一次性提交执行：
-    ```json
-    {
-      "actions": [
-        { "type": "fill", "index": 1, "text": "username@example.com", "clear": true },
-        { "type": "fill", "index": 2, "text": "SuperSecretPassword123!", "clear": true },
-        { "type": "click", "index": 3 },
-        { "type": "wait", "durationMs": 500 }
-      ],
-      "waitForSettle": true
-    }
-    ```
+- **面对查询、表单、登录或多步连续任务时**：
+  - **严禁 3 回合低效往返反模式**：严禁拆成 Turn 1 `read_dom` -> Turn 2 `fill_index` -> Turn 3 `interact_index`！这种拆分导致 2 次多余的模型往返与 10s+ 延迟。
+  - **1 回合极速最佳范式**：
+    1. **搜索框 / 单输入框查询 / 手机号查询**：直接调用 `chrome_fill_index({ index: 15, text: "13800138000", pressEnter: true })`，物理输入并一回合自动回车提交并自适应变动沉淀！
+    2. **输入框 + 独立提交按钮**：在 `chrome_read_dom` 识别到输入框与按钮后，**直接使用 `chrome_batch_actions` 一回合打包提交**：
+       ```json
+       {
+         "actions": [
+           { "type": "fill", "index": 15, "text": "13800138000", "clear": true },
+           { "type": "click", "index": 18 }
+         ],
+         "waitForSettle": true
+       }
+       ```
+    3. **多字段复杂表单**：使用 `chrome_batch_actions` 按序编排填充与提交，或使用 `chrome_form_pipeline` 自动推进：
+       ```json
+       {
+         "actions": [
+           { "type": "fill", "index": 1, "text": "username@example.com", "clear": true },
+           { "type": "fill", "index": 2, "text": "SuperSecretPassword123!", "clear": true },
+           { "type": "click", "index": 3 },
+           { "type": "wait", "durationMs": 500 }
+         ],
+         "waitForSettle": true
+       }
+       ```
   - `chrome_batch_actions` 会在底层连续派发真实 CDP 物理级事件，并将执行进度和中间状态一次性结构化返回。
 
 ### 准则三：纯视觉保底与坐标网格标尺（Visual Fallback）
@@ -214,9 +226,9 @@ _脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Goog
 | :---------------------------------- | :---------------------------------------- | :------------------------------------------------------------------------------------ | :--------------------------------------- |
 | `chrome_read_dom`                   | `filterVisible: true`                     | 获取极简剪枝 DOM 交互树与数字索引，Token 压缩 85%+                                    | **每个网页分析的第一步必调**             |
 | `chrome_interact_index`             | `index` 或 `coordinate: {x,y}`            | 派发物理级鼠标点击或悬停                                                              | 单个按钮点击、链接跳转                   |
-| `chrome_fill_index`                 | `index`, `text`, `clear: true`            | 派发 CDP 原生物理级输入，自动清除旧值并填充文本                                       | 单个输入框填充                           |
-| `chrome_batch_actions`              | `actions: [...]`, `waitForSettle: true`   | 在单次调用中按序编排多个点击、填充、按键与等待（含跨域 iframe 坐标转换）              | **多表单填充、连续复合操作的首选**       |
-| `chrome_screenshot`                 | `enableGrid: true`, `targetIndex`         | 截取视口图像，可选叠加半透明坐标标尺或聚焦微小元素；后台 Tab 走安全离屏截图           | Canvas 画布、复杂验证码或无 DOM 节点图形 |
+| `chrome_fill_index`                 | `index`, `text`, `clear: true`, `pressEnter` | 派发 CDP 原生物理级输入，自动清除旧值并填充文本，支持 `pressEnter: true` 自动提交   | 单输入框极速 1 回合填入并提交            |
+| `chrome_batch_actions`              | `actions: [...]`, `waitForSettle: true`   | 在单次调用中按序编排多个点击、填充、按键与等待（含跨域 iframe 坐标转换）              | **多表单填充、连续复合操作的首选 (1 回合)** |
+| `chrome_screenshot`                 | `grid: true`, `targetIndex`, `format`     | 纯内存直通 base64 截取视口图像，绝不污染用户 Downloads 目录；可选叠加半透明坐标标尺     | Canvas 画布、复杂验证码或无 DOM 节点图形 |
 | `chrome_upload_file`                | `index` 或 `clickTargetIndex`, `filePath` | 动态拦截弹窗或直接向文件输入框注入本地绝对路径                                        | 网页文件上传、头像更换                   |
 | `chrome_get_markdown`               | 无                                        | 提取页面的清晰结构化 Markdown 内容                                                    | 网页内容阅读、文献资料总结               |
 | `chrome_grep`                       | `query`, `searchType`                     | 毫秒级正则/文本定向检索，支持多 Frame 索引重映射与 placeholder/aria-label 检索        | 长列表或大页面极速定位目标元素           |

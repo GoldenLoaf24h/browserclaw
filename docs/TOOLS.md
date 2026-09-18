@@ -3,7 +3,7 @@
 > 本文档由 `scripts/gen-tools-doc.mjs` 从 `packages/shared/src/tools.ts` 的 schema 生成，与代码保持一致。重新生成：`node scripts/gen-tools-doc.mjs`。
 
 | core（默认） | 14 | ~11.5k tokens | 核心高频利器（DOM 索引直点/表单/视觉/搜索） |
-| full | 45 | ~19.5k tokens | 完整底层 CDP 穿透与扩展控制 |
+| full | 46 | ~19.5k tokens | 完整底层 CDP 穿透与扩展控制 |
 | crawl | 12 | ~5.8k tokens | 极速批量网页抓取与数据提取 |
 
 被 profile 隐藏的工具可用 `chrome_tool_docs` 按类别查询参数（该工具在任何 profile 均可用）。
@@ -19,7 +19,7 @@ Navigate to a URL, refresh the current tab, or navigate browser history (back/fo
 - `newWindow` — Create a new window to navigate to the URL or not. Defaults to false
 - `tabId` — Target an existing tab by ID (if provided, navigate/refresh/back/forward that tab instead of the active tab).
 - `windowId` — Target an existing window by ID (when creating a new tab in existing window, or picking active tab if tabId is not provided).
-- `background` — Perform the operation without stealing focus (do not activate the tab or focus the window). Default: true (set false only if user explicitly asks to b
+- `background` — Perform the operation without stealing focus (do not activate the tab or focus the window). Default: true (set false only if user explicitly asks to bring tab to foreground)
 - `width` — Window width in pixels (default: 1280). When width or height is provided, a new window will be created.
 - `height` — Window height in pixels (default: 720). When width or height is provided, a new window will be created.
 - `refresh` — Refresh the current active tab instead of navigating to a URL. When true, the url parameter is ignored. Defaults to false
@@ -81,9 +81,9 @@ Get all currently open browser windows and tabs
 
 Extract and prune interactive DOM tree with compact 1-based index assignment, viewport boundary filtering, and occlusion pruning. Supports scoped container targeting (selector) and noise exclusion (exclude) to eliminate full DOM dump overhead.
 
-- `selector` — CSS selector to scope parsing to a specific container/element (e.g. "#main-cart", ".dialog-box"). Only descendants and self within matching containers
-- `scope` — Alias for selector. CSS selector to scope parsing to a specific container/element (e.g. "#main-cart", ".dialog-box"). Only descendants and self within
-- `isolateModal` — When true and an active modal dialog is detected, restricts indexing to the active modal while strictly protecting portals, dropdowns, and alert conta
+- `selector` — CSS selector to scope parsing to a specific container/element (e.g. "#main-cart", ".dialog-box"). Only descendants and self within matching containers are indexed.
+- `scope` — Alias for selector. CSS selector to scope parsing to a specific container/element (e.g. "#main-cart", ".dialog-box"). Only descendants and self within matching containers are indexed.
+- `isolateModal` — When true and an active modal dialog is detected, restricts indexing to the active modal while strictly protecting portals, dropdowns, and alert containers.
 - `exclude` — CSS selector(s) to exclude from parsing (e.g. "#footer, #recommendations, .ad-banner"). Matching elements and their entire subtrees are pruned.
 - `viewportThreshold` — Vertical threshold in pixels for viewport boundary checking (default 1000)
 - `tabId` — Target tab ID (optional)
@@ -93,9 +93,10 @@ Extract and prune interactive DOM tree with compact 1-based index assignment, vi
 - `cursor` — Pagination cursor offset for traversing very large DOM pages incrementally (default: 0)
 - `limit` — Maximum number of indexed elements to return for current page cursor slice (default: unlimited)
 - `maxTextLength` — Maximum text length before truncation for element text content (default: 120)
-- `includeDetails` — Also return the bulky indexedElements/indexMap detail blocks (geometry, occlusion flags, safe click points). Off by default because the tree already c
+- `includeDetails` — Also return the bulky indexedElements/indexMap detail blocks (geometry, occlusion flags, safe click points). Off by default because the tree already carries index/tag/attributes/text; enable only when you need per-element rects or visibility flags.
 - `viewportOnly` — When true, only index elements inside or immediately near the visible viewport (default: false)
-- `format:compact|html` — Output format for treeString. "compact" (default) produces a concise, accessibility-tree-inspired representation without closing tags, slashing token 
+- `activeViewportOnly` — When true, strictly constrains indexing to elements currently visible within the active viewport (threshold = 0) with horizontal/vertical frustum clipping, eliminating ghost elements from SPA wizards, carousels, and multi-step forms.
+- `format:compact|html` — Output format for treeString. "compact" (default) produces a concise, accessibility-tree-inspired representation without closing tags, slashing token usage by 60%+. "html" returns legacy pseudo-HTML tags.
 - `deltaOnly` — When true, returns only changed/added/removed diffs compared to the previous snapshot, saving 90%+ tokens on repeated reads.
 
 ### `chrome_get_markdown`
@@ -123,7 +124,7 @@ Search the page without dumping full DOM tree. Supports searching interactive el
 
 - `query`（必填） — Search term or regex pattern
 - `isRegex` — Whether to evaluate query as a regular expression (default: false)
-- `searchType:interactive_only|all_dom|page_text` — Search target: "interactive_only" (default, matches clickable/fillable elements and returns indices), "all_dom" (matches all elements), "page_text" (s
+- `searchType:interactive_only|all_dom|page_text` — Search target: "interactive_only" (default, matches clickable/fillable elements and returns indices), "all_dom" (matches all elements), "page_text" (scans visible text lines).
 - `limit` — Maximum matching results to return (default: 20, max: 50)
 - `tabId` — Target tab ID (optional)
 - `sessionId` — Session identifier for tab affinity (optional)
@@ -153,13 +154,13 @@ Return compact parameter documentation for a category of BrowserClaw tools (navi
 Click, hover, or interact with an element using its compact 1-based numeric index from chrome_read_dom. When performing predictable multi-step actions (e.g. form submission or chain navigation), prefer chrome_batch_actions to finish in a single round-trip.
 
 - `index` — Compact 1-based numeric index of the target element
-- `coordinate` — Visual fallback coordinates in viewport/CSS pixels: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized
-- `coordinateSpace:viewport|screenshot` — Coordinate reference space. "viewport" (default) assumes standard CSS viewport pixels. "screenshot" scales coordinates based on the latest screenshot 
-- `autoSnap` — When clicking via coordinates or visual fallback, magnetically snap to the closest interactive element if clicked within 24px of whitespace. Default: 
+- `coordinate` — Visual fallback coordinates in viewport/CSS pixels: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized, 0~1000 per-mille, or absolute viewport pixels across modern vision agents).
+- `coordinateSpace:viewport|screenshot` — Coordinate reference space. "viewport" (default) assumes standard CSS viewport pixels. "screenshot" scales coordinates based on the latest screenshot capture resolution.
+- `autoSnap` — When clicking via coordinates or visual fallback, magnetically snap to the closest interactive element if clicked within 24px of whitespace. Default: true.
 - `points` — Click sequence: dispatch a full CDP click at each viewport point with intervalMs pacing (rapid burst for moving canvas targets)
 - `intervalMs` — Delay between points in the click sequence, 5-500ms (default 35)
 - `action:click|hover|double_click|right_click|drag` — Interaction action to perform (default: click). "drag" requires `end` and moves from the indexed element to that target.
-- `path` — Continuous drag path: an ordered array of { x, y } coordinates to smoothly drag the mouse through while pressed. Ideal for circular gestures, sliders,
+- `path` — Continuous drag path: an ordered array of { x, y } coordinates to smoothly drag the mouse through while pressed. Ideal for circular gestures, sliders, and drawing on canvas.
 - `end` — Drag destination: { index } for an indexed element, or { coordinate: { x, y } } for a raw point. Required when action is "drag".
 - `steps` — Number of intermediate mouse-move steps for drag (default 48; lower is faster, higher is smoother)
 - `holdMs` — How long to hold the mouse button before dragging, in ms (default 80, range 0-3000)
@@ -179,13 +180,14 @@ Click, hover, or interact with an element using its compact 1-based numeric inde
 
 ### `chrome_fill_index`
 
-Fill text into an input or textarea element using its compact 1-based numeric index. When filling multiple fields in a form, prefer chrome_batch_actions to fill and submit the entire form in 1 turn.
+Fill text into an input or textarea element using its compact 1-based numeric index. For single search/form submission, pass pressEnter: true to fill and submit in 1 turn without needing a separate click. When filling multiple fields or clicking submit, use chrome_batch_actions to pipeline in 1 turn.
 
 - `index`（必填） — Compact 1-based numeric index of the target element
 - `text` — Text content to fill into the element
 - `value` — Alias for text parameter
 - `clear` — Whether to clear existing field content before typing (default: true)
-- `pressEnter` — Whether to dispatch an Enter key event immediately after filling the text (default: false)
+- `pressEnter` — Whether to dispatch an Enter key event immediately after filling the text (default: false). Strongly recommended for search boxes and single-input queries to trigger immediate submission in 1 turn.
+- `submit` — Whether to automatically submit the form after filling (default: false). If true, clicks the detected submit button or presses Enter, completing fill + submit in 1 turn.
 - `tabId` — Target tab ID (optional)
 - `windowId` — Target window ID (optional)
 - `waitForSettle` — Wait for DOM mutations to settle after filling text before returning (default: false)
@@ -215,7 +217,7 @@ Upload files to web forms with file input elements using Chrome DevTools Protoco
 - `windowId` — Target window ID to pick active tab when tabId is omitted
 - `selector` — CSS selector for the file input element (optional if index is provided)
 - `index` — Compact 1-based numeric index of the file input element from chrome_read_dom
-- `clickTargetIndex` — Compact 1-based numeric index of a button/element from chrome_read_dom to click that triggers a dynamic file chooser dialog (e.g. Ant Design, Element 
+- `clickTargetIndex` — Compact 1-based numeric index of a button/element from chrome_read_dom to click that triggers a dynamic file chooser dialog (e.g. Ant Design, Element Plus upload buttons) intercepted via CDP Page.setInterceptFileChooserDialog
 - `filePath` — Local file path to upload
 - `fileUrl` — URL to download file from before uploading
 - `base64Data` — Base64 encoded file data to upload
@@ -261,14 +263,14 @@ Execute a sequential multi-step pipeline of browser actions in a single round-tr
 Use a mouse and keyboard to interact with a web browser, and take screenshots.
 
 - `tabId` — Target tab ID (default: active tab)
-- `groupTitle` — Title for the Chrome tab group created or joined for this task. Agent should generate a short, task-aligned title in the user language. Default: "Agen
+- `groupTitle` — Title for the Chrome tab group created or joined for this task. Agent should generate a short, task-aligned title in the user language. Default: "Agent"
 - `groupColor:grey|blue|red|yellow|green|pink|purple|cyan|orange` — Color for the Chrome tab group. Default: "blue"
 - `autoGroup` — Automatically place the newly opened tab into an Agent-managed tab group with dedicated title and color. Default: true
 - `background` — Avoid focusing/activating tab/window for operations (best-effort). Default: true (runs quietly in background without stealing user focus)
 - `dwellMs` — For click actions: milliseconds to hold the button down before release (0-2000). Use 50-150 for targets that reject instant clicks
 - `action:left_click|right_click|double_click|triple_click|left_click_drag|scroll|scroll_to|type|key|fill|fill_form|hover|wait|resize_page|zoom|screenshot`（必填） — Action to perform. There is no plain "click" — use left_click.
 - `ref` — Element ref/index from chrome_read_dom. For click/scroll/scroll_to/key/type and drag end when provided; takes precedence over coordinates.
-- `coordinates` — Coordinates for actions: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized, 0~1000 per-mille, or abso
+- `coordinates` — Coordinates for actions: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized, 0~1000 per-mille, or absolute viewport pixels across modern vision agents). Interpreted in the space set by coordinateSpace (default: viewport). Required for click/scroll and as end point for drag.
 - `coordinateSpace:viewport|screenshot` — Space of coordinates: viewport (default, absolute CSS pixels) or screenshot (mapped through the most recent screenshot context for this tab).
 - `autoSnap` — Magnetically snap coordinate clicks to the closest interactive element if clicked within 24px of whitespace. Default: true.
 - `startCoordinates` — Starting coordinates for drag action: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box.
@@ -318,6 +320,18 @@ Rolls back the most recent mutating action on this tab (e.g. reverts form field 
 
 - `tabId` — Target tab ID
 
+### `chrome_form_pipeline`
+
+Autonomously fill and advance multi-step forms / wizards (e.g. Typeform, onboarding, multi-page surveys) in a local execution loop without multi-turn LLM ping-pong. Automatically matches fields, selects choices, triggers step advancement (via Enter or OK/Next button), and yields structured interrupts upon CAPTCHA or blocking validation errors.
+
+- `fields`（必填） — Ordered list of fields and values to fulfill throughout the form flow
+- `maxSteps` — Maximum form advancement steps to attempt before returning (default: 20)
+- `autoAdvance` — Automatically trigger step advance via Enter or clicking OK/Next button after input (default: true)
+- `tabId` — Target tab ID (optional)
+- `windowId` — Target window ID (optional)
+- `sessionId` — Optional session identifier to bind affinity to a specific tab context
+- `sessionContext` — Optional alias for sessionId
+
 
 ## 观察与滚动 / Observation & Scrolling
 
@@ -325,9 +339,9 @@ Rolls back the most recent mutating action on this tab (e.g. reverts form field 
 
 [Prefer chrome_read_dom over taking a screenshot] Take a screenshot of the current page or a specific element. Returns base64 image directly in MCP image content block without writing to disk. By default, output is compressed JPEG with maxWidth <= 1280px. Debug disk save is available via savePng/saveToDisk into system temporary directory.
 
-- `name` — Name for the screenshot, if saving to disk
+- `name` — Name or label for the screenshot. Purely in-memory by default; only written to disk if savePng/saveToDisk is explicitly set to true.
 - `selector` — CSS selector for element to screenshot
-- `assetIndex` — View one visual asset listed by chrome_read_dom ([asset N] lines): returns the real image resource; falls back to a viewport crop when bytes are unava
+- `assetIndex` — View one visual asset listed by chrome_read_dom ([asset N] lines): returns the real image resource; falls back to a viewport crop when bytes are unavailable
 - `tabId` — Target tab ID to capture from (default: active tab).
 - `windowId` — Target window ID to pick active tab from when tabId is not provided.
 - `background` — Attempt capture without bringing tab/window to foreground. CDP-based capture is used for viewport captures. Default: true
@@ -335,20 +349,23 @@ Rolls back the most recent mutating action on this tab (e.g. reverts form field 
 - `height` — Height in pixels (default: 600)
 - `maxWidth` — Maximum width in pixels for compression (default: 1280)
 - `storeBase64` — Return screenshot in base64 format in text content (image content is always returned directly)
-- `fullPage` — Store screenshot of the entire page (default: false)
+- `fullPage` — Capture a full-page scroll screenshot with GoFullPage-grade industrial stitching: automatic StyleStack fixed/sticky header de-duplication, page warmup for lazy-loading/skeletons, dynamic height change recovery, and captureVisibleTab quota backoff retry (default: false).
+- `maxHeight` — Maximum height in pixels to capture for full-page screenshots (default: 50000, protects against infinite scroll runaway).
 - `savePng` — Save screenshot to system temporary directory for debugging (default: false, zero disk write by default)
-- `saveToDisk` — Deprecated alias for savePng; still accepted but hidden from the schema to keep it small. Prefer savePng.
+- `saveToDisk` — Deprecated alias for savePng (default: false, zero disk write by default; saves to system temp, not Downloads). Prefer savePng.
 - `som` — Overlay Set-of-Mark numbered badges on interactive elements before capturing the screenshot
 - `highlight` — Deprecated alias for som; still accepted but hidden from the schema to keep it small. Prefer som.
 - `targetIndex` — Compact 1-based numeric index of target element from chrome_read_dom to crop and capture only this specific region of interest
+- `index` — Alias for targetIndex: compact 1-based numeric index of target element from chrome_read_dom to crop and capture
 - `padding` — Padding in pixels to expand around targetIndex crop area (default: 0)
-- `region` — Lossless high-density ROI crop: capture only a specific sub-region { x0, y0, x1, y1 } in CSS pixels or polymorphic [ymin, xmin, ymax, xmax]. Completel
+- `region` — Lossless high-density ROI crop: capture only a specific sub-region { x0, y0, x1, y1 } in CSS pixels or polymorphic [ymin, xmin, ymax, xmax]. Completely avoids downscaling and preserves full pixel clarity for fine details like small text or dice dots.
 - `crop` — Alias for region: { x, y, width, height } or { x0, y0, x1, y1 }.
-- `grid` — Overlay semi-transparent coordinate reference grid with perimeter tape measure rulers (20/50/100px ticks) and interior reticle crosshairs (+) to elimi
+- `grid` — Overlay semi-transparent coordinate reference grid with perimeter tape measure rulers (20/50/100px ticks) and interior reticle crosshairs (+) to eliminate visual estimation hallucination (default: false)
+- `enableGrid` — Alias for grid: overlay semi-transparent coordinate reference grid with perimeter tape measure rulers and crosshairs
 - `expandSearchArea` — For small elements (< 100x100), adaptively expand the crop bounding box to preserve surrounding headers and text context (default: true)
 - `format:png|jpeg|webp` — Image output format: webp (default, high compression for LLM), jpeg, or png
 - `quality` — Image compression quality from 0 to 100 for webp/jpeg formats (default: 80)
-- `highClarity` — Prioritize 100% full-resolution clarity without downsampling (disables dimension scaling, keeps 1:1 CSS pixel sharpness for reading fine details or di
+- `highClarity` — Prioritize 100% full-resolution clarity without downsampling (disables dimension scaling, keeps 1:1 CSS pixel sharpness for reading fine details or dice dots).
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
 
 ### `chrome_smart_scroll`
@@ -379,8 +396,8 @@ Capture console output from a browser tab. Supports snapshot mode (default; one-
 - `maxMessages` — Maximum number of console messages to capture in snapshot mode (default: 100). If limit is provided, it takes precedence.
 - `mode:snapshot|buffer` — Console capture mode: snapshot (default; waits ~2s for messages) or buffer (persistent per-tab buffer; reads from memory instantly).
 - `buffer` — Deprecated alias for mode="buffer". Prefer mode.
-- `clear` — Buffer mode only: clear the buffered logs for this tab before reading (default: false). Use clearAfterRead instead to clear after reading (mcp-tools.j
-- `clearAfterRead` — Buffer mode only: clear the buffered logs for this tab AFTER reading, to avoid duplicate messages on subsequent calls (default: false). This matches m
+- `clear` — Buffer mode only: clear the buffered logs for this tab before reading (default: false). Use clearAfterRead instead to clear after reading (mcp-tools.js style).
+- `clearAfterRead` — Buffer mode only: clear the buffered logs for this tab AFTER reading, to avoid duplicate messages on subsequent calls (default: false). This matches mcp-tools.js behavior.
 - `pattern` — Optional regex filter applied to message/exception text. Supports /pattern/flags syntax.
 - `onlyErrors` — Only return error-level console messages (and exceptions when includeExceptions=true). Default: false.
 - `limit` — Deprecated alias for maxMessages. Prefer maxMessages.
@@ -393,10 +410,10 @@ Capture console output from a browser tab. Supports snapshot mode (default; one-
 Retrieve and search browsing history from Chrome
 
 - `text` — Text to search for in history URLs and titles. Leave empty to retrieve all history entries within the time range.
-- `startTime` — Start time as a date string. Supports ISO format (e.g., "2023-10-01", "2023-10-01T14:30:00"), relative times (e.g., "1 day ago", "2 weeks ago", "3 mon
-- `endTime` — End time as a date string. Supports ISO format (e.g., "2023-10-31", "2023-10-31T14:30:00"), relative times (e.g., "1 day ago", "2 weeks ago", "3 month
+- `startTime` — Start time as a date string. Supports ISO format (e.g., "2023-10-01", "2023-10-01T14:30:00"), relative times (e.g., "1 day ago", "2 weeks ago", "3 months ago", "1 year ago"), and special keywords ("now", "today", "yesterday"). Default: 24 hours ago
+- `endTime` — End time as a date string. Supports ISO format (e.g., "2023-10-31", "2023-10-31T14:30:00"), relative times (e.g., "1 day ago", "2 weeks ago", "3 months ago", "1 year ago"), and special keywords ("now", "today", "yesterday"). Default: current time
 - `maxResults` — Maximum number of history entries to return. Use this to limit results for performance or to focus on the most relevant entries. (default: 100)
-- `excludeCurrentTabs` — When set to true, filters out URLs that are currently open in any browser tab. Useful for finding pages you've visited but don't have open anymore. (d
+- `excludeCurrentTabs` — When set to true, filters out URLs that are currently open in any browser tab. Useful for finding pages you've visited but don't have open anymore. (default: false)
 
 ### `chrome_bookmark_search`
 
@@ -412,7 +429,7 @@ Add a new bookmark to Chrome
 
 - `url` — URL to bookmark. If not provided, uses the current active tab URL.
 - `title` — Title for the bookmark. If not provided, uses the page title from the URL.
-- `parentId` — Parent folder path or ID to add the bookmark to. Can be a path string (e.g., "Work/Projects") or a folder ID. If not provided, adds to the "Bookmarks 
+- `parentId` — Parent folder path or ID to add the bookmark to. Can be a path string (e.g., "Work/Projects") or a folder ID. If not provided, adds to the "Bookmarks Bar" folder.
 - `createFolder` — Whether to create the parent folder if it does not exist (default: false)
 
 ### `chrome_bookmark_delete`
@@ -487,7 +504,7 @@ Read localStorage, sessionStorage, and cookies for the current tab. Cookies incl
 - `types` — Which stores to read (default: all three)
 - `filter` — Only return entries whose key or value contains this substring (case-insensitive)
 - `limit` — Maximum entries returned per store (default 200)
-- `includeHttpOnly` — Include HttpOnly cookies (default true). Their values are redacted (valueIncluded: false) regardless; set includeHttpOnly:false to drop the entries en
+- `includeHttpOnly` — Include HttpOnly cookies (default true). Their values are redacted (valueIncluded: false) regardless; set includeHttpOnly:false to drop the entries entirely
 - `tabId` — Target tab ID (optional)
 - `windowId` — Target window ID (optional)
 - `sessionId` — Session ID for tab affinity (optional)
@@ -535,7 +552,7 @@ Send a network request from the browser with cookies and other browser context
 - `headers` — Headers to include in the request
 - `body` — Body of the request (for POST, PUT, etc.)
 - `timeout` — Timeout in milliseconds (default: 30000)
-- `formData` — Multipart/form-data descriptor. If provided, overrides body and builds FormData with optional file attachments. Shape: { fields?: Record<string,string
+- `formData` — Multipart/form-data descriptor. If provided, overrides body and builds FormData with optional file attachments. Shape: { fields?: Record<string,string|number|boolean>, files?: Array<{ name: string, fileUrl?: string, filePath?: string, base64Data?: string, filename?: string, contentType?: string }> }. Also supports a compact array form: [ [name, fileSpec, filename?], ... ] where fileSpec may be url:, file:, or base64:.
 - `tabId` — Optional ID of the tab to execute the request within (defaults to active tab)
 - `tabUrl` — Optional URL of the tab to execute the request within
 

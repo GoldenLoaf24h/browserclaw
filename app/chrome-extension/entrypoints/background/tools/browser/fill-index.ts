@@ -20,6 +20,7 @@ export interface FillIndexParams {
   value?: string;
   clear?: boolean;
   pressEnter?: boolean;
+  submit?: boolean;
   tabId?: number;
   windowId?: number;
   waitForSettle?: boolean;
@@ -431,7 +432,69 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
         );
       }
 
-      if (args.waitForSettle) {
+      if (args.submit === true && outcome.success) {
+        if (outcome.submitButtonState?.found && typeof (outcome.submitButtonState as any).index === 'number') {
+          const btnIdx = (outcome.submitButtonState as any).index;
+          try {
+            const { interactIndexTool } = await import('./interact-index');
+            const clickRes = await interactIndexTool.execute({
+              index: btnIdx,
+              action: 'click',
+              tabId: targetTabId,
+              waitForSettle: false,
+            });
+            let submitSummary: any = (clickRes?.content?.[0] as any)?.text;
+            try {
+              submitSummary = JSON.parse(submitSummary);
+            } catch {}
+            (outcome as any).submitted = true;
+            (outcome as any).submitMethod = 'click';
+            (outcome as any).submittedButtonIndex = btnIdx;
+            (outcome as any).submitResult = submitSummary || { success: true };
+          } catch (clickErr) {
+            console.warn('Auto-submit click failed, falling back to Enter:', clickErr);
+            await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
+              type: 'rawKeyDown',
+              key: 'Enter',
+              code: 'Enter',
+              windowsVirtualKeyCode: 13,
+              nativeVirtualKeyCode: 13,
+            });
+            await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
+              type: 'keyUp',
+              key: 'Enter',
+              code: 'Enter',
+              windowsVirtualKeyCode: 13,
+              nativeVirtualKeyCode: 13,
+            });
+            (outcome as any).submitted = true;
+            (outcome as any).submitMethod = 'pressEnter';
+          }
+        } else {
+          await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
+            type: 'rawKeyDown',
+            key: 'Enter',
+            code: 'Enter',
+            windowsVirtualKeyCode: 13,
+            nativeVirtualKeyCode: 13,
+          });
+          await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
+            type: 'keyUp',
+            key: 'Enter',
+            code: 'Enter',
+            windowsVirtualKeyCode: 13,
+            nativeVirtualKeyCode: 13,
+          });
+          (outcome as any).submitted = true;
+          (outcome as any).submitMethod = 'pressEnter';
+        }
+      }
+
+      const shouldWaitSettle =
+        args.waitForSettle ||
+        (args.pressEnter === true && args.waitForSettle !== false) ||
+        (args.submit === true && args.waitForSettle !== false);
+      if (shouldWaitSettle) {
         const settleResult = await waitForPageSettle(targetTabId, {
           timeoutMs: args.settleTimeoutMs,
         });
@@ -469,15 +532,43 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
         (outcome as any).perceptiveDelta = perceptiveDelta;
       }
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(outcome),
-            },
-          ],
-          isError: false,
-        };
+      (outcome as any).pressEnter = Boolean(
+        args.pressEnter || (args.submit && (outcome as any).submitMethod === 'pressEnter'),
+      );
+      if (args.pressEnter === true || (outcome as any).submitMethod === 'pressEnter') {
+        (outcome as any).pressEnterDispatched = true;
+      }
+
+      if (outcome.submitButtonState?.found && typeof (outcome.submitButtonState as any).index === 'number') {
+        const btnIdx = (outcome.submitButtonState as any).index;
+        const btnTxt = outcome.submitButtonState.text || 'Submit';
+        (outcome as any).submitButtonIndex = btnIdx;
+        (outcome as any).submitButtonText = btnTxt;
+        if (!args.submit) {
+          (outcome as any).nextActionHint = `Submit button detected at index [${btnIdx}] ("${btnTxt}"). 1-Turn Optimal Paradigm: Use chrome_fill_index({ index: ${args.index}, text: '...', submit: true }), pass pressEnter: true, or use chrome_batch_actions([{type: 'fill', index: ${args.index}, text: '...'}, {type: 'click', index: ${btnIdx}}]) to eliminate extra turns.`;
+        }
+      } else if (!args.pressEnter && !args.submit) {
+        (outcome as any).nextActionHint = `1-Turn Optimal Paradigm: Pass submit: true or pressEnter: true to chrome_fill_index, or use chrome_batch_actions to pipeline fill and submit in 1 turn.`;
+      }
+
+      const seen = new WeakSet();
+      const safeText = JSON.stringify(outcome, (_key, value) => {
+        if (typeof value === 'object' && value !== null) {
+          if (seen.has(value)) return '[Circular]';
+          seen.add(value);
+        }
+        return value;
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: safeText,
+          },
+        ],
+        isError: false,
+      };
       });
     } catch (error) {
       if (error instanceof DialogOpenedError) {

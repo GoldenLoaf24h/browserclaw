@@ -311,8 +311,28 @@ When an element cannot be targeted via DOM index (e.g. Canvas games, WebGL chart
 - **Grid Styles**: `"ruler"` (default perimeter ruler), `"crosshair"` (pure reticle crosshairs without screen-crossing lines, completely eliminating element border confusion like mistaking lines for dice edges), `"classic"` (dashed red lines), or `"1000"` (normalized 0-1000 per-mille).
 - **Zero-Blur Smart Compression**: Automatically steps WebP/JPEG quality factors while strictly preserving 1:1 CSS pixel resolution (`scale: 1.0`), preventing Vision API downscale blur for standard viewports.
 - **High-Clarity Mode**: Pass `"highClarity": true` to disable dimension scaling and preserve 100% full-resolution sharpness for micro-details.
+- **Zero-Disk-Write Default**: Screenshots are returned purely in-memory via standard MCP image content blocks. The user's Downloads directory is never written to, completely preventing file clutter or localized default filename collisions.
 
-### 2. Lossless ROI Sub-Region Crops & Zoom
+### 2. GoFullPage-Grade Industrial Full-Page Capture (`fullPage: true`)
+
+When a complete scrollable webpage needs to be captured into a single high-clarity image:
+
+```json
+// Call chrome_screenshot with fullPage
+{
+  "fullPage": true,
+  "format": "webp"
+}
+```
+
+- **StyleStack Header De-duplication**: Screen 1 preserves original navigation headers; screens 2+ automatically hide fixed/sticky headers (`visibility: hidden`) and convert sticky elements to relative, preventing repetitive headers down the stitched image. Floating footers/banners are hidden until the final slice, rendering cleanly once at the bottom. Original page styles are 100% restored via `StyleStack.popAll()` on finish or error.
+- **Page Warmup (Lazy-Loading & Skeletons)**: Rapidly scrolls to the page bottom and back to top before slicing to trigger `IntersectionObserver`, dynamic skeleton loaders, and image lazy loaders, eliminating blank image gaps.
+- **Dynamic Height Change Auto-Recovery**: Detects page `scrollHeight` expansions or collapses between scroll steps and dynamically compensates y-offsets to eliminate slice overlaps or tears.
+- **Quota Error Exponential Backoff**: Catches Chromium `MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND exceeded` rate limits and automatically retries with exponential backoff.
+- **Canvas Dimension Safety**: Respects browser max canvas limits (16,384px) and safely stitches oversized or infinite scroll pages without memory crashes.
+- **DPR 1:1 Normalization & Grid Support**: Fully normalized to CSS dimensions; optionally combine with `"grid": true` or `"som": true`. Debug disk save is available via `"savePng": true`.
+
+### 3. Lossless ROI Sub-Region Crops & Zoom
 
 To inspect or interact with fine details (small dice dots, tiny badges, CAPTCHAs):
 
@@ -335,7 +355,7 @@ Or via `chrome_computer`:
 
 BrowserClaw captures the sub-region at native resolution, preserves global viewport origin offsets in `screenshotContextManager`, and ensures subsequent clicks accurately map back to global page coordinates.
 
-### 3. Dispatch Multimodal Coordinate Actions & Magnetic Auto-Snapping
+### 4. Dispatch Multimodal Coordinate Actions & Magnetic Auto-Snapping
 
 The **Polymorphic Coordinate Inference Engine (PCIE)** automatically adapts to any spatial coordinate format:
 

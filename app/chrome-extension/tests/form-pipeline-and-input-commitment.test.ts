@@ -7,6 +7,8 @@ import {
   inPageDOMPruner,
   inPageLocateByText,
   getIsolatedIndexMap,
+  extractElementLocationDetails,
+  wrapElement,
 } from '../entrypoints/background/tools/browser/dom-indexer';
 import { formPipelineTool } from '../entrypoints/background/tools/browser/form-pipeline';
 import * as engine from '../entrypoints/background/tools/browser/in-page-engine';
@@ -591,6 +593,93 @@ describe('Next-Gen Architecture: True Input Commitment, Anti-Ghosting & Autonomo
       expect(payload.status).toBe('interrupted');
       expect(payload.reason).toBe('captcha_detected');
       expect(payload.interruptDetails?.captchaType).toBe('.cf-turnstile');
+    });
+  });
+
+  describe('6. Robust Text Location, Options Support & Index Isolation Hardening', () => {
+    it('inPageLocateByText safely accepts options object without throwing role.toLowerCase TypeError', () => {
+      const btn = document.createElement('button');
+      btn.textContent = 'Accept & Proceed';
+      btn.setAttribute('role', 'button');
+      btn.getBoundingClientRect = () =>
+        ({
+          top: 10,
+          left: 10,
+          bottom: 40,
+          right: 100,
+          width: 90,
+          height: 30,
+        }) as any;
+      document.body.appendChild(btn);
+
+      // Verify options object passed by form-pipeline.ts { exact: false, visibleOnly: true, threshold: 0 }
+      const res = inPageLocateByText('Accept & Proceed', {
+        exact: false,
+        visibleOnly: true,
+        threshold: 0,
+      } as any);
+
+      expect(res.success).toBe(true);
+      expect(res.tagName).toBe('button');
+      expect(res.role).toBe('button');
+      expect(res.isClickable).toBe(true);
+      expect(typeof res.index).toBe('number');
+    });
+
+    it('extractElementLocationDetails 2-pass matching prevents parent container from stealing child element index', () => {
+      const map = getIsolatedIndexMap();
+
+      // Parent container (e.g. form or card) indexed at index 1
+      const form = document.createElement('form');
+      form.id = 'survey-form';
+      const submitBtn = document.createElement('button');
+      submitBtn.type = 'submit';
+      submitBtn.textContent = 'Submit Answers';
+      form.appendChild(submitBtn);
+      document.body.appendChild(form);
+
+      // Register container at index 1
+      map.set(1, wrapElement(form));
+
+      // Extract location for submitBtn
+      const loc = extractElementLocationDetails(submitBtn);
+
+      expect(loc.success).toBe(true);
+      // Under old bug: target.contains(el) matched form, assigning index 1 to the button!
+      // Under 2-pass fix: button receives its own distinct index (2)
+      expect(loc.index).not.toBe(1);
+      expect(loc.index).toBe(2);
+      expect(loc.isClickable).toBe(true);
+      expect(loc.role).toBeUndefined(); // native button has no explicit role attribute
+    });
+
+    it('inPageVerifyInputCommitment submitButtonState allocates distinct index without container collision', () => {
+      const map = getIsolatedIndexMap();
+
+      const form = document.createElement('form');
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.name = 'email';
+      const submitBtn = document.createElement('button');
+      submitBtn.type = 'submit';
+      submitBtn.textContent = 'Continue';
+      form.appendChild(input);
+      form.appendChild(submitBtn);
+      document.body.appendChild(form);
+
+      // Register form at index 10
+      map.set(10, wrapElement(form));
+      // Register input at index 11
+      map.set(11, wrapElement(input));
+
+      input.value = 'user@example.com';
+      const verification = inPageVerifyInputCommitment(11, 'user@example.com');
+
+      expect(verification.committed).toBe(true);
+      expect(verification.submitButtonState?.found).toBe(true);
+      // Must NOT be the form's index 10!
+      expect(verification.submitButtonState?.index).not.toBe(10);
+      expect(verification.submitButtonState?.index).toBe(12);
     });
   });
 });

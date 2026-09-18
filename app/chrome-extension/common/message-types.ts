@@ -36,6 +36,9 @@ export const TOOL_MESSAGE_TYPES = {
   SCREENSHOT_GET_ELEMENT_DETAILS: 'getElementDetails',
   SCREENSHOT_SCROLL_PAGE: 'scrollPage',
   SCREENSHOT_RESET_PAGE_AFTER_CAPTURE: 'resetPageAfterCapture',
+  SCREENSHOT_PREPARE_SLICE: 'prepareSlice',
+  SCREENSHOT_POP_SLICE_FIXED: 'popSliceFixed',
+  SCREENSHOT_WARMUP_PAGE: 'warmupPage',
 
   // Web content fetching
   WEB_FETCHER_GET_HTML_CONTENT: 'getHtmlContent',

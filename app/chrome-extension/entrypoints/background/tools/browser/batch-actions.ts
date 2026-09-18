@@ -211,6 +211,20 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
       for (let i = 0; i < actions.length; i++) {
         const item = actions[i];
+        if (item && typeof item === 'object') {
+          if (typeof (item as any).index === 'string' && /^-?\d+$/.test((item as any).index.trim())) {
+            item.index = parseInt((item as any).index.trim(), 10);
+          }
+          if (typeof (item as any).pressEnter === 'string') {
+            item.pressEnter = (item as any).pressEnter.trim() === 'true';
+          }
+          if (typeof (item as any).submit === 'string') {
+            (item as any).submit = (item as any).submit.trim() === 'true';
+          }
+          if (typeof (item as any).clear === 'string') {
+            item.clear = (item as any).clear.trim() === 'true';
+          }
+        }
         const itemNetCapture = startActionNetworkCapture(tabId, item.captureNetwork);
 
         // Runtime URL drift guard: verify URL has not navigated to a different origin
@@ -560,6 +574,9 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
                   let verification: any = null;
                   let fillMethod = 'cdp_native';
+                  let submitExecuted = false;
+                  let submitResult: any = undefined;
+                  let submitMethod: string | undefined = undefined;
 
                   await cdpSessionManager.withSession(tabId, 'batch-actions-fill', async () => {
                     // Click to focus element
@@ -684,7 +701,66 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                       );
                     }
 
-                    if (item.pressEnter === true) {
+                    submitExecuted = false;
+                    submitResult = undefined;
+                    submitMethod = undefined;
+
+                    if (item.submit === true) {
+                      if (verification?.submitButtonState?.found && typeof verification.submitButtonState.index === 'number') {
+                        const btnIdx = verification.submitButtonState.index;
+                        try {
+                          const { interactIndexTool } = await import('./interact-index');
+                          const clickRes = await interactIndexTool.execute({
+                            index: btnIdx,
+                            action: 'click',
+                            tabId,
+                            waitForSettle: false,
+                          });
+                          let submitSummary: any = (clickRes?.content?.[0] as any)?.text;
+                          try {
+                            submitSummary = JSON.parse(submitSummary);
+                          } catch {}
+                          submitExecuted = true;
+                          submitMethod = 'click';
+                          submitResult = submitSummary || { success: true };
+                        } catch (clickErr) {
+                          console.warn('Batch fill auto-submit click failed, falling back to Enter:', clickErr);
+                          await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
+                            type: 'rawKeyDown',
+                            windowsVirtualKeyCode: 13,
+                            unmodifiedText: '\r',
+                            text: '\r',
+                            key: 'Enter',
+                            code: 'Enter',
+                          });
+                          await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
+                            type: 'keyUp',
+                            windowsVirtualKeyCode: 13,
+                            key: 'Enter',
+                            code: 'Enter',
+                          });
+                          submitExecuted = true;
+                          submitMethod = 'pressEnter';
+                        }
+                      } else {
+                        await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
+                          type: 'rawKeyDown',
+                          windowsVirtualKeyCode: 13,
+                          unmodifiedText: '\r',
+                          text: '\r',
+                          key: 'Enter',
+                          code: 'Enter',
+                        });
+                        await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
+                          type: 'keyUp',
+                          windowsVirtualKeyCode: 13,
+                          key: 'Enter',
+                          code: 'Enter',
+                        });
+                        submitExecuted = true;
+                        submitMethod = 'pressEnter';
+                      }
+                    } else if (item.pressEnter === true) {
                       await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
                         type: 'rawKeyDown',
                         windowsVirtualKeyCode: 13,
@@ -715,6 +791,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     isEditor: coords?.isEditor,
                     isSearch: coords?.isSearch,
                     submitButtonState: verification?.submitButtonState,
+                    ...(submitExecuted ? { submitted: true, submitMethod, submitResult } : {}),
                     ...(disambiguationWarning ? { disambiguationWarning } : {}),
                   };
                   filledViaCdp = true;
@@ -735,21 +812,35 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                   const frameTarget = targetFrameId
                     ? { tabId, frameIds: [targetFrameId] }
                     : { tabId };
+                  const shouldEnter = item.pressEnter === true || item.submit === true;
                   const res = await executeInPage(frameTarget, 'inPageFillIndex', [
                     targetIndex,
                     text,
                     item.clear !== false,
-                    item.pressEnter === true,
+                    shouldEnter,
                   ]);
                   outcome = res?.[0]?.result;
                   if (!outcome?.success && !targetFrameId) {
                     const frameResults = await executeInPage(
                       { tabId, allFrames: true },
                       'inPageFillIndex',
-                      [targetIndex, text, item.clear !== false, item.pressEnter === true],
+                      [targetIndex, text, item.clear !== false, shouldEnter],
                     );
                     const match = frameResults.find((r) => r.result?.success);
                     if (match?.result) outcome = match.result;
+                  }
+                  if (item.submit === true && outcome?.submitButtonState?.found && typeof outcome.submitButtonState.index === 'number') {
+                    try {
+                      const { interactIndexTool } = await import('./interact-index');
+                      await interactIndexTool.execute({
+                        index: outcome.submitButtonState.index,
+                        action: 'click',
+                        tabId,
+                        waitForSettle: false,
+                      });
+                      (outcome as any).submitted = true;
+                      (outcome as any).submitMethod = 'click';
+                    } catch {}
                   }
                 } else if (item.selector) {
                   const selRes = await this.safeExecuteScript(tabId, {
@@ -870,7 +961,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                       }
                       return { success: true, filledText: val };
                     },
-                    args: [item.selector, text, item.clear !== false, item.pressEnter === true],
+                    args: [item.selector, text, item.clear !== false, item.pressEnter === true || item.submit === true],
                   });
                   outcome = selRes?.[0]?.result;
                 }
