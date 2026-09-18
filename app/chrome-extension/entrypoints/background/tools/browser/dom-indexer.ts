@@ -990,13 +990,15 @@ export function inPageDOMPruner(options?: {
   maxTextLength?: number;
   format?: 'compact' | 'html';
   viewportOnly?: boolean;
+  activeViewportOnly?: boolean;
   selector?: string;
   scope?: string;
   exclude?: string | string[];
   isolateModal?: boolean;
 }): PrunedDOMTreeResult {
-  const isViewportOnly = options?.viewportOnly === true;
-  const threshold = isViewportOnly ? 150 : (options?.viewportThreshold ?? 1000);
+  const isActiveViewportOnly = options?.activeViewportOnly === true || (options?.activeViewportOnly as any) === 'true';
+  const isViewportOnly = options?.viewportOnly === true || (options?.viewportOnly as any) === 'true';
+  const threshold = isActiveViewportOnly ? 0 : isViewportOnly ? 150 : (options?.viewportThreshold ?? 1000);
   const startingIndex = options?.startingIndex ?? 1;
   const frameId = options?.frameId;
 
@@ -1350,6 +1352,14 @@ export function inPageDOMPruner(options?: {
   ): boolean {
     const tag = el.tagName.toLowerCase();
     if (tag === 'body' || tag === 'html') {
+      return false;
+    }
+    if (
+      style.pointerEvents === 'none' ||
+      el.hasAttribute('inert') ||
+      (el as any).inert === true ||
+      el.getAttribute('aria-hidden') === 'true'
+    ) {
       return false;
     }
     if (
@@ -1724,7 +1734,21 @@ export function inPageDOMPruner(options?: {
       }
     }
 
-    const style = window.getComputedStyle(node);
+    if (
+      node.hasAttribute('inert') ||
+      (node as any).inert === true ||
+      node.getAttribute('aria-hidden') === 'true'
+    ) {
+      return;
+    }
+
+    let style: CSSStyleDeclaration | null = null;
+    try {
+      style = window.getComputedStyle(node);
+    } catch {}
+    if (!style || style.pointerEvents === 'none') {
+      return;
+    }
     const rect = node.getBoundingClientRect();
     const isZeroSize = rect.width <= 0 || rect.height <= 0;
 
@@ -1734,7 +1758,14 @@ export function inPageDOMPruner(options?: {
       if (isZeroSize) {
         if (node.children.length === 0 && !getShadowRoot(node)) return;
       } else {
-        if (rect.top > winHeight + threshold || rect.bottom < -threshold) return;
+        if (
+          rect.top > winHeight + threshold ||
+          rect.bottom < -threshold ||
+          rect.left > winWidth + threshold ||
+          rect.right < -threshold
+        ) {
+          return;
+        }
       }
     }
 
@@ -3104,15 +3135,32 @@ export function inPageLocateByText(
     for (let i = 0; i < elements.length; i++) {
       const el = elements[i];
       if (!(el instanceof Element)) continue;
-      const style = window.getComputedStyle(el);
+      let style: CSSStyleDeclaration | null = null;
+      try {
+        style = window.getComputedStyle(el);
+      } catch {}
       if (
-        style.display === 'none' ||
-        style.visibility === 'hidden' ||
-        parseFloat(style.opacity || '1') <= 0
+        style?.display === 'none' ||
+        style?.visibility === 'hidden' ||
+        parseFloat(style?.opacity || '1') <= 0 ||
+        style?.pointerEvents === 'none' ||
+        el.hasAttribute('inert') ||
+        (el as any).inert === true ||
+        el.getAttribute('aria-hidden') === 'true' ||
+        (typeof el.closest === 'function' && el.closest('[aria-hidden="true"], [inert]') !== null)
       )
         continue;
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 && rect.height === 0) continue;
+
+      const vh = window.innerHeight || 800;
+      const vw = window.innerWidth || 1280;
+      const inActiveViewport =
+        rect.top < vh &&
+        rect.bottom > 0 &&
+        rect.left < vw &&
+        rect.right > 0;
+      const viewportBonus = inActiveViewport ? 1000 : 0;
 
       const semantics = detectEditorSemantics(el);
       if (role === 'composer') {
@@ -3145,7 +3193,7 @@ export function inPageLocateByText(
         }
 
         if (matchScore > 0) {
-          const totalScore = matchScore + composerBonus - searchPenalty;
+          const totalScore = matchScore + composerBonus + viewportBonus - searchPenalty;
           if (totalScore > bestScore) {
             bestMatch = el;
             bestScore = totalScore;
@@ -3153,7 +3201,7 @@ export function inPageLocateByText(
         }
       } else {
         // Only role was specified
-        const roleScore = 10 + composerBonus - searchPenalty;
+        const roleScore = 10 + composerBonus + viewportBonus - searchPenalty;
         if (roleScore > bestScore) {
           bestMatch = el;
           bestScore = roleScore;
@@ -3477,7 +3525,16 @@ export function inPageFillIndex(
   textToFill: string,
   clear = true,
   pressEnter = false,
-): { success: boolean; index: number; tagName?: string; filledText?: string; error?: string } {
+): {
+  success: boolean;
+  committed?: boolean;
+  index: number;
+  tagName?: string;
+  filledText?: string;
+  submitButtonState?: { found: boolean; disabled?: boolean; text?: string };
+  diagnostics?: string;
+  error?: string;
+} {
   let index: number;
   if (typeof refOrIndex === 'string') {
     const parsed = refOrIndex.startsWith('ref_')
@@ -3665,11 +3722,673 @@ export function inPageFillIndex(
     }
   }
 
+  const verification: any = textToFill ? inPageVerifyInputCommitment(index, textToFill) : { committed: true };
+
   return {
-    success: true,
+    success: verification.committed,
+    committed: verification.committed,
     index,
     tagName: el.tagName.toLowerCase(),
     filledText: textToFill,
+    ...(verification.submitButtonState ? { submitButtonState: verification.submitButtonState } : {}),
+    ...(verification.diagnostics ? { diagnostics: verification.diagnostics } : {}),
+  };
+}
+
+/**
+ * Cross-platform Deep Reset Protocol for rich-text editors and form controls.
+ * Uses In-Page DOM Selection + execCommand/beforeinput delete + value resetting.
+ * Eliminates text concatenation and phantom residual characters across Draft.js, Lexical, and React controlled inputs.
+ */
+export function inPageDeepResetElement(refOrIndex: number | string): {
+  success: boolean;
+  cleared: boolean;
+  currentLength: number;
+  tagName?: string;
+  isComposer?: boolean;
+  error?: string;
+} {
+  let index: number;
+  if (typeof refOrIndex === 'string') {
+    const parsed = refOrIndex.startsWith('ref_')
+      ? parseInt(refOrIndex.slice(4), 10)
+      : parseInt(refOrIndex, 10);
+    if (isNaN(parsed)) {
+      return { success: false, cleared: false, currentLength: 0, error: `Invalid index: ${refOrIndex}` };
+    }
+    index = parsed;
+  } else {
+    index = refOrIndex;
+  }
+
+  if (index <= 0) {
+    return { success: false, cleared: false, currentLength: 0, error: `Index must be positive: ${index}` };
+  }
+
+  const el = findIndexedElement(index);
+  if (!el || !(el instanceof Element)) {
+    return { success: false, cleared: false, currentLength: 0, error: `Element [${index}] not found` };
+  }
+
+  try {
+    if (typeof (el as HTMLElement).focus === 'function') {
+      (el as HTMLElement).focus();
+    }
+  } catch {}
+
+  const semantics = detectEditorSemantics(el);
+
+  // Standard <input> or <textarea>
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    const inputEl = el as HTMLInputElement | HTMLTextAreaElement;
+    try {
+      inputEl.select();
+    } catch {}
+
+    const proto = el instanceof HTMLInputElement
+      ? window.HTMLInputElement?.prototype
+      : window.HTMLTextAreaElement?.prototype;
+    const nativeSetter = Object.getOwnPropertyDescriptor(proto || {}, 'value')?.set;
+    if (nativeSetter) {
+      nativeSetter.call(inputEl, '');
+    } else {
+      inputEl.value = '';
+    }
+
+    try {
+      inputEl.dispatchEvent(
+        new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          inputType: 'deleteContentBackward',
+        }),
+      );
+    } catch {}
+
+    try {
+      inputEl.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          composed: true,
+          inputType: 'deleteContentBackward',
+        }),
+      );
+    } catch {
+      inputEl.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    }
+    inputEl.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+
+    const currentLen = (inputEl.value || '').length;
+    return {
+      success: true,
+      cleared: currentLen === 0,
+      currentLength: currentLen,
+      tagName: el.tagName.toLowerCase(),
+      isComposer: semantics.isComposer,
+    };
+  }
+
+  // Rich-text editor (contenteditable, Draft.js, Lexical, ProseMirror, Quill)
+  const editTarget =
+    (el as HTMLElement).isContentEditable || el.getAttribute('contenteditable') === 'true'
+      ? (el as HTMLElement)
+      : ((el.querySelector?.('[contenteditable="true"]') as HTMLElement) || (el as HTMLElement));
+
+  try {
+    if (typeof editTarget.focus === 'function') {
+      editTarget.focus();
+    }
+  } catch {}
+
+  // 1. Select all contents in DOM selection
+  const sel = window.getSelection();
+  if (sel && typeof document.createRange === 'function') {
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(editTarget);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch {}
+  }
+
+  // 2. Dispatch synthetic beforeinput with deleteContentBackward
+  try {
+    editTarget.dispatchEvent(
+      new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        inputType: 'deleteContentBackward',
+      }),
+    );
+  } catch {}
+
+  // 3. Native document.execCommand delete
+  try {
+    document.execCommand('delete', false);
+  } catch {}
+
+  // 4. If content remains, clear innerText / innerHTML directly
+  let currentLen = (editTarget.innerText || editTarget.textContent || '').trim().length;
+  if (currentLen > 0) {
+    try {
+      editTarget.innerText = '';
+    } catch {}
+    try {
+      editTarget.innerHTML = '';
+    } catch {}
+  }
+
+  // 5. Notify framework of input deletion
+  try {
+    editTarget.dispatchEvent(
+      new InputEvent('input', {
+        bubbles: true,
+        composed: true,
+        inputType: 'deleteContentBackward',
+      }),
+    );
+  } catch {
+    editTarget.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  }
+  editTarget.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+
+  currentLen = (editTarget.innerText || editTarget.textContent || '').trim().length;
+  return {
+    success: true,
+    cleared: currentLen === 0,
+    currentLength: currentLen,
+    tagName: el.tagName.toLowerCase(),
+    isComposer: semantics.isComposer || semantics.isEditor,
+  };
+}
+
+/**
+ * Verifies whether input text was truly committed into framework reactive state (React/Draft.js/Lexical).
+ * Inspects element value/text and checks for nearby submit/tweet/post buttons disabled state.
+ */
+export function inPageVerifyInputCommitment(
+  refOrIndex: number | string,
+  expectedText: string,
+): {
+  committed: boolean;
+  currentValue: string;
+  expectedValue: string;
+  length: number;
+  tagName: string;
+  isComposer?: boolean;
+  submitButtonState?: {
+    found: boolean;
+    disabled?: boolean;
+    text?: string;
+  };
+  diagnostics?: string;
+} {
+  let index: number;
+  if (typeof refOrIndex === 'string') {
+    const parsed = refOrIndex.startsWith('ref_')
+      ? parseInt(refOrIndex.slice(4), 10)
+      : parseInt(refOrIndex, 10);
+    index = isNaN(parsed) ? 0 : parsed;
+  } else {
+    index = refOrIndex;
+  }
+
+  const el = findIndexedElement(index);
+  if (!el || !(el instanceof Element)) {
+    return {
+      committed: false,
+      currentValue: '',
+      expectedValue: expectedText,
+      length: 0,
+      tagName: 'unknown',
+      diagnostics: `Element [${index}] not found during commitment verification`,
+    };
+  }
+
+  const semantics = detectEditorSemantics(el);
+  let currentValue = '';
+
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    currentValue = el.value || '';
+  } else {
+    const editTarget =
+      (el as HTMLElement).isContentEditable || el.getAttribute('contenteditable') === 'true'
+        ? (el as HTMLElement)
+        : ((el.querySelector?.('[contenteditable="true"]') as HTMLElement) || (el as HTMLElement));
+    currentValue = (editTarget.innerText || editTarget.textContent || '').trim();
+  }
+
+  // Check nearby submit/action button state
+  let submitButtonState: { found: boolean; disabled?: boolean; text?: string } = { found: false };
+  try {
+    let container: Element | null =
+      el.closest('form') ||
+      el.closest('[role="dialog"]') ||
+      el.closest('[data-testid*="tweet" i]') ||
+      el.closest('[class*="composer" i]') ||
+      el.parentElement;
+    if (!container) container = el.ownerDocument.body;
+
+    const buttons = Array.from(container.querySelectorAll('button, [role="button"], input[type="submit"]'));
+    const candidateBtn = buttons.find((b) => {
+      const type = b.getAttribute('type');
+      const text = (b.textContent || (b as HTMLInputElement).value || '').trim().toLowerCase();
+      const testId = (b.getAttribute('data-testid') || '').toLowerCase();
+      const ariaLabel = (b.getAttribute('aria-label') || '').toLowerCase();
+      return (
+        type === 'submit' ||
+        testId.includes('tweet') ||
+        testId.includes('submit') ||
+        testId.includes('send') ||
+        testId.includes('post') ||
+        ariaLabel.includes('tweet') ||
+        ariaLabel.includes('post') ||
+        /^(tweet|post|reply|send|submit|发布|发帖|发送|提交|ok|next|continue|确认)/i.test(text)
+      );
+    });
+
+    if (candidateBtn) {
+      const disabled =
+        (candidateBtn as HTMLButtonElement).disabled === true ||
+        candidateBtn.getAttribute('aria-disabled') === 'true' ||
+        candidateBtn.classList.contains('disabled');
+      submitButtonState = {
+        found: true,
+        disabled,
+        text: (candidateBtn.textContent || (candidateBtn as HTMLInputElement).value || '').trim(),
+      };
+    }
+  } catch {}
+
+  // Checkbox and radio inputs
+  if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
+    const isTruthy =
+      expectedText === 'true' ||
+      expectedText === '1' ||
+      expectedText === 'checked' ||
+      expectedText === 'on' ||
+      (expectedText !== 'false' && expectedText !== '0' && expectedText !== 'off' && Boolean(expectedText));
+    const isChecked = el.checked;
+    const committed = isChecked === isTruthy;
+    return {
+      committed,
+      currentValue: String(isChecked),
+      expectedValue: String(isTruthy),
+      length: String(isChecked).length,
+      tagName: el.tagName.toLowerCase(),
+      isComposer: false,
+      submitButtonState: submitButtonState.found ? submitButtonState : undefined,
+      diagnostics: committed ? undefined : `Checkbox checked state (${isChecked}) did not match expected (${isTruthy})`,
+    };
+  }
+
+  // Select dropdowns
+  if (el instanceof HTMLSelectElement) {
+    const selectedText = el.selectedOptions?.[0]?.text?.trim() || '';
+    const committed =
+      el.value === expectedText ||
+      selectedText === expectedText.trim() ||
+      selectedText.includes(expectedText.trim());
+    return {
+      committed,
+      currentValue: el.value,
+      expectedValue: expectedText,
+      length: el.value.length,
+      tagName: 'select',
+      isComposer: false,
+      submitButtonState: submitButtonState.found ? submitButtonState : undefined,
+      diagnostics: committed ? undefined : `Select value ("${el.value}") did not match expected ("${expectedText}")`,
+    };
+  }
+
+  function cleanAndNormalize(str: string): string {
+    return str
+      .replace(/[\u200B-\u200D\uFEFF]/g, '') // strip zero-width characters (Draft.js/Lexical artifacts)
+      .replace(/\u00A0/g, ' ')               // non-breaking space to normal space
+      .replace(/\r\n|\r/g, '\n')              // newline normalization
+      .replace(/[ \t]+/g, ' ')                // collapse horizontal spaces
+      .trim();
+  }
+
+  const normExpected = cleanAndNormalize(expectedText);
+  const normCurrent = cleanAndNormalize(currentValue);
+
+  let committed = false;
+  if (!normExpected) {
+    // If clearing, committed means length is 0
+    committed = normCurrent.length === 0;
+  } else {
+    // Check if input element has maxlength constraint
+    const maxLen =
+      el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+        ? (el.maxLength > 0 ? el.maxLength : -1)
+        : -1;
+    const cappedExpected =
+      maxLen > 0 && normExpected.length > maxLen
+        ? normExpected.slice(0, maxLen)
+        : normExpected;
+
+    // Committed if current value matches or contains expected text (or matches capped by maxlength)
+    committed =
+      normCurrent.length > 0 &&
+      (normCurrent === cappedExpected ||
+        normCurrent.includes(cappedExpected) ||
+        (maxLen > 0 && normCurrent === normExpected.slice(0, maxLen)));
+  }
+
+  // Check if associated action button is still disabled for composer / post targets
+  const isPostOrComposer =
+    Boolean(semantics.isComposer ||
+    semantics.isEditor ||
+    (submitButtonState.found &&
+      /^(tweet|post|reply|send|发帖|发送|发布)/i.test(submitButtonState.text || '')));
+
+  let diagnostics: string | undefined;
+  if (committed && isPostOrComposer && submitButtonState.found && submitButtonState.disabled && normExpected.length > 0) {
+    committed = false;
+    diagnostics = `Associated action button ("${submitButtonState.text || 'Submit'}") remains disabled, indicating framework reactive state (React/Draft.js) has not committed the input.`;
+  } else if (!committed) {
+    diagnostics = `Element value ("${normCurrent.slice(0, 50)}") did not reflect expected input ("${normExpected.slice(0, 50)}").`;
+  }
+
+  return {
+    committed,
+    currentValue,
+    expectedValue: expectedText,
+    length: currentValue.length,
+    tagName: el.tagName.toLowerCase(),
+    isComposer: semantics.isComposer || semantics.isEditor,
+    submitButtonState: submitButtonState.found ? submitButtonState : undefined,
+    diagnostics,
+  };
+}
+
+export interface PerceptiveSignature {
+  question?: string;
+  progress?: string;
+  stepCurrent?: number;
+  stepTotal?: number;
+  activeInputs: Array<{
+    index?: number;
+    tagName: string;
+    type?: string;
+    name?: string;
+    placeholder?: string;
+    ariaLabel?: string;
+    value?: string;
+  }>;
+  alerts: string[];
+  url: string;
+  title: string;
+}
+
+/**
+ * Extracts key semantic perception signature from the active viewport:
+ * - Active question headings (h1-h4, [role="heading"], .question-text)
+ * - Step progress indicator (e.g. "2 of 15", "Step 3", "2 / 15")
+ * - Currently visible active inputs/controls
+ * - Active validation alerts and error banners
+ */
+export function inPageDetectPerceptiveSignature(): PerceptiveSignature {
+  const win = window;
+  const doc = document;
+  const vh = win.innerHeight || 800;
+  const vw = win.innerWidth || 1280;
+
+  function isVisibleInViewport(el: Element): boolean {
+    if (!el || !(el instanceof Element)) return false;
+    let style: CSSStyleDeclaration | null = null;
+    try {
+      style = win.getComputedStyle(el);
+    } catch {}
+    if (
+      style?.display === 'none' ||
+      style?.visibility === 'hidden' ||
+      parseFloat(style?.opacity || '1') <= 0 ||
+      style?.pointerEvents === 'none' ||
+      el.hasAttribute('inert') ||
+      (el as any).inert === true ||
+      el.getAttribute('aria-hidden') === 'true' ||
+      (typeof el.closest === 'function' && el.closest('[aria-hidden="true"], [inert]') !== null)
+    ) {
+      return false;
+    }
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    return rect.top < vh && rect.bottom > 0 && rect.left < vw && rect.right > 0;
+  }
+
+  // 1. Detect question headings in active viewport
+  let question: string | undefined;
+  const headingSelectors = [
+    'h1, h2, h3, h4',
+    '[role="heading"]',
+    '.question-text',
+    '[data-qa*="question" i]',
+    '[data-qa*="title" i]',
+    '[class*="question" i]',
+    '[class*="title" i]',
+    '[class*="header" i]',
+    'legend',
+  ].join(', ');
+
+  const headings = Array.from(doc.querySelectorAll(headingSelectors)).filter(isVisibleInViewport);
+  headings.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+
+  for (const h of headings) {
+    const text = (h.textContent || '').trim().replace(/\s+/g, ' ');
+    if (text.length >= 3 && text.length <= 300) {
+      question = text;
+      break;
+    }
+  }
+
+  // 2. Detect progress indicators (e.g. "2 of 15", "Step 3 of 10", "3 / 10", "20%")
+  let progress: string | undefined;
+  let stepCurrent: number | undefined;
+  let stepTotal: number | undefined;
+
+  const progressBars = Array.from(doc.querySelectorAll('[role="progressbar"]')).filter(isVisibleInViewport);
+  for (const pb of progressBars) {
+    const valNow = pb.getAttribute('aria-valuenow');
+    const valMax = pb.getAttribute('aria-valuemax');
+    const ariaText = pb.getAttribute('aria-valuetext') || pb.getAttribute('aria-label');
+    if (valNow && valMax) {
+      stepCurrent = parseInt(valNow, 10);
+      stepTotal = parseInt(valMax, 10);
+      progress = `${stepCurrent} / ${stepTotal}`;
+      break;
+    } else if (ariaText) {
+      const match = /\b(\d+)\s*(?:of|\/)\s*(\d+)\b/i.exec(ariaText);
+      if (match) {
+        stepCurrent = parseInt(match[1], 10);
+        stepTotal = parseInt(match[2], 10);
+        progress = `${stepCurrent} / ${stepTotal}`;
+        break;
+      }
+    }
+  }
+
+  if (!progress) {
+    const progressCandidateSelectors = [
+      '[class*="progress" i]',
+      '[class*="step" i]',
+      '[data-qa*="progress" i]',
+      '[data-qa*="step" i]',
+      'span, div, p',
+    ].join(', ');
+    const candidates = Array.from(doc.querySelectorAll(progressCandidateSelectors)).filter(isVisibleInViewport);
+    for (const c of candidates) {
+      if (c.children.length > 2) continue;
+      const t = (c.textContent || '').trim();
+      if (t.length > 40) continue;
+      const match = /\b(\d+)\s*(?:of|\/)\s*(\d+)\b/i.exec(t);
+      if (match) {
+        stepCurrent = parseInt(match[1], 10);
+        stepTotal = parseInt(match[2], 10);
+        progress = `${stepCurrent} / ${stepTotal}`;
+        break;
+      }
+      const stepMatch = /\bstep\s*(\d+)\b/i.exec(t);
+      if (stepMatch) {
+        stepCurrent = parseInt(stepMatch[1], 10);
+        progress = t;
+        break;
+      }
+      const zhMatch = /第\s*(\d+)\s*(?:题|步)(?:\s*(?:共|\/)\s*(\d+)\s*(?:题|步)?)?/i.exec(t);
+      if (zhMatch) {
+        stepCurrent = parseInt(zhMatch[1], 10);
+        if (zhMatch[2]) stepTotal = parseInt(zhMatch[2], 10);
+        progress = t;
+        break;
+      }
+    }
+  }
+
+  // 3. Detect active form inputs in active viewport
+  const isolatedMap = getIsolatedIndexMap();
+  const indexLookup = new Map<Element, number>();
+  for (const [idx, entry] of isolatedMap.entries()) {
+    const target = derefElement(entry);
+    if (target) indexLookup.set(target, idx);
+  }
+
+  const activeInputs: PerceptiveSignature['activeInputs'] = [];
+  const inputElements = Array.from(
+    doc.querySelectorAll('input:not([type="hidden"]), textarea, select, [contenteditable="true"], [role="textbox"]')
+  ).filter(isVisibleInViewport);
+
+  for (const inp of inputElements) {
+    const tag = inp.tagName.toLowerCase();
+    const type = (inp as HTMLInputElement).type?.toLowerCase();
+    const name = inp.getAttribute('name') || undefined;
+    const placeholder = inp.getAttribute('placeholder') || undefined;
+    const ariaLabel = inp.getAttribute('aria-label') || undefined;
+    const value =
+      inp instanceof HTMLInputElement || inp instanceof HTMLTextAreaElement
+        ? inp.value
+        : (inp as HTMLElement).innerText?.trim() || undefined;
+
+    activeInputs.push({
+      index: indexLookup.get(inp),
+      tagName: tag,
+      type,
+      name,
+      placeholder,
+      ariaLabel,
+      value: value ? value.slice(0, 80) : undefined,
+    });
+  }
+
+  // 4. Detect alerts and errors in active viewport
+  const alerts: string[] = [];
+  const alertElements = Array.from(
+    doc.querySelectorAll('[role="alert"], [role="status"], .error-message, [class*="error" i], [class*="invalid" i]')
+  ).filter(isVisibleInViewport);
+
+  for (const a of alertElements) {
+    const text = (a.textContent || '').trim().replace(/\s+/g, ' ');
+    if (text.length >= 3 && text.length <= 200 && !alerts.includes(text)) {
+      alerts.push(text);
+    }
+  }
+
+  return {
+    question,
+    progress,
+    stepCurrent,
+    stepTotal,
+    activeInputs,
+    alerts,
+    url: win.location.href,
+    title: doc.title || '',
+  };
+}
+
+/**
+ * Compares two perceptive signatures and generates a structured delta.
+ */
+export function computePerceptiveDelta(
+  pre: PerceptiveSignature | null | undefined,
+  post: PerceptiveSignature | null | undefined,
+): {
+  advanced: boolean;
+  questionChanged: boolean;
+  progressChanged: boolean;
+  previousQuestion?: string;
+  currentQuestion?: string;
+  previousProgress?: string;
+  progress?: string;
+  activeInputs: PerceptiveSignature['activeInputs'];
+  errorMessage?: string;
+  urlChanged: boolean;
+} | undefined {
+  if (!post && !pre) return undefined;
+  if (!post && pre) {
+    return {
+      advanced: false,
+      questionChanged: false,
+      progressChanged: false,
+      previousQuestion: pre.question,
+      currentQuestion: undefined,
+      previousProgress: pre.progress,
+      progress: undefined,
+      activeInputs: [],
+      urlChanged: false,
+    };
+  }
+  if (post && !pre) {
+    return {
+      advanced: false,
+      questionChanged: false,
+      progressChanged: false,
+      currentQuestion: post.question,
+      progress: post.progress,
+      activeInputs: post.activeInputs || [],
+      errorMessage: post.alerts && post.alerts.length > 0 ? post.alerts.join('; ') : undefined,
+      urlChanged: false,
+    };
+  }
+
+  const p1 = pre!;
+  const p2 = post!;
+
+  const questionChanged = Boolean(
+    (p1.question && p2.question && p1.question !== p2.question) ||
+    (!p1.question && p2.question) ||
+    (p1.question && !p2.question)
+  );
+  const progressChanged = Boolean(
+    (p1.progress && p2.progress && p1.progress !== p2.progress) ||
+    (!p1.progress && p2.progress) ||
+    (p1.progress && !p2.progress)
+  );
+  const inputsDisappeared = Boolean(
+    (p1.activeInputs && p1.activeInputs.length > 0) &&
+    (!p2.activeInputs || p2.activeInputs.length === 0)
+  );
+  const stepAdvanced =
+    (typeof p2.stepCurrent === 'number' && typeof p1.stepCurrent === 'number' && p2.stepCurrent > p1.stepCurrent) ||
+    (typeof p2.stepCurrent === 'number' && p1.stepCurrent === undefined) ||
+    progressChanged ||
+    questionChanged ||
+    inputsDisappeared;
+  const urlChanged = Boolean(p1.url && p2.url && p1.url !== p2.url);
+  const advanced = Boolean(stepAdvanced || urlChanged);
+
+  return {
+    advanced,
+    questionChanged,
+    progressChanged,
+    previousQuestion: p1.question,
+    currentQuestion: p2.question,
+    previousProgress: p1.progress,
+    progress: p2.progress,
+    activeInputs: p2.activeInputs || [],
+    errorMessage: p2.alerts && p2.alerts.length > 0 ? p2.alerts.join('; ') : undefined,
+    urlChanged,
   };
 }
 

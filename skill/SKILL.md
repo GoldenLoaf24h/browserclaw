@@ -11,9 +11,10 @@ Use this skill when interacting with the user's real local Chrome browser throug
 
 ## 1. Canonical Tool Contract & Zero-Redundancy Standards
 
-BrowserClaw strictly enforces **Canonical High-Reliability Tools (45 tools total)**. All legacy, brittle selector-based and redundant tools have been permanently purged:
+BrowserClaw strictly enforces **Canonical High-Reliability Tools (46 tools total)**. All legacy, brittle selector-based and redundant tools have been permanently purged:
 - **Clicking**: Exclusively use `chrome_interact_index` (1-based index, Shadow DOM pierced, humanized micro-jitter curve). Legacy `click_element` and `burst_interact` are removed.
-- **Filling**: Exclusively use `chrome_fill_index` (handles text, passwords, checkboxes, and dates automatically, with optional `pressEnter: true` to trigger immediate submission) or `chrome_batch_actions` (pipelined). Legacy `fill_or_select` and `fill_form` are removed.
+- **Filling**: Exclusively use `chrome_fill_index` (handles text, passwords, checkboxes, and dates automatically, with optional `pressEnter: true` to trigger immediate submission, True Input Commitment verification, and cross-platform deep reset) or `chrome_batch_actions` (pipelined). Legacy `fill_or_select` and `fill_form` are removed.
+- **Form Automation**: Use `chrome_form_pipeline` for autonomous multi-step questionnaires, onboarding wizards, and multi-step forms without multi-turn LLM ping-pong.
 - **Scrolling**: Exclusively use `chrome_smart_scroll` (overflow-aware, returns remaining pages). Legacy `scroll` and `scroll_to_text` are removed.
 - **Reading Content**: Exclusively use `chrome_get_markdown` for articles/summaries, and `chrome_read_dom` for UI interaction. Legacy `get_web_content` and `get_links` are removed.
 
@@ -78,6 +79,7 @@ Mouse and keyboard input dispatched through the CDP path (`chrome_interact_index
 - **Default response is the pruned tree + counters** (compact JSON). The bulky `indexedElements`/`indexMap` detail blocks are omitted to keep the payload small; pass `includeDetails: true` only when you need per-element `rect`, `isOccluded`, or `safeClickPoint`.
 - **Targeted Container Scoping (`selector` / `scope`) & Exclusion (`exclude`)**: Eliminate dumping whole-page DOM by specifying a container selector (e.g. `scope: "#main-cart"` or `selector: ".dialog-box"`) or pruning noise subtrees (e.g. `exclude: "#footer, #recommendations, .ad-banner"`). `scope` is a convenient direct alias for `selector`.
 - **Safe Modal Isolation (`isolateModal: true`)**: When an active modal dialog is detected, restricts indexing strictly to the active modal while protecting Top-Layer containers, real backdrop nodes, Portal dropdown containers (`.ant-select-dropdown`, `[data-radix-popper-content-wrapper]`, `[popover]`, `.MuiMenu-root`, etc.), and Toast/Alert containers (`#toast-root`, `.ant-message`, etc.). Form dropdowns and error messages inside the modal are never pruned.
+- **Pure Active Viewport (`activeViewportOnly: true`)**: Restricts indexing strictly to elements currently visible in the active CSS viewport (frustum clipped horizontally and vertically with zero threshold). Prunes off-screen horizontal carousel cards, hidden slides, and future questionnaire steps, eliminating ghost element interference.
 - **Hardened Delta Diffing (`deltaOnly: true`)**: Repeated reads return minimal changed element diffs. Automatic noise gating suppresses countdown timers, clocks, and dynamic ad feeds, while capping changes at 25 items to prevent context explosion on complex modern web pages.
 - **Pagination**: `cursor` + `limit` slice the tree lines, so large pages can be read incrementally without re-shipping the whole tree.
 - **Never guess long CSS selectors or brittle XPath**. Always use the numeric `index` from `chrome_read_dom`.
@@ -211,7 +213,35 @@ For dynamic UI targets, fast animations, canvas items, or rapid sequential click
 }
 ```
 
-#### E. `chrome_computer` Action Reference
+#### E. Autonomous Form Pipeline (`chrome_form_pipeline`)
+
+For multi-step forms, questionnaires, onboarding wizards (e.g. Typeform), or registration workflows, pass the field list in a single call. BrowserClaw executes a local Background micro-loop using native CDP physical events, matching questions and typing with True Input Commitment without ping-ponging back to the LLM:
+
+```json
+// Call chrome_form_pipeline
+{
+  "fields": [
+    { "query": "email", "value": "developer@example.com" },
+    { "query": "full name", "value": "Jane Doe" },
+    { "query": "plan", "value": "Pro", "type": "choice" }
+  ],
+  "autoAdvance": true,
+  "maxSteps": 15
+}
+```
+- **Autonomous Step Progression**: Automatically locates active question inputs, performs cross-platform deep resets, verifies input commitment, and triggers advance (Enter or OK/Next button).
+- **Safety Interruption**: Yields immediate structured status (`status: "interrupted"`) if encountering CAPTCHAs, validation errors, or unrecognized questions.
+
+#### Perceptive Delta Feedback (`perceptiveDelta`)
+Actions (`chrome_interact_index`, `chrome_fill_index`, `chrome_batch_actions`) automatically compute and return `perceptiveDelta` showing:
+- `currentQuestion`: Newly displayed active question/heading.
+- `progress`: Active step counter (e.g. `"3 of 15"`).
+- `advanced`: Boolean indicating whether step progression occurred.
+- `activeInputs`: Current actionable input elements in the active viewport.
+
+Agents no longer need to execute repetitive `chrome_screenshot` or Vision API calls merely to verify wizard progression.
+
+#### F. `chrome_computer` Action Reference
 
 `chrome_computer` is the coordinate/gesture workhorse. There is **no `click` action** — the exact enum is:
 
@@ -230,7 +260,7 @@ For dynamic UI targets, fast animations, canvas items, or rapid sequential click
 | `zoom`                         | `region` as `{x0,y0,x1,y1}` or `[ymin,xmin,ymax,xmax]`; returns a magnified crop.                                                                                                                                                                                                                                                                       |
 | `screenshot`                   | See `chrome_screenshot` for most cases.                                                                                                                                                                                                                                                                                                                 |
 
-#### F. Intelligent Scrolling (`chrome_smart_scroll`)
+#### G. Intelligent Scrolling (`chrome_smart_scroll`)
 
 - Auto-detects the most prominent scrollable container and scrolls it by direction + amount. `amount` accepts a pixel number (e.g. `400`), `"page"` (viewport height, default) or `"half_page"`:
   ```json

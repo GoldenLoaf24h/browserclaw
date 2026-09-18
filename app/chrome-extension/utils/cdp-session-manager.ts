@@ -240,7 +240,11 @@ class CDPSessionManager {
       }
 
       // Check existing attachments
-      const targets = await chrome.debugger.getTargets();
+      const rawTargets =
+        typeof chrome.debugger?.getTargets === 'function'
+          ? await Promise.resolve(chrome.debugger.getTargets()).catch(() => [])
+          : [];
+      const targets = Array.isArray(rawTargets) ? rawTargets : [];
       const existing = targets.find((t) => t.tabId === tabId && t.attached);
       if (existing) {
         if (existing.extensionId === chrome.runtime.id) {
@@ -511,7 +515,8 @@ class CDPSessionManager {
 
           // Check if already attached by us in Chrome debugger targets
           if (chrome.debugger?.getTargets) {
-            const targets = await chrome.debugger.getTargets().catch(() => []);
+            const rawTargets = await Promise.resolve(chrome.debugger.getTargets()).catch(() => []);
+            const targets = Array.isArray(rawTargets) ? rawTargets : [];
             const existing = targets.find((t: any) => t.tabId === tabId && t.attached);
             if (existing) {
               if (existing.extensionId === chrome.runtime?.id) {

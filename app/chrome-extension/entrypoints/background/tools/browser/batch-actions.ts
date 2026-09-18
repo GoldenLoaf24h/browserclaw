@@ -6,7 +6,7 @@ import {
   type BatchActionResult,
   type CaptureNetworkOptions,
 } from 'chrome-mcp-shared';
-import { DIAGNOSTIC_REFRESH_GUIDANCE } from './dom-indexer';
+import { DIAGNOSTIC_REFRESH_GUIDANCE, computePerceptiveDelta } from './dom-indexer';
 import { executeInPage } from './in-page-engine';
 import { waitForPageSettle, waitForNetworkQuiescence } from '@/utils/action-watchdog';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
@@ -200,6 +200,14 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
       } catch {}
 
       const batchNetCapture = startActionNetworkCapture(tabId, args.captureNetwork);
+
+      const preSignature = await executeInPage(
+        { tabId },
+        'inPageDetectPerceptiveSignature',
+        [],
+      )
+        .then((r) => r?.[0]?.result)
+        .catch(() => null);
 
       for (let i = 0; i < actions.length; i++) {
         const item = actions[i];
@@ -546,7 +554,12 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                     targetX = targetX - localX + offset.offsetX;
                     targetY = targetY - localY + offset.offsetY;
                   }
-                  isKnownEmpty = typeof coords.value === 'string' && coords.value === '';
+                  isKnownEmpty =
+                    (typeof coords.value === 'string' && coords.value === '') ||
+                    (coords.value === undefined && (!coords.text || coords.text.trim() === ''));
+
+                  let verification: any = null;
+                  let fillMethod = 'cdp_native';
 
                   await cdpSessionManager.withSession(tabId, 'batch-actions-fill', async () => {
                     // Click to focus element
@@ -573,23 +586,17 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                       clickCount: 1,
                     });
 
+                    // Click settling pause (50ms) for dormant rich-text composers to mount and focus
+                    await new Promise((r) => setTimeout(r, 50));
+
                     // Clear existing content if clear is not explicitly false
-                    if (item.clear !== false && !isKnownEmpty) {
-                      const mod = isMac ? 4 : 2; // Meta or Control
-                      await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                        type: 'rawKeyDown',
-                        modifiers: mod,
-                        windowsVirtualKeyCode: 65,
-                        key: 'a',
-                        code: 'KeyA',
-                      });
-                      await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                        type: 'keyUp',
-                        modifiers: mod,
-                        windowsVirtualKeyCode: 65,
-                        key: 'a',
-                        code: 'KeyA',
-                      });
+                    if (item.clear === true || (item.clear !== false && !isKnownEmpty)) {
+                      // Cross-platform Deep Reset protocol (In-Page selection + beforeinput/execCommand delete)
+                      try {
+                        await executeInPage({ tabId }, 'inPageDeepResetElement', [targetRef ?? targetIndex]);
+                      } catch {}
+
+                      // Native CDP Backspace fallback (cross-platform)
                       await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
                         type: 'rawKeyDown',
                         windowsVirtualKeyCode: 8,
@@ -609,6 +616,72 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                       await raceCdpBatch(tabId, 'Input.insertText', {
                         text: String(text),
                       });
+                    }
+
+                    // Allow React 18/19 concurrent event batching / microtasks to settle
+                    await new Promise((r) => setTimeout(r, 40));
+
+                    // True Input Commitment verification
+                    try {
+                      const vRes = await executeInPage(
+                        { tabId },
+                        'inPageVerifyInputCommitment',
+                        [targetRef ?? targetIndex, text],
+                      );
+                      verification = vRes?.[0]?.result;
+                    } catch {}
+
+                    // Micro-retry for asynchronous framework debounce (e.g. Draft.js state update)
+                    if (text && verification && verification.committed === false) {
+                      await new Promise((r) => setTimeout(r, 60));
+                      try {
+                        const retryRes = await executeInPage(
+                          { tabId },
+                          'inPageVerifyInputCommitment',
+                          [targetRef ?? targetIndex, text],
+                        );
+                        if (retryRes?.[0]?.result?.committed) {
+                          verification = retryRes[0].result;
+                        }
+                      } catch {}
+                    }
+
+                    if (text && verification && verification.committed === false) {
+                      console.warn(
+                        `[BatchActionsTool] Reactive state commitment verification failed after Input.insertText for target [${targetRef}]. Retrying with CDP key-by-key typing...`,
+                      );
+                      for (const char of text) {
+                        await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
+                          type: 'keyDown',
+                          text: char,
+                          unmodifiedText: char,
+                          key: char,
+                        });
+                        await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
+                          type: 'keyUp',
+                          key: char,
+                        });
+                        await new Promise((r) => setTimeout(r, 8));
+                      }
+                      fillMethod = 'cdp_key_by_key';
+
+                      // Settling pause after key-by-key typing
+                      await new Promise((r) => setTimeout(r, 50));
+
+                      try {
+                        const vRes2 = await executeInPage(
+                          { tabId },
+                          'inPageVerifyInputCommitment',
+                          [targetRef ?? targetIndex, text],
+                        );
+                        verification = vRes2?.[0]?.result;
+                      } catch {}
+                    }
+
+                    if (text && verification && verification.committed === false) {
+                      throw new Error(
+                        `True Input Commitment failed: ${verification.diagnostics || 'Framework reactive state did not update with filled text'}`,
+                      );
                     }
 
                     if (item.pressEnter === true) {
@@ -631,15 +704,17 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
                   stepOutput = {
                     success: true,
+                    committed: true,
                     index: typeof targetIndex === 'number' ? targetIndex : undefined,
                     ref: targetRef,
                     filledText: text,
                     isTrusted: true,
-                    method: 'cdp_native',
+                    method: fillMethod,
                     tagName: coords.tagName,
                     isComposer: coords?.isComposer,
                     isEditor: coords?.isEditor,
                     isSearch: coords?.isSearch,
+                    submitButtonState: verification?.submitButtonState,
                     ...(disambiguationWarning ? { disambiguationWarning } : {}),
                   };
                   filledViaCdp = true;
@@ -799,13 +874,15 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                   });
                   outcome = selRes?.[0]?.result;
                 }
-                if (!outcome?.success) {
+                if (!outcome?.success || outcome.committed === false) {
                   throw new Error(
                     outcome?.error ||
+                      outcome?.diagnostics ||
                       `Fill failed on [${targetRef ?? item.selector}]. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
                   );
                 }
                 if (outcome && typeof outcome === 'object') {
+                  outcome.committed = outcome.committed ?? true;
                   if (coords?.isComposer) outcome.isComposer = true;
                   if (coords?.isEditor) outcome.isEditor = true;
                   if (coords?.isSearch) outcome.isSearch = true;
@@ -1591,8 +1668,17 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
       }
       const batchNetResult = await batchNetCapture.waitForResult();
 
+      const postSignature = await executeInPage(
+        { tabId },
+        'inPageDetectPerceptiveSignature',
+        [],
+      )
+        .then((r) => r?.[0]?.result)
+        .catch(() => null);
+      const perceptiveDelta = computePerceptiveDelta(preSignature, postSignature);
+
       const totalCompleted = actionResults.filter((r) => r.success).length;
-      const batchResult: BatchActionResult & { spaDriftNotice?: string; networkSettled?: boolean } = {
+      const batchResult: BatchActionResult & { spaDriftNotice?: string; networkSettled?: boolean; perceptiveDelta?: any } = {
         success: totalCompleted === actions.length,
         completedActions: totalCompleted,
         totalActions: actions.length,
@@ -1608,6 +1694,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
         ...(Object.keys(extractedData).length > 0 ? { extractedData } : {}),
         ...(assertions.length > 0 ? { assertions } : {}),
         ...(delta ? { delta } : {}),
+        ...(perceptiveDelta ? { perceptiveDelta } : {}),
       };
 
         return {

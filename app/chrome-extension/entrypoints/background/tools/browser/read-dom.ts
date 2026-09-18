@@ -19,6 +19,7 @@ export interface ReadDOMParams {
   maxTextLength?: number;
   format?: 'compact' | 'html';
   viewportOnly?: boolean;
+  activeViewportOnly?: boolean;
   /**
    * CSS selector to scope parsing to a specific container/element (e.g. "#main-cart").
    * Only descendants and self within matching containers are indexed.
@@ -70,6 +71,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         maxTextLength: args.maxTextLength,
         format: args.format ?? 'compact',
         viewportOnly: args.viewportOnly,
+        activeViewportOnly: args.activeViewportOnly,
         selector: effectiveSelector,
         scope: args.scope,
         exclude: args.exclude,

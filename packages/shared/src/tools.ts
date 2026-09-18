@@ -60,6 +60,7 @@ export const TOOL_NAMES = {
     INTERCEPT_API: 'chrome_intercept_api',
     CDP_EXECUTE: 'chrome_cdp_execute',
     GREP: 'chrome_grep',
+    FORM_PIPELINE: 'chrome_form_pipeline',
   },
 };
 
@@ -1550,6 +1551,11 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           description:
             'When true, only index elements inside or immediately near the visible viewport (default: false)',
         },
+        activeViewportOnly: {
+          type: 'boolean',
+          description:
+            'When true, strictly constrains indexing to elements currently visible within the active viewport (threshold = 0) with horizontal/vertical frustum clipping, eliminating ghost elements from SPA wizards, carousels, and multi-step forms.',
+        },
         format: {
           type: 'string',
           enum: ['compact', 'html'],
@@ -3016,6 +3022,65 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.FORM_PIPELINE,
+    annotations: {
+      title: 'Autonomous Form Pipeline',
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    description:
+      'Autonomously fill and advance multi-step forms / wizards (e.g. Typeform, onboarding, multi-page surveys) in a local execution loop without multi-turn LLM ping-pong. Automatically matches fields, selects choices, triggers step advancement (via Enter or OK/Next button), and yields structured interrupts upon CAPTCHA or blocking validation errors.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fields: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: 'Question label, field name, placeholder, or keyword to match against active screen',
+              },
+              value: {
+                type: 'string',
+                description: 'Value to type or choice option text to select',
+              },
+              type: {
+                type: 'string',
+                enum: ['text', 'choice', 'enter'],
+                description: 'Input method: "text" (default fill), "choice" (click matching button/option), "enter" (submit via Enter key)',
+              },
+            },
+            required: ['query', 'value'],
+          },
+          description: 'Ordered list of fields and values to fulfill throughout the form flow',
+        },
+        maxSteps: {
+          type: 'number',
+          description: 'Maximum form advancement steps to attempt before returning (default: 20)',
+        },
+        autoAdvance: {
+          type: 'boolean',
+          description: 'Automatically trigger step advance via Enter or clicking OK/Next button after input (default: true)',
+        },
+        tabId: { type: 'number', description: 'Target tab ID (optional)' },
+        windowId: { type: 'number', description: 'Target window ID (optional)' },
+        sessionId: {
+          type: 'string',
+          description: 'Optional session identifier to bind affinity to a specific tab context',
+        },
+        sessionContext: {
+          type: 'string',
+          description: 'Optional alias for sessionId',
+        },
+      },
+      required: ['fields'],
     },
   },
 ];

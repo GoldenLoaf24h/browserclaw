@@ -9,7 +9,11 @@ import {
 } from '../../../../utils/race-cdp';
 import { executeInPage } from './in-page-engine';
 import { waitForPageSettle, waitForNetworkQuiescence } from '../../../../utils/action-watchdog';
-import { inPageArmDeliveryProbe, inPageReadDeliveryProbe } from './dom-indexer';
+import {
+  inPageArmDeliveryProbe,
+  inPageReadDeliveryProbe,
+  computePerceptiveDelta,
+} from './dom-indexer';
 import { screenshotContextManager, scaleCoordinates } from '../../../../utils/screenshot-context';
 import { computeHumanizedPoints } from '../../../../utils/mouse-trajectory';
 import type { CdpEventObserver } from '../../../../utils/cdp-session-manager';
@@ -331,6 +335,14 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       return await sessionTabAffinity.runSerialized(tabId, async () => {
         const previousUrl = tab.url || '';
         tabFaviconManager.markTabActive(tabId);
+
+        const preSignature = await executeInPage(
+          { tabId },
+          'inPageDetectPerceptiveSignature',
+          [],
+        )
+          .then((r) => r?.[0]?.result)
+          .catch(() => null);
 
       // D3 (TESTING-NOTES #19): when no explicit tabId/session bound the
       // target, resolveAffinityTab fell through to the user's ACTIVE tab -
@@ -1026,6 +1038,15 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
 
       const networkResult = await netCapture.waitForResult();
 
+      const postSignature = await executeInPage(
+        { tabId },
+        'inPageDetectPerceptiveSignature',
+        [],
+      )
+        .then((r) => r?.[0]?.result)
+        .catch(() => null);
+      const perceptiveDelta = computePerceptiveDelta(preSignature, postSignature);
+
       return {
         content: [
           {
@@ -1058,6 +1079,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 screenshotCtxWarning,
                 ...(affinityWarning ? { affinityWarning } : {}),
                 ...(delta ? { delta } : {}),
+                ...(perceptiveDelta ? { perceptiveDelta } : {}),
                 ...(deliveryVerified === undefined
                   ? {}
                   : deliveryVerified

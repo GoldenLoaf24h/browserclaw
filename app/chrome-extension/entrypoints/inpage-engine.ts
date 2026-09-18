@@ -45,6 +45,9 @@ import {
   detectEditorSemantics,
   getStickyOcclusionMargins,
   inPageDetectConfirmationTrap,
+  inPageDeepResetElement,
+  inPageVerifyInputCommitment,
+  inPageDetectPerceptiveSignature,
 } from './background/tools/browser/dom-indexer';
 import { inPageWaitForDOMSettle } from '../utils/action-watchdog';
 
@@ -58,7 +61,7 @@ export default defineUnlistedScript(() => {
   // namespace only when the version string differs, so a stale page-side
   // engine (surviving extension reloads in the same tab) would otherwise keep
   // missing newly registered entrypoints.
-  const ENGINE_VERSION = '2026-09-17.4';
+  const ENGINE_VERSION = '2026-09-18.1';
   const g = globalThis as any;
   if (g.__MCP_INPAGE__ && g.__MCP_INPAGE_VERSION__ === ENGINE_VERSION) {
     return;
@@ -94,5 +97,8 @@ export default defineUnlistedScript(() => {
     detectEditorSemantics,
     getStickyOcclusionMargins,
     inPageDetectConfirmationTrap,
+    inPageDeepResetElement,
+    inPageVerifyInputCommitment,
+    inPageDetectPerceptiveSignature,
   };
 });

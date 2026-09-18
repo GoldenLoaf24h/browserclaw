@@ -3,6 +3,7 @@ import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { executeInPage } from './in-page-engine';
+import { computePerceptiveDelta } from './dom-indexer';
 import { waitForPageSettle } from '@/utils/action-watchdog';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { raceCdp, DialogOpenedError, createDialogInterruptResponse } from '@/utils/race-cdp';
@@ -58,6 +59,14 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
       return await sessionTabAffinity.runSerialized(targetTabId, async () => {
         const previousUrl = tab.url || '';
         tabFaviconManager.markTabActive(targetTabId);
+
+        const preSignature = await executeInPage(
+          { tabId: targetTabId },
+          'inPageDetectPerceptiveSignature',
+          [],
+        )
+          .then((r) => r?.[0]?.result)
+          .catch(() => null);
 
       // D3 (TESTING-NOTES #19): surface active-tab fallback in the response.
       const fillIdxAffinityWarning =
@@ -147,7 +156,9 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           // empty: a trusted Backspace on an empty box can trigger page-level
           // "backspace retreats focus" logic (e.g. OTP inputs) and steal the
           // subsequent insertText into the previous box.
-          const isKnownEmpty = typeof coords.value === 'string' && coords.value === '';
+          const isKnownEmpty =
+            (typeof coords.value === 'string' && coords.value === '') ||
+            (coords.value === undefined && (!coords.text || coords.text.trim() === ''));
           if (typeof coords.value === 'string') {
             actionHistoryManager.pushAction(targetTabId, {
               type: 'fill',
@@ -156,6 +167,9 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
               timestamp: Date.now(),
             });
           }
+
+          let verification: any = null;
+          let fillMethod = 'cdp_native';
 
           await cdpSessionManager.withSession(targetTabId, 'fill-index', async () => {
             // Humanized micro-trajectory to bypass anti-bot path listeners
@@ -189,27 +203,16 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
               clickCount: 1,
             });
 
-            if (args.clear !== false && !isKnownEmpty) {
-              let isMac = false;
+            // Click settling pause (50ms) for dormant rich-text composers to mount and focus
+            await new Promise((r) => setTimeout(r, 50));
+
+            if (args.clear === true || (args.clear !== false && !isKnownEmpty)) {
+              // Cross-platform Deep Reset protocol (In-Page selection + beforeinput/execCommand delete)
               try {
-                const platform = await chrome.runtime.getPlatformInfo();
-                isMac = platform?.os === 'mac';
+                await executeInPage({ tabId: targetTabId }, 'inPageDeepResetElement', [args.index]);
               } catch {}
-              const mod = isMac ? 4 : 2;
-              await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
-                type: 'rawKeyDown',
-                modifiers: mod,
-                windowsVirtualKeyCode: 65,
-                key: 'a',
-                code: 'KeyA',
-              });
-              await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
-                type: 'keyUp',
-                modifiers: mod,
-                windowsVirtualKeyCode: 65,
-                key: 'a',
-                code: 'KeyA',
-              });
+
+              // Native CDP Backspace fallback (cross-platform, works across Windows/Linux/macOS)
               await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
                 type: 'rawKeyDown',
                 windowsVirtualKeyCode: 8,
@@ -228,6 +231,72 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
               await raceCdp(targetTabId, 'Input.insertText', {
                 text: String(textToFill),
               });
+            }
+
+            // Allow React 18/19 concurrent event batching / microtasks to settle
+            await new Promise((r) => setTimeout(r, 40));
+
+            // True Input Commitment verification
+            try {
+              const vRes = await executeInPage(
+                { tabId: targetTabId },
+                'inPageVerifyInputCommitment',
+                [args.index, textToFill],
+              );
+              verification = vRes?.[0]?.result;
+            } catch {}
+
+            // Micro-retry for asynchronous framework debounce (e.g. Draft.js state update)
+            if (textToFill && verification && verification.committed === false) {
+              await new Promise((r) => setTimeout(r, 60));
+              try {
+                const retryRes = await executeInPage(
+                  { tabId: targetTabId },
+                  'inPageVerifyInputCommitment',
+                  [args.index, textToFill],
+                );
+                if (retryRes?.[0]?.result?.committed) {
+                  verification = retryRes[0].result;
+                }
+              } catch {}
+            }
+
+            if (textToFill && verification && verification.committed === false) {
+              console.warn(
+                `[FillIndexTool] Reactive state commitment verification failed after Input.insertText for index [${args.index}]. Retrying with CDP key-by-key typing...`,
+              );
+              for (const char of textToFill) {
+                await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
+                  type: 'keyDown',
+                  text: char,
+                  unmodifiedText: char,
+                  key: char,
+                });
+                await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
+                  type: 'keyUp',
+                  key: char,
+                });
+                await new Promise((r) => setTimeout(r, 8));
+              }
+              fillMethod = 'cdp_key_by_key';
+
+              // Settling pause after key-by-key typing
+              await new Promise((r) => setTimeout(r, 50));
+
+              try {
+                const vRes2 = await executeInPage(
+                  { tabId: targetTabId },
+                  'inPageVerifyInputCommitment',
+                  [args.index, textToFill],
+                );
+                verification = vRes2?.[0]?.result;
+              } catch {}
+            }
+
+            if (textToFill && verification && verification.committed === false) {
+              throw new Error(
+                `True Input Commitment failed: ${verification.diagnostics || 'Framework reactive state did not update with filled text'}`,
+              );
             }
 
             if (args.pressEnter === true) {
@@ -252,14 +321,16 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
 
           outcome = {
             success: true,
+            committed: true,
             index: args.index,
             filledText: textToFill,
             isTrusted: true,
-            method: 'cdp_native',
+            method: fillMethod,
             tagName: coords.tagName,
             isComposer: (coords as any)?.isComposer,
             isEditor: (coords as any)?.isEditor,
             isSearch: (coords as any)?.isSearch,
+            submitButtonState: verification?.submitButtonState,
             disambiguationWarning,
           };
           filledViaCdp = true;
@@ -303,6 +374,29 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           if (disambiguationWarning) {
             outcome.disambiguationWarning = disambiguationWarning;
           }
+
+          if (outcome.success) {
+            let fallbackVerify: any = null;
+            try {
+              const vRes = await executeInPage(
+                { tabId: targetTabId },
+                'inPageVerifyInputCommitment',
+                [args.index, textToFill],
+              );
+              fallbackVerify = vRes?.[0]?.result;
+            } catch {}
+
+            if (textToFill && fallbackVerify && fallbackVerify.committed === false) {
+              outcome.committed = false;
+              outcome.diagnostics = fallbackVerify.diagnostics;
+              outcome.submitButtonState = fallbackVerify.submitButtonState;
+            } else {
+              outcome.committed = true;
+              if (fallbackVerify?.submitButtonState) {
+                outcome.submitButtonState = fallbackVerify.submitButtonState;
+              }
+            }
+          }
         }
 
         // If fallback fill succeeded and pressEnter requested, dispatch Enter via CDP
@@ -330,10 +424,10 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
         }
       }
 
-      if (!outcome || !outcome.success) {
+      if (!outcome || !outcome.success || outcome.committed === false) {
         return createErrorResponse(
-          (outcome?.error || `Failed to fill element with index [${args.index}]`) +
-            `. Hint: If the element is within a ShadowRoot, try calling chrome_javascript or verifying the index with chrome_read_dom.`,
+          (outcome?.error || outcome?.diagnostics || `Failed to commit text into element with index [${args.index}]`) +
+            `. Hint: If the element is within a ShadowRoot or custom rich-text composer, verify with chrome_read_dom or try clicking directly.`,
         );
       }
 
@@ -362,6 +456,18 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
       (outcome as any).urlChanged = urlChanged;
       (outcome as any).previousUrl = previousUrl;
       (outcome as any).currentUrl = currentUrl;
+
+      const postSignature = await executeInPage(
+        { tabId: targetTabId },
+        'inPageDetectPerceptiveSignature',
+        [],
+      )
+        .then((r) => r?.[0]?.result)
+        .catch(() => null);
+      const perceptiveDelta = computePerceptiveDelta(preSignature, postSignature);
+      if (perceptiveDelta) {
+        (outcome as any).perceptiveDelta = perceptiveDelta;
+      }
 
         return {
           content: [

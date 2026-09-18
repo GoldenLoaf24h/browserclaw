@@ -113,6 +113,7 @@ export const TOOL_CATEGORIES: Record<string, string> = {
     'chrome_cdp_execute',
     'chrome_request_human_intervention',
     'chrome_undo_last_action',
+    'chrome_form_pipeline',
   ].join(' '),
   observe: [
     'chrome_screenshot',

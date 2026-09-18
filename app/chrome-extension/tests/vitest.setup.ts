@@ -64,6 +64,7 @@ if (typeof globalThis.chrome === 'undefined') {
       attach: vi.fn().mockResolvedValue(undefined),
       detach: vi.fn().mockResolvedValue(undefined),
       sendCommand: vi.fn().mockResolvedValue({}),
+      getTargets: vi.fn().mockResolvedValue([]),
     },
     commands: {
       onCommand: { addListener: vi.fn(), removeListener: vi.fn() },

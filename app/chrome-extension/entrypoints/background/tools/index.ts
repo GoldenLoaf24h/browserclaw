@@ -66,7 +66,10 @@ export const handleCallTool = async (param: ToolCallParam) => {
           (key === 'deltaOnly' ||
             key === 'includeDelta' ||
             key === 'fullPage' ||
-            key === 'verbose') &&
+            key === 'verbose' ||
+            key === 'activeViewportOnly' ||
+            key === 'viewportOnly' ||
+            key === 'autoAdvance') &&
           (trimmed === 'true' || trimmed === 'false')
         ) {
           args[key] = trimmed === 'true';

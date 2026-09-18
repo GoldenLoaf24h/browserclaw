@@ -27,7 +27,7 @@
             ],
             "env": {
               "CHROME_MCP_HOST": "127.0.0.1",
-              "_comment_profile": "CHROME_MCP_TOOL_PROFILE: core (14 tools, ~7.5k tokens) | crawl (12 tools, ~5.8k tokens) | full (45 tools, ~16.5k tokens). Omit for full.",
+              "_comment_profile": "CHROME_MCP_TOOL_PROFILE: core (14 tools, ~7.5k tokens) | crawl (12 tools, ~5.8k tokens) | full (46 tools, ~16.8k tokens). Omit for full.",
               "CHROME_MCP_TOOL_PROFILE": "full"
             }
           }
