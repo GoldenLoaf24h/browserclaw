@@ -152,7 +152,7 @@ sequenceDiagram
 
 ## 4. Deep Open Source Architectural Comparison
 
-Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser-use**, and **midscene**:
+Below is a systematic comparison between **BrowserClaw**, **browser-use**, and **midscene**:
 
 | Architecture Dimension         | BrowserClaw (`mcp-chrome`)                                                                                   | `browser-use`                                                | `midscene`                                           |
 | :----------------------------- | :----------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------- | :--------------------------------------------------- |
@@ -257,7 +257,7 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
 - **Decision**:
   1. Render a floating virtual cursor in an isolated closed Shadow DOM overlay with bezier trajectories, spring stretch physics, and instant fade-out upon physical human input.
   2. Group all agent-spawned tabs under a designated colored Chrome Tab Group (`TabGroupManager`), with auto-naming derived from the task and automatic destruction of empty groups upon tab removal to eliminate orphan residue.
-- **Consequences**: Flawless human-agent coexistence without UI interference or leftover workspace pollution.
+- **Consequences**: Smooth human-agent coexistence without UI interference or leftover workspace pollution.
 
 ### ADR-009: MV3 Service Worker Session Storage Persistence (`chrome.storage.session`)
 
@@ -374,7 +374,7 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
   1. In interact-index.ts, enforce a **6-point natural approach trajectory** (decelerating smoothly within a 65px radius) before pressing.
   2. Introduce an ergonomic **80-120ms physiological settling pause** (prePressDelayMs) between cursor arrival and mechanical button press.
   3. Broaden holdMs capacity from 500ms up to **3000ms**, enabling millisecond-accurate long-press holds (e.g. 2004ms on Sector 06 Temporal Maze).
-- **Consequences**: 100% clean trusted verdicts on forensic inspection systems, zero INSTANT_CLICK flags on physical clicks, and flawless execution of time-windowed hold interactions.
+- **Consequences**: Clean trusted verdicts on forensic inspection systems, zero INSTANT_CLICK flags on physical clicks, and flawless execution of time-windowed hold interactions.
 
 ### ADR-019: Full-Spectrum Drag Architecture & Background Tab Delivery Self-Healing (v2.3.0)
 
@@ -384,7 +384,7 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
   1. Decouple drag execution: route HTML5 drags through CDP Input.setInterceptDrags only when dnd: true; for pointer/gesture drags, execute uninterrupted pressed mouse movements with button: 'left', buttons: 1 along multi-point path sequences.
   2. Extend Click Probe Fallback to visual coordinates: when Chromium background tab throttling drops CDP events (probe reports delivered: false), automatically resolve the target element via document.elementFromPoint(x, y) and dispatch synthetic in-page clicks, ensuring 100% action delivery even on non-active background tabs.
   3. Expand chrome_fill_index with pressEnter: true, cutting agent search and auth round-trips by 50%.
-- **Consequences**: Flawless execution across HTML5 drops, list reordering, and multi-point path corridors, paired with bulletproof background tab automation resilience.
+- **Consequences**: High-fidelity execution across HTML5 drops, list reordering, and multi-point path corridors, paired with resilient background tab automation with Click Probe fallback.
 
 ### ADR-020: Windows Process Teardown, Unref Watchdog & Keep-Alive Socket Severance (v2.3.8)
 
@@ -415,7 +415,7 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
   3. Register tab lifecycle listeners on `chrome.tabs.onActivated`, `chrome.tabs.onUpdated`, and `chrome.tabs.onRemoved` to invalidate the cooldown cache immediately upon user focus or page reload.
 - **Consequences**: Elimination of 3000ms latency stalls on background scrolling, seamless transition to hardware-accelerated CDP wheel dispatch when tabs are focused, and zero memory leaks.
 
-### ADR-023 (Plan Reference ADR-016): Hierarchical Dual-Brain Architecture & Semantic Micro-Loop with Three-Tier Engine Fallback (v2.8.0)
+### ADR-023: Hierarchical Dual-Brain Architecture & Semantic Micro-Loop with Three-Tier Engine Fallback (v2.8.0)
 
 - **Status**: Implemented & Verified
 - **Context**: In standard single-loop browser automation, generalist LLMs (Claude, GPT-4, Gemini) operate as the sole decision maker for every atomic DOM action. This introduces 2,000–5,000ms round-trip latency per interaction, high token consumption, and rapid context window exhaustion. Tasks involving repetitive or deterministic micro-steps (form filling, menu navigation, multi-field submission) suffer severe throughput degradation. Conversely, pure rule-based engines lack semantic intent understanding across diverse web interfaces.
