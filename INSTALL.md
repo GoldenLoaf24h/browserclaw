@@ -56,7 +56,14 @@ If the user agrees, locate their Chrome shortcut and append `--silent-debugger-e
 
 ### Hermes Agent
 
-Install directly from terminal:
+#### Option A: Native Hermes Plugin (Recommended — installs 15 core tools + bundled skill together)
+
+```bash
+hermes plugins install GoldenLoaf24h/browserclaw --subdir plugins/browserclaw
+hermes plugins enable browserclaw
+```
+
+#### Option B: Standalone Skill only
 
 ```bash
 hermes skills install "https://raw.githubusercontent.com/GoldenLoaf24h/browserclaw/main/skill/SKILL.md" --name browserclaw

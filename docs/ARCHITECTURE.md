@@ -316,7 +316,7 @@ Below is a systematic comparison between **BrowserClaw (mcp-chrome)**, **browser
 ### ADR-014: Dynamic Profile Layering & Session-Level Tool Activation across Transports
 
 - **Status**: Implemented & Verified
-- **Context**: Different AI agent models have vastly different token window budgets. Standard monolithic MCP server exposing all 52 tools consumes ~19.5k tokens on `tools/list`, which overwhelms smaller or faster reasoning models. At the same time, hardcoding static profiles (e.g. `core` with 24 tools or `crawl` with 15 tools) prevented agents from dynamically discovering and invoking advanced debugging or network inspection capabilities when encountering complex edge cases.
+- **Context**: Different AI agent models have vastly different token window budgets. Standard monolithic MCP server exposing all 47 tools consumes ~16.5k tokens on `tools/list`, which overwhelms smaller or faster reasoning models. At the same time, hardcoding static profiles (e.g. `core` with 14 tools or `crawl` with 12 tools) prevented agents from dynamically discovering and invoking advanced debugging or network inspection capabilities when encountering complex edge cases.
 - **Decision**:
   1. Define 8 comprehensive tool categories in `TOOL_CATEGORIES` across `packages/shared`: `navigate`, `perceive`, `act`, `observe`, `manage`, `diagnose`, `network`, and `crawl`.
   2. Retain `chrome_tool_docs` as an omni-present introspection tool across all profiles.

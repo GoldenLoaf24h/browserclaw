@@ -33,7 +33,7 @@ hermes plugins enable browserclaw
    ```bash
    npm run start:server
    ```
-   The server listens on `http://127.0.0.1:18008/mcp` (or custom `BROWSERCLAW_MCP_URL`).
+   The server listens on `http://127.0.0.1:12306/mcp` (or custom `BROWSERCLAW_MCP_URL`).
 
 ## Core Provided Tools
 

@@ -16,7 +16,7 @@ import urllib.request
 logger = logging.getLogger(__name__)
 
 DEFAULT_URLS = [
-    os.getenv('BROWSERCLAW_MCP_URL', 'http://127.0.0.1:18008/mcp'),
+    os.getenv('BROWSERCLAW_MCP_URL', 'http://127.0.0.1:12306/mcp'),
     'http://127.0.0.1:12306/mcp',
 ]
 
@@ -79,7 +79,7 @@ def _call_browserclaw(tool_name: str, arguments: dict) -> str:
             continue
 
     return json.dumps({
-        'error': f'BrowserClaw server not reachable ({last_error}). Ensure Chrome extension is loaded and native server is running on http://127.0.0.1:18008/mcp.',
+        'error': f'BrowserClaw server not reachable ({last_error}). Ensure Chrome extension is loaded and native server is running on http://127.0.0.1:12306/mcp.',
     })
 
 def _register_bundled_skill(ctx: Any) -> None:

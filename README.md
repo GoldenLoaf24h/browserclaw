@@ -116,7 +116,16 @@ https://github.com/GoldenLoaf24h/browserclaw
 
 Then click install on **BrowserClaw**.
 
-### Option 3: Manual Installation
+### Option 3: Install via Hermes Agent
+
+Install directly from terminal into your active Hermes environment:
+
+```bash
+hermes plugins install GoldenLoaf24h/browserclaw --subdir plugins/browserclaw
+hermes plugins enable browserclaw
+```
+
+### Option 4: Manual Developer Installation
 
 ```bash
 git clone https://github.com/GoldenLoaf24h/browserclaw.git
@@ -200,7 +209,7 @@ For machine-readable JSON schemas and detailed option flags, consult **[docs/TOO
 </details>
 
 <details>
-<summary><b>🖱️ 3. Action Execution & Pipeline (11 Tools)</b></summary>
+<summary><b>🖱️ 3. Action Execution & Pipeline (12 Tools)</b></summary>
 
 <br/>
 
@@ -271,7 +280,7 @@ AI Client (Cursor / Claude / Codex)
          ▼
 Native Messaging Bridge (Fastify + Stdio Host)
          ├── Fast Decision Engine (Jev client + heuristic fallback + micro-loop)
-         └── Transparent passthrough for 46 deterministic tools
+         └── Passthrough for 46 deterministic tools + 1 autonomous micro-loop (47 tools total)
          │  Chrome Native Messaging (1MB buffer guard)
          ▼
 Chrome MV3 Extension (Service Worker + WXT + Vue 3)

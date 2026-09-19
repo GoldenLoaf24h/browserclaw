@@ -26,7 +26,7 @@ Welcome to the **BrowserClaw** Project Map. Whether you are an end-user, an AI a
   3. Copy your client JSON from **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)** into Cursor, Claude, or Codex.
 - **I am an AI Agent / Prompt Engineer integrating BrowserClaw**:
   1. Study **[skill/SKILL.md](../skill/SKILL.md)**: Encodes dual-engine workflows (DOM-First vs Visual Fallback), the Escalation Ladder, and recovery patterns.
-  2. Consult **[docs/TOOLS.md](./TOOLS.md)**: Auto-generated parameter references for all 46 canonical tools across Core (14), Crawl (12), and Full (46) profiles.
+  2. Consult **[docs/TOOLS.md](./TOOLS.md)**: Auto-generated parameter references for all 47 canonical tools across Core (14), Crawl (12), and Full (46) profiles.
   3. Follow the 6 interaction rules in **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)** (especially `includeDelta: true` and `chrome_grep`).
 - **I want to contribute or audit the architecture**:
   1. Inspect **[docs/ARCHITECTURE.md](./ARCHITECTURE.md)**: Complete system topology, IPC buffer guards, and sequence diagrams.
@@ -42,15 +42,15 @@ mcp-chrome-master/
 ├── packages/
 │   └── shared/                  # 🌟 Single Source of Truth
 │       └── src/
-│           ├── tools.ts         # All 46 canonical tool schemas, tool names
-│           ├── tool-profiles.ts # Profile definitions (Core 14, Crawl 12, Full 46)
+│           ├── tools.ts         # All 47 canonical tool schemas, tool names
+│           ├── tool-profiles.ts # Profile definitions (Core 14, Crawl 12, Full 47)
 │           ├── types.ts         # Universal coordinate, batch item & diff result types
 │           └── error-format.ts  # Standardized error reporting with stack control
 │
 ├── app/
 │   ├── chrome-extension/        # 🧩 Chrome MV3 Extension (WXT + Vue 3)
 │   │   ├── entrypoints/
-│   │   │   ├── background/      # Main Service Worker (46 Canonical Tool Executors)
+│   │   │   ├── background/      # Main Service Worker (47 Canonical Tool Executors)
 │   │   │   │   └── tools/browser/tab-group-manager.ts # Tab grouping & orphan cleanup
 │   │   │   ├── agent-cursor.content.ts # Closed Shadow DOM virtual mouse overlay
 │   │   │   ├── inpage-engine.ts # Isolated-world DOM indexing & pruning engine
