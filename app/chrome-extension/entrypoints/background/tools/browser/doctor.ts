@@ -1,6 +1,7 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
+import { STORAGE_KEYS, NATIVE_HOST } from '@/common/constants';
 
 interface DoctorParams {
   verbose?: boolean;
@@ -18,14 +19,30 @@ class DoctorTool extends BaseBrowserToolExecutor {
       const controlEnabled =
         (await chrome.storage.session.get('agentControlEnabled'))?.agentControlEnabled !== false;
 
-      // Check Native Server port 12306 connectivity
+      // Check Native Server port connectivity
+      let serverPort: number = NATIVE_HOST.DEFAULT_PORT;
+      try {
+        const stored = await chrome.storage.local.get([
+          STORAGE_KEYS.SERVER_STATUS,
+          STORAGE_KEYS.NATIVE_SERVER_PORT,
+        ]);
+        const candidatePort =
+          stored?.[STORAGE_KEYS.SERVER_STATUS]?.port || stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT];
+        const numPort = Number(candidatePort);
+        if (Number.isInteger(numPort) && numPort > 0 && numPort <= 65535) {
+          serverPort = numPort;
+        }
+      } catch {}
+
       let serverStatus = 'unknown';
       let serverLatencyMs = 0;
       try {
         const start = performance.now();
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 1200);
-        const res = await fetch('http://127.0.0.1:12306/ping', { signal: controller.signal });
+        const res = await fetch(`http://127.0.0.1:${serverPort}/ping`, {
+          signal: controller.signal,
+        });
         clearTimeout(timeout);
         serverLatencyMs = Math.round(performance.now() - start);
         serverStatus = res.ok ? 'connected' : 'unreachable';
@@ -40,7 +57,7 @@ class DoctorTool extends BaseBrowserToolExecutor {
 
       const checks = [
         {
-          name: 'Native Server Port (12306)',
+          name: `Native Server Port (${serverPort})`,
           status: serverStatus === 'connected' ? 'pass' : 'fail',
           detail:
             serverStatus === 'connected'

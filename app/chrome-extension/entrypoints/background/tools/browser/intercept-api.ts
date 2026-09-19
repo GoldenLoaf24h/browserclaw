@@ -65,8 +65,25 @@ class ApiInterceptorStore {
     const clean = pattern.trim().toLowerCase();
     const targetUrl = url.toLowerCase();
     if (clean.includes('*')) {
-      const sub = clean.replace(/\*/g, '');
-      return targetUrl.includes(sub);
+      try {
+        const escaped = clean.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+        let regexStr = escaped;
+        if (clean.startsWith('*') || /^[a-z]+:\/\//i.test(clean)) {
+          regexStr = '^' + regexStr;
+        } else if (clean.startsWith('/')) {
+          regexStr = '(?:^|[a-z]+://[^/?#]+)' + regexStr;
+        }
+
+        if (clean.endsWith('*')) {
+          regexStr = regexStr + '$';
+        } else {
+          regexStr = regexStr + '(?=[/?#]|$)';
+        }
+
+        return new RegExp(regexStr).test(targetUrl);
+      } catch {
+        return false;
+      }
     }
     return targetUrl.includes(clean);
   }
@@ -87,6 +104,10 @@ if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved?.addListener) {
 
 export class InterceptApiTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.INTERCEPT_API;
+
+  public matchesPattern(url: string, pattern: string): boolean {
+    return apiInterceptorStore.matchesPattern(url, pattern);
+  }
 
   async execute(args: InterceptApiParams): Promise<ToolResult> {
     if (!args || !args.urlPattern || !args.urlPattern.trim()) {
@@ -138,7 +159,10 @@ export class InterceptApiTool extends BaseBrowserToolExecutor {
     try {
       await cdpSessionManager.sendCommand(tabId, 'Network.enable');
       const capturePromise = new Promise<CapturedApiResponse>((resolve) => {
-        const pendingResponses = new Map<string, { url: string; status: number; mimeType: string }>();
+        const pendingResponses = new Map<
+          string,
+          { url: string; status: number; mimeType: string }
+        >();
         let resolved = false;
 
         const processBody = async (

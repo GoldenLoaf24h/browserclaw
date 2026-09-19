@@ -45,8 +45,8 @@ pnpm build
 
 If you prefer not to build from source, download the pre-compiled packages directly from [GitHub Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest):
 
-- Extension: `browserclaw-extension-latest.zip` (unzip to a persistent local folder).
-- Skill: `browserclaw-skill-latest.zip`.
+- Extension: `browserclaw-extension-v*.zip` (unzip to a persistent local folder).
+- Skill: `browserclaw-skill-v*.zip`.
 
 ---
 
@@ -136,7 +136,7 @@ Add BrowserClaw to your agent client's MCP configuration:
   "mcpServers": {
     "browserclaw": {
       "command": "node",
-      "args": ["<repo-root>/app/native-server/dist/cli.js", "--stdio"],
+      "args": ["<repo-root>/app/native-server/dist/mcp/mcp-server-stdio.js"],
       "env": {
         "CHROME_MCP_TOOL_PROFILE": "core"
       }
@@ -145,14 +145,16 @@ Add BrowserClaw to your agent client's MCP configuration:
 }
 ```
 
-### 5.2 Claude Desktop & Claude Code (`~/.claude/claude_desktop_config.json`)
+### 5.2 Claude Desktop & Claude Code (`claude_desktop_config.json`)
+
+Config path: Windows `%APPDATA%\Claude\claude_desktop_config.json`, macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Linux `~/.config/Claude/claude_desktop_config.json`.
 
 ```json
 {
   "mcpServers": {
     "browserclaw": {
       "command": "node",
-      "args": ["<repo-root>/app/native-server/dist/cli.js", "--stdio"],
+      "args": ["<repo-root>/app/native-server/dist/mcp/mcp-server-stdio.js"],
       "env": {
         "CHROME_MCP_TOOL_PROFILE": "core"
       }
@@ -168,7 +170,7 @@ Add BrowserClaw to your agent client's MCP configuration:
   "mcpServers": {
     "browserclaw": {
       "command": "node",
-      "args": ["<repo-root>/app/native-server/dist/cli.js", "--stdio"],
+      "args": ["<repo-root>/app/native-server/dist/mcp/mcp-server-stdio.js"],
       "env": {
         "CHROME_MCP_TOOL_PROFILE": "core"
       }
@@ -182,14 +184,16 @@ Add BrowserClaw to your agent client's MCP configuration:
 #### Option A: Native Plugin (Recommended — installs 15 core tools + skill together)
 
 ```bash
-hermes plugins install GoldenLoaf24h/browserclaw --subdir plugins/browserclaw
+hermes plugins install GoldenLoaf24h/browserclaw#plugins/browserclaw
 hermes plugins enable browserclaw
 ```
 
 #### Option B: MCP Server Add
 
 ```bash
-hermes mcp add browserclaw http://127.0.0.1:12306/mcp
+hermes mcp add browserclaw --url http://127.0.0.1:12306/mcp --auth header
+
+When prompted for headers, enter `x-mcp-token: <TOKEN_FROM_~/.chrome-mcp/bridge-token>`.
 ```
 
 ---
@@ -215,13 +219,15 @@ node skill/config/doctor.mjs
 **Expected Output:**
 
 ```text
-[PASS] Node.js Environment: v22.x
-[PASS] Bridge Token Found: ~/.chrome-mcp/bridge-token
+[PASS] Node.js Environment: v22.x on win32
+[PASS] Bridge Token Found: C:\Users\<user>\.chrome-mcp\bridge-token
 [PASS] Native Bridge Server is Listening (Port 12306)
 [PASS] Token Authentication & MCP Initialize OK
-[PASS] Extension Build Found
-[PASS] Standalone Directory Synced
+[PASS] Extension Build Found: D:\workspace\...
+[PASS] Standalone Directory Synced: D:\workspace\browserclaw
 [PASS] Native Messaging Host Registered in Chrome
+----------------------------------------------------------------
+Diagnostic Complete: 7 Passed, 0 Failed.
 STATUS: [HEALTHY] All BrowserClaw layers are operating normally!
 ```
 

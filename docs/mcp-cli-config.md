@@ -62,7 +62,7 @@ File: `~/.claude/claude_desktop_config.json`
   "mcpServers": {
     "browserclaw": {
       "command": "node",
-      "args": ["<repo-root>/app/native-server/dist/cli.js", "--stdio"],
+      "args": ["<repo-root>/app/native-server/dist/mcp/mcp-server-stdio.js"],
       "env": {
         "CHROME_MCP_TOOL_PROFILE": "full"
       }
@@ -101,7 +101,7 @@ File: `.cursor/mcp.json` or Cursor Settings -> Features -> MCP Servers:
   "mcpServers": {
     "browserclaw": {
       "command": "node",
-      "args": ["<repo-root>/app/native-server/dist/cli.js", "--stdio"],
+      "args": ["<repo-root>/app/native-server/dist/mcp/mcp-server-stdio.js"],
       "env": {
         "CHROME_MCP_TOOL_PROFILE": "core"
       }
@@ -119,7 +119,7 @@ File: `.cursor/mcp.json` or Cursor Settings -> Features -> MCP Servers:
 Install directly from terminal into your active Hermes environment:
 
 ```bash
-hermes plugins install GoldenLoaf24h/browserclaw --subdir plugins/browserclaw
+hermes plugins install GoldenLoaf24h/browserclaw#plugins/browserclaw
 hermes plugins enable browserclaw
 ```
 
@@ -128,7 +128,7 @@ hermes plugins enable browserclaw
 Connect Hermes to the running BrowserClaw HTTP bridge:
 
 ```bash
-hermes mcp add browserclaw http://127.0.0.1:12306/mcp
+hermes mcp add browserclaw --url http://127.0.0.1:12306/mcp --auth header
 ```
 
 ---

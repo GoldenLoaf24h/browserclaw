@@ -138,7 +138,22 @@ export class HeuristicEngine {
       // 1. Substring match bonus: +2.0
       const cleanGoal = goalLower.replace(/[^\p{L}\p{N}]/gu, '');
       const cleanLine = lineLower.replace(/[^\p{L}\p{N}]/gu, '');
-      if (cleanGoal.length > 1 && cleanLine.includes(cleanGoal)) {
+      const quotedStrings = Array.from(line.matchAll(/"([^"]+)"/g)).map((m) =>
+        m[1].toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''),
+      );
+      const htmlTextMatch = line.match(/>([^<]+)</);
+      if (htmlTextMatch) {
+        quotedStrings.push(htmlTextMatch[1].toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''));
+      }
+
+      const hasSubstringMatch =
+        cleanGoal.length > 1 &&
+        (cleanLine.includes(cleanGoal) ||
+          quotedStrings.some(
+            (label) => label.length > 1 && (cleanGoal.includes(label) || label.includes(cleanGoal)),
+          ));
+
+      if (hasSubstringMatch) {
         score += 2.0;
       }
 

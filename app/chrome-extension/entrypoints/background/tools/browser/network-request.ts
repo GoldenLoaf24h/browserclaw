@@ -18,6 +18,8 @@ interface NetworkRequestToolParams {
   formData?: any;
   tabId?: number; // Optional ID of specific tab to execute request within
   tabUrl?: string; // Optional URL of tab to execute request within
+  sessionId?: string; // Optional session identifier to bind affinity to a specific tab context
+  sessionContext?: string; // Optional alias for sessionId
 }
 
 /**
@@ -27,7 +29,12 @@ class NetworkRequestTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.NETWORK_REQUEST;
 
   async execute(args: NetworkRequestToolParams): Promise<ToolResult> {
-    if (args.url && (isCloudMetadataUrl(args.url) || args.url.startsWith('file:') || args.url.startsWith('file://'))) {
+    if (
+      args.url &&
+      (isCloudMetadataUrl(args.url) ||
+        args.url.startsWith('file:') ||
+        args.url.startsWith('file://'))
+    ) {
       return createErrorResponse(restrictedUrlErrorMessage(args.url));
     }
     const {
@@ -46,9 +53,10 @@ class NetworkRequestTool extends BaseBrowserToolExecutor {
 
     try {
       let targetTabId: number | undefined;
+      const sessionId = args.sessionId || args.sessionContext;
 
       if (typeof args.tabId === 'number' && args.tabId > 0) {
-        const explicit = await this.tryGetTab(args.tabId);
+        const explicit = await this.tryGetTab(args.tabId, sessionId);
         if (!explicit?.id) {
           return createErrorResponse(`Tab with ID ${args.tabId} not found.`);
         }
@@ -61,8 +69,8 @@ class NetworkRequestTool extends BaseBrowserToolExecutor {
           return createErrorResponse(`No open tab found matching tabUrl: "${args.tabUrl}"`);
         }
       } else {
-        const activeTab = await this.getActiveTabOrThrowInWindow();
-        targetTabId = activeTab.id;
+        const resolved = await this.resolveAffinityTab({ sessionId });
+        targetTabId = resolved.id;
       }
 
       if (!targetTabId) {

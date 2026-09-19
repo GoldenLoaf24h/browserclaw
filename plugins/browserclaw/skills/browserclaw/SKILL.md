@@ -16,7 +16,7 @@ BrowserClaw strictly enforces **Canonical High-Reliability Tools (47 tools total
 - **Clicking**: Exclusively use `chrome_interact_index` (1-based index, Shadow DOM pierced, humanized micro-jitter curve). Legacy `click_element` and `burst_interact` are removed.
 - **Filling**: Exclusively use `chrome_fill_index` (handles text, passwords, checkboxes, and dates automatically, with optional `pressEnter: true` to trigger immediate submission, True Input Commitment verification, and cross-platform deep reset) or `chrome_batch_actions` (pipelined). Legacy `fill_or_select` and `fill_form` are removed.
 - **Form Automation**: Use `chrome_form_pipeline` for autonomous multi-step questionnaires, onboarding wizards, and multi-step forms without multi-turn LLM ping-pong.
-- **Scrolling**: Exclusively use `chrome_smart_scroll` (overflow-aware, returns remaining pages). Legacy `scroll` and `scroll_to_text` are removed.
+- **Scrolling**: Exclusively use `chrome_smart_scroll` (overflow-aware, returns canScrollDown, canScrollUp, and scrollProgress). Legacy `scroll` and `scroll_to_text` are removed.
 - **Reading Content**: Exclusively use `chrome_get_markdown` for articles/summaries, and `chrome_read_dom` for UI interaction. Legacy `get_web_content` and `get_links` are removed.
 
 ---
@@ -221,6 +221,9 @@ For complex multi-step logic (conditional branches, loops, or form filling + dat
 Injected `mcp` API:
 
 - `await mcp.run(async (mcp) => { ... })`: Single-turn in-page agent closure orchestrating multi-step actions and returning structured results.
+- `mcp.get(target)`: Resolve an element by 1-based index or CSS selector with automatic stale-element fingerprint self-healing.
+- `mcp.isVisible(target)`: Check if an element is currently rendered, non-empty, and visible in the viewport.
+- `await mcp.scrollIntoView(target, align?)`: Smoothly scroll an element into viewport center before interaction.
 - `await mcp.click(indexOrSelector, { waitFor?, double? })`: Dispatch clean mouse sequence to numeric index or CSS selector (supports `:has-text("...")`).
 - `await mcp.fill(indexOrSelector, text, clearFirst?)`: Focus, clear, fill, and dispatch input/change events.
 - `await mcp.check(indexOrSelector, checked?)`: Toggle checkbox/radio state with input and change events.

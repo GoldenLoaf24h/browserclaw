@@ -39,18 +39,22 @@ out += '被 profile 隐藏的工具可用 `chrome_tool_docs` 按类别查询参�
 const byName = new Map(TOOL_SCHEMAS.map((t) => [t.name, t]));
 const seen = new Set();
 for (const [key, label] of groups) {
-  out += '\n## ' + label + '\n\n';
-  for (const name of (TOOL_CATEGORIES[key] || '').split(' ').filter(Boolean)) {
+  out += "\n## " + label + "\n\n";
+  for (const name of (TOOL_CATEGORIES[key] || "").split(" ").filter(Boolean)) {
     if (seen.has(name)) continue;
     seen.add(name);
     const t = byName.get(name);
-    if (t) out += toolDoc(t) + '\n';
+    if (t) out += toolDoc(t) + "\n";
   }
 }
-out += '\n## 其他工具 / Remaining tools\n\n';
-for (const t of TOOL_SCHEMAS) {
-  if (!seen.has(t.name)) { out += toolDoc(t) + '\n'; seen.add(t.name); }
+const remaining = TOOL_SCHEMAS.filter(t => !seen.has(t.name));
+if (remaining.length > 0) {
+  out += "\n## 其他工具 / Remaining tools\n\n";
+  for (const t of remaining) {
+    out += toolDoc(t) + "\n";
+  }
 }
-fs.writeFileSync(path.join(here, '../docs/TOOLS.md'), out);
+out = out.split("0~~1.0").join("0~1.0").split("0~~1000").join("0~1000");
+fs.writeFileSync(path.join(here, "../docs/TOOLS.md"), out);
 console.log('docs/TOOLS.md regenerated:', TOOL_SCHEMAS.length, 'tools');
 

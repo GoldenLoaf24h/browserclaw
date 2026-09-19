@@ -368,7 +368,7 @@ Autonomously fill and advance multi-step forms / wizards (e.g. Typeform, onboard
 - `region` — Lossless high-density ROI crop: capture only a specific sub-region { x0, y0, x1, y1 } in CSS pixels or polymorphic [ymin, xmin, ymax, xmax]. Completely avoids downscaling and preserves full pixel clarity for fine details like small text or dice dots.
 - `crop` — Alias for region: { x, y, width, height } or { x0, y0, x1, y1 }.
 - `grid` — Overlay semi-transparent coordinate reference grid with perimeter tape measure rulers (20/50/100px ticks) and interior reticle crosshairs (+) to eliminate visual estimation hallucination (default: false)
-- `enableGrid` — (Deprecated alias for grid — prefer grid): overlay semi-transparent coordinate reference grid with perimeter tape measure rulers and crosshairs
+- `enableGrid` — Alias for grid: overlay semi-transparent coordinate reference grid with perimeter tape measure rulers and crosshairs
 - `expandSearchArea` — For small elements (< 100x100), adaptively expand the crop bounding box to preserve surrounding headers and text context (default: true)
 - `format:png|jpeg|webp` — Image output format: webp (default, high compression for LLM), jpeg, or png
 - `quality` — Image compression quality from 0 to 100 for webp/jpeg formats (default: 80)
@@ -559,6 +559,8 @@ Send a network request from the browser with cookies and other browser context
 - `formData` — Multipart/form-data descriptor. If provided, overrides body and builds FormData with optional file attachments. Shape: { fields?: Record<string,string|number|boolean>, files?: Array<{ name: string, fileUrl?: string, filePath?: string, base64Data?: string, filename?: string, contentType?: string }> }. Also supports a compact array form: [ [name, fileSpec, filename?], ... ] where fileSpec may be url:, file:, or base64:.
 - `tabId` — Optional ID of the tab to execute the request within (defaults to active tab)
 - `tabUrl` — Optional URL of the tab to execute the request within
+- `sessionId` — Optional session identifier to bind affinity to a specific tab context
+- `sessionContext` — Optional alias for sessionId
 
 ### `chrome_network_capture`
 
@@ -570,5 +572,3 @@ Unified network capture tool. Use action="start" to begin capturing, action="sto
 - `maxCaptureTime` — Maximum capture time in milliseconds (default: 180000)
 - `inactivityTimeout` — Stop after inactivity in milliseconds (default: 60000). Set 0 to disable.
 - `includeStatic` — Include static resources like images/scripts/styles (default: false)
-
-## 其他工具 / Remaining tools

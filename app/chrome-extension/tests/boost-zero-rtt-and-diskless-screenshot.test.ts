@@ -174,8 +174,14 @@ describe('Zero-RTT Submission & Diskless Screenshot Hardening', () => {
 
   describe('3. chrome_screenshot Diskless In-Memory Contract', () => {
     beforeEach(async () => {
-      (chrome.tabs.get as any) = vi.fn(async (id: number) => ({ id, windowId: 1, url: 'https://example.com' }));
-      (chrome.tabs.query as any) = vi.fn(async () => [{ id: 1, active: true, windowId: 1, url: 'https://example.com' }]);
+      (chrome.tabs.get as any) = vi.fn(async (id: number) => ({
+        id,
+        windowId: 1,
+        url: 'https://example.com',
+      }));
+      (chrome.tabs.query as any) = vi.fn(async () => [
+        { id: 1, active: true, windowId: 1, url: 'https://example.com' },
+      ]);
       (chrome as any).downloads = {
         download: vi.fn(async () => 123),
         search: vi.fn(async () => [{ id: 123, filename: 'D:\\Downloads\\download.png' }]),
@@ -195,9 +201,11 @@ describe('Zero-RTT Submission & Diskless Screenshot Hardening', () => {
       });
 
       const cdpMod = await import('@/utils/cdp-session-manager');
-      const withSessionSpy = vi.spyOn(cdpMod.cdpSessionManager, 'withSession').mockImplementation(async (_tabId: any, _owner: any, fn: any) => {
-        return await fn();
-      });
+      const withSessionSpy = vi
+        .spyOn(cdpMod.cdpSessionManager, 'withSession')
+        .mockImplementation(async (_tabId: any, _owner: any, fn: any) => {
+          return await fn();
+        });
       const sendCommandSpy = vi.spyOn(cdpMod.cdpSessionManager, 'sendCommand').mockResolvedValue({
         data: 'UklGRkAAAABXRUJQVlA4IDQAAADwAQCdASoBAAEAAkA4JaQAA3AA/vsGAAA=',
         mimeType: 'image/webp',
@@ -232,15 +240,18 @@ describe('Zero-RTT Submission & Diskless Screenshot Hardening', () => {
       });
 
       const cdpMod = await import('@/utils/cdp-session-manager');
-      const withSessionSpy = vi.spyOn(cdpMod.cdpSessionManager, 'withSession').mockImplementation(async (_tabId: any, _owner: any, fn: any) => {
-        return await fn();
-      });
+      const withSessionSpy = vi
+        .spyOn(cdpMod.cdpSessionManager, 'withSession')
+        .mockImplementation(async (_tabId: any, _owner: any, fn: any) => {
+          return await fn();
+        });
       const sendCommandSpy = vi.spyOn(cdpMod.cdpSessionManager, 'sendCommand').mockResolvedValue({
         data: 'UklGRkAAAABXRUJQVlA4IDQAAADwAQCdASoBAAEAAkA4JaQAA3AA/vsGAAA=',
         mimeType: 'image/webp',
       });
 
       const nativeHostMod = await import('../entrypoints/background/native-host');
+      const ensureSpy = vi.spyOn(nativeHostMod, 'ensureNativeConnected').mockResolvedValue(true);
       const sendSpy = vi.spyOn(nativeHostMod, 'sendFileOperationToNative');
       sendSpy.mockImplementation((msg: any, cb?: any) => {
         if (msg.type === 'file_operation' && msg.payload.action === 'prepareFile') {
@@ -248,7 +259,8 @@ describe('Zero-RTT Submission & Diskless Screenshot Hardening', () => {
             cb?.({
               payload: {
                 success: true,
-                filePath: 'C:\\Users\\User\\AppData\\Local\\Temp\\chrome-mcp-uploads\\phone_results_test.webp',
+                filePath:
+                  'C:\\Users\\User\\AppData\\Local\\Temp\\chrome-mcp-uploads\\phone_results_test.webp',
               },
             });
           }, 5);
@@ -270,6 +282,7 @@ describe('Zero-RTT Submission & Diskless Screenshot Hardening', () => {
       withSessionSpy.mockRestore();
       sendCommandSpy.mockRestore();
       sendSpy.mockRestore();
+      ensureSpy.mockRestore();
     });
 
     it('safely handles large screenshot payloads by ensuring size under Native Messaging ceiling before sending', async () => {
@@ -281,9 +294,11 @@ describe('Zero-RTT Submission & Diskless Screenshot Hardening', () => {
       });
 
       const cdpMod = await import('@/utils/cdp-session-manager');
-      const withSessionSpy = vi.spyOn(cdpMod.cdpSessionManager, 'withSession').mockImplementation(async (_tabId: any, _owner: any, fn: any) => {
-        return await fn();
-      });
+      const withSessionSpy = vi
+        .spyOn(cdpMod.cdpSessionManager, 'withSession')
+        .mockImplementation(async (_tabId: any, _owner: any, fn: any) => {
+          return await fn();
+        });
       // 800KB mock base64 data to test ceiling protection
       const largeBase64 = 'A'.repeat(800 * 1024);
       const sendCommandSpy = vi.spyOn(cdpMod.cdpSessionManager, 'sendCommand').mockResolvedValue({
@@ -292,22 +307,26 @@ describe('Zero-RTT Submission & Diskless Screenshot Hardening', () => {
       });
 
       const nativeHostMod = await import('../entrypoints/background/native-host');
+      const ensureSpy = vi.spyOn(nativeHostMod, 'ensureNativeConnected').mockResolvedValue(true);
       let capturedPayloadSize = 0;
-      const sendSpy = vi.spyOn(nativeHostMod, 'sendFileOperationToNative').mockImplementation((msg: any, cb?: any) => {
-        if (msg.type === 'file_operation' && msg.payload.action === 'prepareFile') {
-          capturedPayloadSize = (msg.payload.base64Data || '').length;
-          setTimeout(() => {
-            cb?.({
-              payload: {
-                success: true,
-                filePath: 'C:\\Users\\User\\AppData\\Local\\Temp\\chrome-mcp-uploads\\phone_results_large.webp',
-              },
-            });
-          }, 5);
-          return true;
-        }
-        return false;
-      });
+      const sendSpy = vi
+        .spyOn(nativeHostMod, 'sendFileOperationToNative')
+        .mockImplementation((msg: any, cb?: any) => {
+          if (msg.type === 'file_operation' && msg.payload.action === 'prepareFile') {
+            capturedPayloadSize = (msg.payload.base64Data || '').length;
+            setTimeout(() => {
+              cb?.({
+                payload: {
+                  success: true,
+                  filePath:
+                    'C:\\Users\\User\\AppData\\Local\\Temp\\chrome-mcp-uploads\\phone_results_large.webp',
+                },
+              });
+            }, 5);
+            return true;
+          }
+          return false;
+        });
 
       const res = await screenshotTool.execute({ name: 'phone_results_large', savePng: true });
       expect(res.isError).toBe(false);
@@ -320,6 +339,7 @@ describe('Zero-RTT Submission & Diskless Screenshot Hardening', () => {
       withSessionSpy.mockRestore();
       sendCommandSpy.mockRestore();
       sendSpy.mockRestore();
+      ensureSpy.mockRestore();
     });
   });
 
@@ -350,7 +370,9 @@ describe('Zero-RTT Submission & Diskless Screenshot Hardening', () => {
 
       const interactMod = await import('../entrypoints/background/tools/browser/interact-index');
       const interactSpy = vi.spyOn(interactMod.interactIndexTool, 'execute').mockResolvedValue({
-        content: [{ type: 'text', text: JSON.stringify({ success: true, action: 'click', index: 18 }) }],
+        content: [
+          { type: 'text', text: JSON.stringify({ success: true, action: 'click', index: 18 }) },
+        ],
         isError: false,
       });
 
@@ -365,10 +387,12 @@ describe('Zero-RTT Submission & Diskless Screenshot Hardening', () => {
       expect(parsed.submitted).toBe(true);
       expect(parsed.submitMethod).toBe('click');
       expect(parsed.submittedButtonIndex).toBe(18);
-      expect(interactSpy).toHaveBeenCalledWith(expect.objectContaining({
-        index: 18,
-        action: 'click',
-      }));
+      expect(interactSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          index: 18,
+          action: 'click',
+        }),
+      );
 
       vi.restoreAllMocks();
     });

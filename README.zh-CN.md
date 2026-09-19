@@ -90,7 +90,7 @@
 
 > _“帮我配置 BrowserClaw：https://github.com/GoldenLoaf24h/browserclaw ，阅读仓库中的 `INSTALL.md` 并按步骤自动安装。”_
 
-AI 将自动完成本地服务的编译与注册。随后你只需下载 **[最新纯净扩展包](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)**，打开 `chrome://extensions` 开启“开发者模式”，将解压文件夹拖入即可。
+AI 将自动完成本地服务的编译与注册。随后你只需从 **[Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** 下载最新的 **`browserclaw-extension-v*.zip`** 资产（例如 `browserclaw-extension-v2.8.0.zip`），解压到本地固定目录，打开 `chrome://extensions` 开启“开发者模式”，将该解压文件夹拖入即可。
 
 ### 方案二：通过 ChatGPT / Codex 插件市场添加
 
@@ -102,7 +102,16 @@ https://github.com/GoldenLoaf24h/browserclaw
 
 添加成功后，点击安装 **BrowserClaw** 插件即可一键启用。
 
-### 方案三：本地手动安装
+### 方案三：通过 Hermes Agent 安装
+
+在终端直接安装到你的 Hermes 环境：
+
+```bash
+hermes plugins install GoldenLoaf24h/browserclaw#plugins/browserclaw
+hermes plugins enable browserclaw
+```
+
+### 方案四：本地手动安装
 
 ```bash
 git clone https://github.com/GoldenLoaf24h/browserclaw.git
@@ -145,15 +154,13 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 ## 🛠️ 全量工具分类全览 (47 个核心规范 MCP 工具)
 
-全量 47 个核心规范 Schema 校验的工具按功能归纳为以下大类别。**点击对应分类即可展开查看工具清单。**
+全量 47 个核心规范 Schema 校验的工具按功能归纳为以下 7 个大类别。**点击对应分类即可展开查看工具清单。**
 完整 JSON Schema 与入参定义请参阅 **[docs/TOOLS.md](./docs/TOOLS.md)**。
 
 <details>
 <summary><b>🧠 0. 目标自驱微闭环 (1 个工具) — v2.8 重磅新增</b></summary>
 
 <br/>
-
-- **`chrome_act_toward_goal`**：自主语义微闭环执行器，在 Native Server 本地以 ~~200~~400ms/步 极速闭环感知、决策与执行。由 TypeSafe Jev System One 驱动，无 Key 或遇额度网络降级时无缝切换内置启发式引擎；遭遇歧义、破坏性动作（14个敏感词拦截）或卡滞时结构化反抛交回宏规划大模型。
 
 </details>
 
@@ -186,7 +193,7 @@ cd app/native-server && node dist/scripts/register-dev.js
 </details>
 
 <details>
-<summary><b>🖱️ 3. 页面交互、输入与流水线 (11 个工具)</b></summary>
+<summary><b>🖱️ 3. 页面交互、输入与流水线 (12 个工具)</b></summary>
 
 <br/>
 
@@ -299,3 +306,4 @@ BrowserClaw 在设计与实现中汲取了开源社区的卓越智慧：
 ---
 
 _说明与消歧义：BrowserClaw MCP 是一个面向 AI Agent 自动化操控日常真实浏览器的独立 Chrome 扩展与 Model Context Protocol 生态，与 npm 上的同名 Playwright 库互不关联。_
+**`chrome_act_toward_goal`**：自主语义微闭环执行器，在 Native Server 本地以 200~400ms/步 极速闭环感知、决策与执行。由 TypeSafe Jev System One 驱动，无 Key 或遇额度网络降级时无缝切换内置启发式引擎；遭遇歧义、破坏性动作（14 个敏感词拦截）或卡滞时结构化反抛交回宏规划大模型。

@@ -39,6 +39,35 @@ describe('Heuristic Decision Engine Tests (§4.3)', () => {
       expect(decision.confidence).toBeGreaterThan(0.3);
     });
 
+    test('matches element label contained inside a longer natural language goal (bidirectional)', () => {
+      const elements = [
+        '[1] link "首页" href="/"',
+        '[12] button "登录" #login-btn',
+        '[15] textbox "搜索输入框"',
+      ];
+
+      // Goal contains element label "登录", whereas element string is not a substring of goal
+      const decision = engine.evaluate('请帮我点击登录按钮完成进入', elements, []);
+      expect(decision.shouldEscalate).toBe(false);
+      expect(decision.action).toBe('click');
+      expect(decision.targetIndex).toBe(12);
+      expect(decision.confidence).toBeGreaterThan(0.35);
+    });
+
+    test('matches secondary quoted attributes (e.g. placeholder) across multiple quotes on element', () => {
+      const elements = [
+        '[1] link "首页" href="/"',
+        '[2] textbox name="email" placeholder="邮箱"',
+        '[12] button "提交"',
+      ];
+
+      const decision = engine.evaluate('请在输入框输入你的邮箱地址', elements, []);
+      expect(decision.shouldEscalate).toBe(false);
+      expect(decision.action).toBe('type');
+      expect(decision.targetIndex).toBe(2);
+      expect(decision.confidence).toBeGreaterThan(0.35);
+    });
+
     test('escalates on ambiguous targets with confidence < 0.30 (§4.3)', () => {
       const elements = ['[10] button "确定选项 A"', '[11] button "确定选项 B"'];
 

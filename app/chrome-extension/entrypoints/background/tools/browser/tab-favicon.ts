@@ -80,12 +80,26 @@ export class TabFaviconManager {
 
     if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
       chrome.tabs.onRemoved.addListener((tabId) => {
+        const timer = this.idleTimers.get(tabId);
+        if (timer) {
+          clearTimeout(timer);
+          this.idleTimers.delete(tabId);
+        }
         this.originalFavicons.delete(tabId);
         void this.saveToStorage();
       });
 
       chrome.tabs?.onUpdated?.addListener?.((tabId, changeInfo) => {
         if (this.originalFavicons.has(tabId)) {
+          if (
+            changeInfo.favIconUrl &&
+            changeInfo.favIconUrl !== AGENT_FAVICON_DATA_URL &&
+            !changeInfo.favIconUrl.includes('cursor-halo') &&
+            !this.originalFavicons.get(tabId)
+          ) {
+            this.originalFavicons.set(tabId, changeInfo.favIconUrl);
+            void this.saveToStorage();
+          }
           if (changeInfo.status === 'complete' || changeInfo.favIconUrl) {
             void this.setAgentFavicon(tabId);
           }
@@ -108,10 +122,19 @@ export class TabFaviconManager {
         return false;
       }
 
-      // If already recorded, do not overwrite original favicon
-      if (!this.originalFavicons.has(tabId)) {
-        this.originalFavicons.set(tabId, tab.favIconUrl ?? null);
-        void this.saveToStorage();
+      // If not yet recorded or recorded as null, record original favicon if available
+      if (!this.originalFavicons.has(tabId) || !this.originalFavicons.get(tabId)) {
+        if (
+          tab.favIconUrl &&
+          tab.favIconUrl !== AGENT_FAVICON_DATA_URL &&
+          !tab.favIconUrl.includes('cursor-halo')
+        ) {
+          this.originalFavicons.set(tabId, tab.favIconUrl);
+          void this.saveToStorage();
+        } else if (!this.originalFavicons.has(tabId)) {
+          this.originalFavicons.set(tabId, null);
+          void this.saveToStorage();
+        }
       }
 
       const agentDataUrl = AGENT_FAVICON_DATA_URL;

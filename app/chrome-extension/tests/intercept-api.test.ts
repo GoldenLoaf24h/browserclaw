@@ -125,4 +125,71 @@ describe('InterceptApiTool (Structured API Sniffing)', () => {
     expect(parsed.data.message).toBe('你好，世界！🚀 BrowserClaw');
     expect(parsed.data.count).toBe(42);
   });
+
+  it('correctly matches multi-wildcard globs in urlPattern (e.g. */api/*/items*)', async () => {
+    vi.spyOn(cdpSessionManager, 'sendCommand').mockImplementation(
+      async (_tabId, method, _params: any) => {
+        if (method === 'Network.enable') return {};
+        if (method === 'Network.getResponseBody') {
+          return {
+            body: JSON.stringify({ items: [1, 2, 3] }),
+            base64Encoded: false,
+          };
+        }
+        return {};
+      },
+    );
+
+    let attachedListener: any;
+    (chrome.debugger.onEvent.addListener as any).mockImplementation((fn: any) => {
+      attachedListener = fn;
+    });
+
+    const execPromise = tool.execute({
+      tabId: 1,
+      urlPattern: '*/api/*/items*',
+      triggerAction: 'wait_next',
+      timeoutMs: 1000,
+    });
+
+    setTimeout(() => {
+      if (attachedListener) {
+        attachedListener({ tabId: 1 }, 'Network.responseReceived', {
+          requestId: 'req-multi-wildcard',
+          response: {
+            url: 'https://example.com/api/v2/items?page=1',
+            status: 200,
+            mimeType: 'application/json',
+          },
+        });
+      }
+    }, 50);
+
+    const res = await execPromise;
+    expect(res.isError).toBe(false);
+    const parsed = JSON.parse((res.content[0] as any).text);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data.items).toEqual([1, 2, 3]);
+  });
+
+  it('correctly matches path-style glob patterns without leading asterisk (e.g. /api/*/items)', () => {
+    expect(
+      (tool as any).matchesPattern('https://example.com/api/v1/items?page=1', '/api/*/items'),
+    ).toBe(true);
+    expect((tool as any).matchesPattern('https://example.com/api/v2/items', 'api/*/items')).toBe(
+      true,
+    );
+    expect((tool as any).matchesPattern('https://example.com/api/v1/users', '/api/*/items')).toBe(
+      false,
+    );
+    expect(
+      (tool as any).matchesPattern('https://example.com/api/v1/items-not-matching', '/api/*/items'),
+    ).toBe(false);
+    expect(
+      (tool as any).matchesPattern(
+        'https://example.com/api/v1/items-not-matching',
+        '*/api/*/items',
+      ),
+    ).toBe(false);
+  });
 });

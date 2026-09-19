@@ -106,7 +106,7 @@ export function extractElementIndices(elements: string[]): string[] {
   const indices: string[] = [];
   for (const line of elements) {
     const match = line.match(/^\[(\d+)\]/);
-    if (match && match[1]) {
+    if (match && match[1] && !indices.includes(match[1])) {
       indices.push(match[1]);
     }
   }
@@ -119,11 +119,21 @@ export function extractElementIndices(elements: string[]): string[] {
 export function buildQuestions(elements: string[], goal: string): Record<string, any> {
   const indices = extractElementIndices(elements);
 
+  const elementSummaryMap = new Map<string, string>();
+  for (const line of elements) {
+    const match = line.match(/^\[(\d+)\]\s*(.+)$/);
+    if (match) {
+      const idx = match[1];
+      const summary = match[2].slice(0, 60).trim();
+      elementSummaryMap.set(idx, summary);
+    }
+  }
+
   const targetCriteria: Record<string, string | null> = {};
   for (const idx of indices) {
-    targetCriteria[idx] = null;
+    targetCriteria[idx] = elementSummaryMap.get(idx) || null;
   }
-  targetCriteria['none'] = null;
+  targetCriteria['none'] = 'No suitable matching element found on current viewport';
 
   return {
     action: choice('What is the next single browser action to advance toward the task goal?', {
@@ -209,7 +219,7 @@ export function extractTextPayload(goal: string, textHint?: string): string | nu
   if (!goal) return textHint?.trim() || null;
 
   // 1. Quoted segments
-  const quoteMatch = goal.match(/["“'「]([^"”'」]+)["”'」]/);
+  const quoteMatch = goal.match(/["“'「‘]([^"”'」’]+)["”'」’]/);
   if (quoteMatch && quoteMatch[1].trim()) {
     return quoteMatch[1].trim();
   }

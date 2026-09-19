@@ -48,3 +48,8 @@ CLAUDE.md
 .docs/
 .claude/
 *.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class

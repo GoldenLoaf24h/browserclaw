@@ -95,7 +95,7 @@ _脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Goog
   "mcpServers": {
     "browserclaw": {
       "command": "node",
-      "args": ["<repo-root>\\app\\native-server\\dist\\cli.js", "--stdio"]
+      "args": ["<repo-root>\\app\\native-server\\dist\\mcp/mcp-server-stdio.js"]
     }
   }
 }
@@ -112,7 +112,7 @@ _脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Goog
   "mcpServers": {
     "browserclaw": {
       "command": "node",
-      "args": ["<repo-root>/app/native-server/dist/cli.js", "--stdio"]
+      "args": ["<repo-root>/app/native-server/dist/mcp/mcp-server-stdio.js"]
     }
   }
 }
@@ -129,7 +129,7 @@ _脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Goog
   "mcpServers": {
     "browserclaw": {
       "command": "node",
-      "args": ["<repo-root>/app/native-server/dist/cli.js", "--stdio"]
+      "args": ["<repo-root>/app/native-server/dist/mcp/mcp-server-stdio.js"]
     }
   }
 }
@@ -224,7 +224,7 @@ _脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Goog
 
 | 工具名称                            | 核心参数                                     | 作用说明                                                                              | 推荐场景                                    |
 | :---------------------------------- | :------------------------------------------- | :------------------------------------------------------------------------------------ | :------------------------------------------ |
-| `chrome_read_dom`                   | `filterVisible: true`                        | 获取极简剪枝 DOM 交互树与数字索引，Token 压缩 85%+                                    | **每个网页分析的第一步必调**                |
+| `chrome_read_dom`                   | `viewportOnly: true`                         | 获取极简剪枝 DOM 交互树与数字索引，Token 压缩 85%+                                    | **每个网页分析的第一步必调**                |
 | `chrome_interact_index`             | `index` 或 `coordinate: {x,y}`               | 派发物理级鼠标点击或悬停                                                              | 单个按钮点击、链接跳转                      |
 | `chrome_fill_index`                 | `index`, `text`, `clear: true`, `pressEnter` | 派发 CDP 原生物理级输入，自动清除旧值并填充文本，支持 `pressEnter: true` 自动提交     | 单输入框极速 1 回合填入并提交               |
 | `chrome_batch_actions`              | `actions: [...]`, `waitForSettle: true`      | 在单次调用中按序编排多个点击、填充、按键与等待（含跨域 iframe 坐标转换）              | **多表单填充、连续复合操作的首选 (1 回合)** |

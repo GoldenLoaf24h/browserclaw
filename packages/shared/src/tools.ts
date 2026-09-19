@@ -804,6 +804,14 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           type: 'string',
           description: 'Optional URL of the tab to execute the request within',
         },
+        sessionId: {
+          type: 'string',
+          description: 'Optional session identifier to bind affinity to a specific tab context',
+        },
+        sessionContext: {
+          type: 'string',
+          description: 'Optional alias for sessionId',
+        },
       },
       required: ['url'],
     },

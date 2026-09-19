@@ -95,7 +95,7 @@ Copy and paste this message directly to your AI assistant (Claude Code, Cursor, 
 
 > _"Set up BrowserClaw for me: https://github.com/GoldenLoaf24h/browserclaw. Read `INSTALL.md` and follow the steps."_
 
-Your agent will configure the backend automatically. Afterwards, download **[browserclaw-extension-latest.zip](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)**, open `chrome://extensions` (with Developer mode enabled), and drag the unpacked folder in.
+Your agent will configure the backend automatically. Afterwards, download the latest **`browserclaw-extension-v*.zip`** asset from **[Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** (e.g. `browserclaw-extension-v2.8.0.zip`), unzip it to a persistent local folder, open `chrome://extensions` (with Developer mode enabled), and drag that folder in.
 
 ### Option 2: Add via ChatGPT / Codex Plugin Marketplace
 
@@ -112,7 +112,7 @@ Then click install on **BrowserClaw**.
 Install directly from terminal into your active Hermes environment:
 
 ```bash
-hermes plugins install GoldenLoaf24h/browserclaw --subdir plugins/browserclaw
+hermes plugins install GoldenLoaf24h/browserclaw#plugins/browserclaw
 hermes plugins enable browserclaw
 ```
 
@@ -159,7 +159,7 @@ Every tool in the browser automation ecosystem has distinct architectural tradeo
 
 ## 🛠️ Complete Tool Catalog (47 MCP Tools)
 
-All 47 schema-validated tools are grouped into 6 logical categories below. **Click any category to expand its tool listing.**
+All 47 schema-validated tools are grouped into 7 logical categories below. **Click any category to expand its tool listing.**
 For machine-readable JSON schemas and detailed option flags, consult **[docs/TOOLS.md](./docs/TOOLS.md)**.
 
 <details>

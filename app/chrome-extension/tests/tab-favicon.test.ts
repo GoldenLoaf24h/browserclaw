@@ -7,6 +7,8 @@ import {
 describe('TabFaviconManager (Glowing Agent Favicon & Clean Restoration)', () => {
   let manager: TabFaviconManager;
   let executedScriptArgs: any[] = [];
+  let removedListener: ((tabId: number) => void) | undefined;
+  let updatedListener: ((tabId: number, changeInfo: any) => void) | undefined;
 
   beforeEach(() => {
     executedScriptArgs = [];
@@ -17,14 +19,20 @@ describe('TabFaviconManager (Glowing Agent Favicon & Clean Restoration)', () => 
       url: 'https://example.com/dashboard',
       favIconUrl: 'https://example.com/favicon.ico',
     }));
-    if (!(globalThis as any).chrome.tabs.onRemoved) {
-      (globalThis as any).chrome.tabs.onRemoved = { addListener: vi.fn(), removeListener: vi.fn() };
-    }
+    (globalThis as any).chrome.tabs.onRemoved = {
+      addListener: vi.fn((fn: any) => {
+        removedListener = fn;
+      }),
+      removeListener: vi.fn(),
+    };
+    (globalThis as any).chrome.tabs.onUpdated = {
+      addListener: vi.fn((fn: any) => {
+        updatedListener = fn;
+      }),
+      removeListener: vi.fn(),
+    };
     if (!(globalThis as any).chrome.tabs.onCreated) {
       (globalThis as any).chrome.tabs.onCreated = { addListener: vi.fn(), removeListener: vi.fn() };
-    }
-    if (!(globalThis as any).chrome.tabs.onUpdated) {
-      (globalThis as any).chrome.tabs.onUpdated = { addListener: vi.fn(), removeListener: vi.fn() };
     }
     (globalThis as any).chrome.scripting = {
       executeScript: vi.fn(async (opts: any) => {
@@ -89,5 +97,62 @@ describe('TabFaviconManager (Glowing Agent Favicon & Clean Restoration)', () => 
     });
 
     expect(globalSpy).toHaveBeenCalledWith(42);
+  });
+
+  it('clears and deletes idle timer and original favicon on tab removed', () => {
+    const timer = setTimeout(() => {}, 100000);
+    (manager as any).idleTimers.set(55, timer);
+    (manager as any).originalFavicons.set(55, 'https://example.com/fav.ico');
+
+    expect((manager as any).idleTimers.has(55)).toBe(true);
+    expect((manager as any).originalFavicons.has(55)).toBe(true);
+
+    removedListener?.(55);
+
+    expect((manager as any).idleTimers.has(55)).toBe(false);
+    expect((manager as any).originalFavicons.has(55)).toBe(false);
+  });
+
+  it('updates originalFavicon if initially null when onUpdated supplies favIconUrl', async () => {
+    (chrome.tabs.get as any).mockResolvedValueOnce({
+      id: 88,
+      url: 'https://example.com/loading',
+      favIconUrl: undefined,
+    });
+
+    await manager.setAgentFavicon(88);
+    expect(manager.getOriginalFavicon(88)).toBeNull();
+
+    // Now page finishes loading and fires onUpdated with real icon
+    (chrome.tabs.get as any).mockResolvedValueOnce({
+      id: 88,
+      url: 'https://example.com/loading',
+      favIconUrl: 'https://example.com/real-favicon.ico',
+    });
+
+    updatedListener?.(88, { favIconUrl: 'https://example.com/real-favicon.ico' });
+    expect(manager.getOriginalFavicon(88)).toBe('https://example.com/real-favicon.ico');
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    await manager.restoreFavicon(88);
+    expect(executedScriptArgs[executedScriptArgs.length - 1].args[0]).toBe(
+      'https://example.com/real-favicon.ico',
+    );
+  });
+
+  it('rejects agent favicon data url in onUpdated so it does not poison original favicon', async () => {
+    (chrome.tabs.get as any).mockResolvedValueOnce({
+      id: 99,
+      url: 'https://example.com/loading',
+      favIconUrl: undefined,
+    });
+
+    await manager.setAgentFavicon(99);
+    expect(manager.getOriginalFavicon(99)).toBeNull();
+
+    // Browser fires onUpdated when the injected SVG link changes the tab favicon
+    updatedListener?.(99, { favIconUrl: AGENT_FAVICON_DATA_URL });
+    expect(manager.getOriginalFavicon(99)).toBeNull();
   });
 });

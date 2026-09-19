@@ -231,14 +231,16 @@ export class FastDecisionEngine {
             );
           }
 
-          // Check stuck noul (§5.3: >= 0.85)
-          if (answers.stuck?.noul >= 0.85 && this.heuristicEngine.isStuck(history)) {
+          // Check stuck noul (§5.3: >= 0.85) or heuristic stuck detection
+          if (answers.stuck?.noul >= 0.85 || this.heuristicEngine.isStuck(history)) {
             return this.formatResult(
               'stuck',
               engine,
               engineSwitched,
               fallbackReason,
-              'Jev detected execution loop with zero progress',
+              answers.stuck?.noul >= 0.85
+                ? 'Jev detected execution loop with zero progress'
+                : 'Stuck: consecutive actions produced no DOM mutation or URL change',
               steps,
               finalPage,
               currentElements,
@@ -675,8 +677,45 @@ export class FastDecisionEngine {
     if (!res) return 'urlChanged:false, mutated:false';
     try {
       const data = typeof res === 'string' ? JSON.parse(res) : res;
+      if (data.isError) {
+        let errText = data.content?.[0]?.text || data.message || 'tool execution failed';
+        if (typeof errText === 'string') {
+          try {
+            const p = JSON.parse(errText);
+            errText = p.error || p.reason || p.message || p.detail || errText;
+          } catch {}
+        }
+        return `error:${String(errText)
+          .replace(/[\r\n]+/g, ' ')
+          .slice(0, 150)}`;
+      }
       const content = data.content?.[0]?.text;
-      const parsed = content ? JSON.parse(content) : data;
+      let parsed = data;
+      if (content) {
+        try {
+          parsed = JSON.parse(content);
+        } catch {
+          if (typeof content === 'string') {
+            if (
+              /error|fail|invalid|cannot|unable|timed?\s*out|exception|not\s+found/i.test(content)
+            ) {
+              return `error:${content.replace(/[\r\n]+/g, ' ').slice(0, 150)}`;
+            }
+          }
+        }
+      }
+      if (parsed.isError || parsed.success === false) {
+        const errText =
+          parsed.error || parsed.reason || parsed.message || parsed.detail || 'action failed';
+        return `error:${String(errText)
+          .replace(/[\r\n]+/g, ' ')
+          .slice(0, 150)}`;
+      }
+      if (parsed.error && !parsed.success) {
+        return `error:${String(parsed.error)
+          .replace(/[\r\n]+/g, ' ')
+          .slice(0, 150)}`;
+      }
 
       const urlChanged = Boolean(parsed.urlChanged);
       let mutated = Boolean(parsed.mutated);

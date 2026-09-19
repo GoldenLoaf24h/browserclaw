@@ -106,6 +106,16 @@ describe('Jev Client & Helper Unit Tests', () => {
       expect(clickCriteriaKeys).toContain('25');
       expect(clickCriteriaKeys).toContain('none');
     });
+
+    test('deduplicates element indices when elements list contains duplicate indices', () => {
+      const elements = ['[5] button "OK"', '[5] button "OK Duplicate"', '[8] link "Home"'];
+      const indices = extractElementIndices(elements);
+      expect(indices).toEqual(['5', '8']);
+
+      const questions = buildQuestions(elements, 'Click OK');
+      const clickKeys = Object.keys(questions.click_target.criteria);
+      expect(clickKeys).toEqual(['5', '8', 'none']);
+    });
   });
 
   describe('4. validateChoice full branch verification (§5.5)', () => {
@@ -203,6 +213,7 @@ describe('Jev Client & Helper Unit Tests', () => {
     test('extracts from quotes (English and Chinese)', () => {
       expect(extractTextPayload('在搜索框中输入"BrowserClaw"')).toBe('BrowserClaw');
       expect(extractTextPayload('输入“深度学习”并提交')).toBe('深度学习');
+      expect(extractTextPayload('在输入框输入‘我的密码’')).toBe('我的密码');
       expect(extractTextPayload("search for 'TypeScript'")).toBe('TypeScript');
       expect(extractTextPayload('在输入框填入「人工智能」')).toBe('人工智能');
     });

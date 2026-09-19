@@ -557,5 +557,152 @@ describe('Fast Decision Engine Integration Tests (§4, §5, §6)', () => {
       expect(result.jevUsage?.calls).toBe(2); // 1 main query + 1 scoreOptions
       expect(result.jevUsage?.inputTokens).toBe(650); // 400 + 250
     });
+
+    test('19. Properly surfaces tool execution error in step outcome rather than masking as mutated:false', async () => {
+      delete process.env.TYPESAFE_API_KEY;
+      const engine = new FastDecisionEngine();
+
+      const errorCaller = async (toolName: string, _args: any) => {
+        if (toolName === 'chrome_read_dom') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  tabUrl: 'https://example.com',
+                  tabTitle: 'Error Page',
+                  treeString: '[12] button "点击我"',
+                }),
+              },
+            ],
+          };
+        }
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: 'Node with index 12 is detached from document',
+            },
+          ],
+        };
+      };
+
+      const result = await engine.run({ goal: '点击我', maxSteps: 1 }, errorCaller);
+      expect(result.steps.length).toBe(1);
+      expect(result.steps[0].outcome).toContain(
+        'error:Node with index 12 is detached from document',
+      );
+    });
+
+    test('20. Properly surfaces success: false with reason field as error:reason', async () => {
+      delete process.env.TYPESAFE_API_KEY;
+      const engine = new FastDecisionEngine();
+
+      const reasonCaller = async (toolName: string, _args: any) => {
+        if (toolName === 'chrome_read_dom') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  tabUrl: 'https://example.com',
+                  tabTitle: 'Error Page',
+                  treeString: '[12] button "点击我"',
+                }),
+              },
+            ],
+          };
+        }
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                reason: 'Element no longer in DOM',
+              }),
+            },
+          ],
+        };
+      };
+
+      const result = await engine.run({ goal: '点击我', maxSteps: 1 }, reasonCaller);
+      expect(result.steps.length).toBe(1);
+      expect(result.steps[0].outcome).toContain('error:Element no longer in DOM');
+    });
+
+    test('21. Unwraps nested JSON error string inside isError response', async () => {
+      delete process.env.TYPESAFE_API_KEY;
+      const engine = new FastDecisionEngine();
+
+      const jsonErrorCaller = async (toolName: string, _args: any) => {
+        if (toolName === 'chrome_read_dom') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  tabUrl: 'https://example.com',
+                  tabTitle: 'Error Page',
+                  treeString: '[12] button "点击我"',
+                }),
+              },
+            ],
+          };
+        }
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                error: 'CDP execution error (click): Target node invisible',
+              }),
+            },
+          ],
+        };
+      };
+
+      const result = await engine.run({ goal: '点击我', maxSteps: 1 }, jsonErrorCaller);
+      expect(result.steps.length).toBe(1);
+      expect(result.steps[0].outcome).toContain(
+        'error:CDP execution error (click): Target node invisible',
+      );
+    });
+
+    test('22. Triggers stuck status when JEV answers stuck noul >= 0.85', async () => {
+      process.env.TYPESAFE_API_KEY = 'test-key-mock';
+      const engine = new FastDecisionEngine('test-key-mock');
+
+      (engine as any).jevClient.query = async () => {
+        return {
+          result: {
+            answers: {
+              stuck: { type: 'noul', noul: 0.95 },
+              goal_done: { type: 'noul', noul: 0.1 },
+              destructive: { type: 'noul', noul: 0.0 },
+              action: {
+                type: 'choice',
+                choice: 'click',
+                confidence: 0.9,
+                probabilities: { click: 0.9, none: 0.1 },
+              },
+            },
+            usage: { input_tokens: 300 },
+          },
+          errorReason: null,
+        };
+      };
+
+      const caller = createMockInternalCaller({
+        treeString: '[12] button "重试"',
+      });
+
+      const result = await engine.run({ goal: '重试操作', maxSteps: 3 }, caller);
+      expect(result.status).toBe('stuck');
+      expect(result.reason).toContain('Jev detected execution loop');
+    });
   });
 });
