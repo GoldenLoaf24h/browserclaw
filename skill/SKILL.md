@@ -76,7 +76,7 @@ BrowserClaw implements a **Hierarchical Dual-Brain** architecture that compresse
 │  chrome_act_toward_goal micro-loop                    │
 │  read_dom → Jev/Heuristic decision → interact → verify│
 └───────────────────────────────────────────────────────┘
-┌─ Tier 0  Deterministic Primitives (46 canonical tools)│
+┌─ Tier 0  Deterministic Primitives (46 deterministic tools + 1 micro-loop)│
 │  chrome_batch_actions / form_pipeline / interact_index│
 └───────────────────────────────────────────────────────┘
 ```

@@ -283,7 +283,7 @@ Chrome MV3 扩展 (Service Worker + WXT + Vue 3)
 ## 📚 项目全景文档库
 
 - **[项目地图导览](./docs/MAP.md)**：🗺️ 快速按角色导航、全工程 Monorepo 代码拓扑树与文档矩阵。
-- **[全量工具字典](./docs/TOOLS.md)**：自动化生成的 46 个工具完整参数输入输出参考手册。
+- **[全量工具字典](./docs/TOOLS.md)**：自动化生成的 47 个工具完整参数输入输出参考手册。
 - **[Agent 交互实操心法](./AGENT_CONFIG_GUIDE.md)**：面向大模型的六大高能交互准则与主流客户端配置样例。
 - **[深度系统架构](./docs/ARCHITECTURE.md)**：多进程拓扑、IPC 安全边界与设计决策记录 (ADR)。
 - **[故障排查指南](./docs/TROUBLESHOOTING.md)**：常见报错代码与连接异常秒级诊断排查。

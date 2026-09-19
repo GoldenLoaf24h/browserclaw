@@ -53,7 +53,7 @@ hermes plugins enable browserclaw
 | `browserclaw_switch_tab`           | Switch active focus to a specific tab                                      |
 | `browserclaw_close_tabs`           | Safe tab closure with session affinity protection                          |
 | `browserclaw_get_windows_and_tabs` | Query all open windows, tab groups, and tabs                               |
-| `browserclaw_tool_docs`            | Inspect documentation for all 52 BrowserClaw capabilities                  |
+| `browserclaw_tool_docs`            | Inspect documentation for all 47 BrowserClaw capabilities                  |
 
 ## Bundled Skill
 

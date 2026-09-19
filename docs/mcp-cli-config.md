@@ -112,15 +112,36 @@ File: `.cursor/mcp.json` or Cursor Settings -> Features -> MCP Servers:
 
 ---
 
+### 3.5 Hermes Agent
+
+#### Option A: Native Hermes Plugin (Recommended)
+
+Install directly from terminal into your active Hermes environment:
+
+```bash
+hermes plugins install GoldenLoaf24h/browserclaw --subdir plugins/browserclaw
+hermes plugins enable browserclaw
+```
+
+#### Option B: HTTP / SSE MCP Server Registration
+
+Connect Hermes to the running BrowserClaw HTTP bridge:
+
+```bash
+hermes mcp add browserclaw http://127.0.0.1:12306/mcp
+```
+
+---
+
 ## 4. Tool Profiles & Dynamic Session Activation
 
 To optimize token consumption, you can configure `CHROME_MCP_TOOL_PROFILE`:
 
 | Profile              | Tool Count | Token Overhead | Best For                                                           |
 | :------------------- | :--------- | :------------- | :----------------------------------------------------------------- |
-| **`full`** (default) | 52         | ~19.5k tokens  | Full low-level CDP access, diagnostics, and storage                |
-| **`core`**           | 24         | ~11.5k tokens  | Daily semantic navigation, 1-based clicks, form fills, screenshots |
-| **`crawl`**          | 15         | ~5.8k tokens   | High-throughput content extraction, markdown, links                |
+| **`core`** (default) | 14         | ~5.8k tokens   | Daily semantic navigation, 1-based clicks, form fills, screenshots |
+| **`crawl`**          | 12         | ~4.8k tokens   | High-throughput content extraction, markdown, links                |
+| **`full`**           | 47         | ~16.5k tokens  | Full low-level CDP access, diagnostics, tab groups, and storage    |
 
 ### Dynamic Tool Activation Without Restart
 
@@ -160,5 +181,5 @@ Once connected, your agent will have access to high-precision browser automation
 | `CHROME_MCP_HOST`                   | Bind address for Fastify server                            | `127.0.0.1`                        |
 | `CHROME_MCP_PORT` / `MCP_HTTP_PORT` | HTTP/SSE port for MCP server                               | `12306`                            |
 | `CHROME_MCP_TOKEN`                  | Overrides the token stored in `~/.chrome-mcp/bridge-token` | Auto-generated high-entropy string |
-| `CHROME_MCP_TOOL_PROFILE`           | Tool profile level (`full`, `core`, `crawl`)               | `full`                             |
+| `CHROME_MCP_TOOL_PROFILE`           | Tool profile level (`core`, `crawl`, `full`)               | `core`                             |
 | `CHROME_MCP_NODE_PATH`              | Override Node.js executable path for native host           | Auto-detected                      |

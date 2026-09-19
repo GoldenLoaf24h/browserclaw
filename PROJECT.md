@@ -13,7 +13,7 @@ BrowserClaw 是一个面向 AI agent 的 Chrome 浏览器自动化 MCP 服务器
 ## 关键设计
 
 - **工具面 = schema 面**：toolsMap 由 TOOL_SCHEMAS 声明推导，未声明的内部执行器不可调用（tool-surface-parity 测试钉死）。
-- **Profile 分层**：core（24）/ crawl（15）/ full（52），8 大工具类别（navigate, perceive, act, observe, manage, diagnose, network, crawl），隐藏工具经 chrome_tool_docs 按类别发现，支持在 HTTP/SSE 与 Stdio 模式下进行免重启会话级动态按需激活 (`activateForSession`)。
+- **Profile 分层**：core（14）/ crawl（12）/ full（47），8 大工具类别（navigate, perceive, act, observe, manage, diagnose, network, crawl），隐藏工具经 chrome_tool_docs 按类别发现，支持在 HTTP/SSE 与 Stdio 模式下进行免重启会话级动态按需激活 (`activateForSession`)。
 - **自驱 Diff 携带机制**：交互工具 (`interact_index`, `fill_index`, `batch_actions`) 支持 `includeDelta: true`，单步返回局部 DOM 变动，往返延迟降低 50%。
 - **定向检索优化**：`chrome_grep` 支持多 Frame 层次化索引重映射与 placeholder/aria-label/value 检索，提供三种检索模式（可交互元素、全量 DOM、纯文本行），免除大页面 dump DOM 的巨额 Token 浪费。
 - **闭环批处理流水线**：`chrome_batch_actions` 具备 `assert` 断言熔断与 `extract` 字段提取能力，支持跨域 iframe 坐标转换校验，单次网络调用跑通复杂表单流程。

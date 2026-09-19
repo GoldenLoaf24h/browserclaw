@@ -188,7 +188,7 @@ _脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Goog
   1. 页面为纯 Canvas 应用、WebGL、动态图表或防爬虫混淆 DOM。
   2. 微小图标按钮在 DOM 树中未暴露文字或 Accessibility 属性。
 - **视觉定位最佳实践**：
-  1. 调用 `chrome_screenshot({ enableGrid: true })`：
+  1. 调用 `chrome_screenshot({ grid: true })`：
      - 截图会自动在图像上叠加**高对比度半透明像素网格标尺**（包含 X/Y 轴坐标标签与辅助线）。
      - Agent 可直接从图像上的网格精确读出物理像素坐标，彻底消除传统视觉大模型“盲猜像素”产生的漂移幻觉。
   2. 调用 `chrome_interact_index` 并传入坐标：
@@ -222,22 +222,22 @@ _脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Goog
 
 ## 5. 常用工具参数速查
 
-| 工具名称                            | 核心参数                                  | 作用说明                                                                              | 推荐场景                                 |
-| :---------------------------------- | :---------------------------------------- | :------------------------------------------------------------------------------------ | :--------------------------------------- |
-| `chrome_read_dom`                   | `filterVisible: true`                     | 获取极简剪枝 DOM 交互树与数字索引，Token 压缩 85%+                                    | **每个网页分析的第一步必调**             |
-| `chrome_interact_index`             | `index` 或 `coordinate: {x,y}`            | 派发物理级鼠标点击或悬停                                                              | 单个按钮点击、链接跳转                   |
-| `chrome_fill_index`                 | `index`, `text`, `clear: true`, `pressEnter` | 派发 CDP 原生物理级输入，自动清除旧值并填充文本，支持 `pressEnter: true` 自动提交   | 单输入框极速 1 回合填入并提交            |
-| `chrome_batch_actions`              | `actions: [...]`, `waitForSettle: true`   | 在单次调用中按序编排多个点击、填充、按键与等待（含跨域 iframe 坐标转换）              | **多表单填充、连续复合操作的首选 (1 回合)** |
-| `chrome_screenshot`                 | `grid: true`, `targetIndex`, `format`     | 纯内存直通 base64 截取视口图像，绝不污染用户 Downloads 目录；可选叠加半透明坐标标尺     | Canvas 画布、复杂验证码或无 DOM 节点图形 |
-| `chrome_upload_file`                | `index` 或 `clickTargetIndex`, `filePath` | 动态拦截弹窗或直接向文件输入框注入本地绝对路径                                        | 网页文件上传、头像更换                   |
-| `chrome_get_markdown`               | 无                                        | 提取页面的清晰结构化 Markdown 内容                                                    | 网页内容阅读、文献资料总结               |
-| `chrome_grep`                       | `query`, `searchType`                     | 毫秒级正则/文本定向检索，支持多 Frame 索引重映射与 placeholder/aria-label 检索        | 长列表或大页面极速定位目标元素           |
-| `chrome_inspect_media`              | `index` 或 `selector`                     | 无损内存提取图片原始高画质 Data URL 或局部超采样截图                                  | 验证码、图表、商品原图精准识别           |
-| `chrome_request_human_intervention` | `reason`, `timeoutMs`                     | 纯 DOM 安全构建（免疫 DOM XSS）唤起毛玻璃顶栏挂起流程并让渡控制权给用户               | 遭遇滑块验证、2FA 或安全支付时           |
-| `chrome_undo_last_action`           | 无                                        | 单步回滚最近一次页面跳转或表单填充                                                    | 操作失误时的容错与快速撤销               |
-| `chrome_close_tabs`                 | `tabIds`, `url`, `confirm`                | 安全关闭标签页，关闭当前活跃标签页需显式传入 `confirm: true` 或携带会话亲缘，防止误关 | 任务完成清理或定向关闭特定网页           |
-| `chrome_javascript`                 | `code`, `tabId`                           | 执行页面 JavaScript，支持顶级 await 与单表达式自动包装 `return (...)`                 | 即席数据计算、高级 DOM 探测              |
-| `chrome_tool_docs`                  | `category`, `activateForSession`          | 查询并免重启会话级动态激活 8 大类工具（HTTP/SSE 与 Stdio 双通道支持）                 | Profile 裁剪模式下按需调用高级工具       |
+| 工具名称                            | 核心参数                                     | 作用说明                                                                              | 推荐场景                                    |
+| :---------------------------------- | :------------------------------------------- | :------------------------------------------------------------------------------------ | :------------------------------------------ |
+| `chrome_read_dom`                   | `filterVisible: true`                        | 获取极简剪枝 DOM 交互树与数字索引，Token 压缩 85%+                                    | **每个网页分析的第一步必调**                |
+| `chrome_interact_index`             | `index` 或 `coordinate: {x,y}`               | 派发物理级鼠标点击或悬停                                                              | 单个按钮点击、链接跳转                      |
+| `chrome_fill_index`                 | `index`, `text`, `clear: true`, `pressEnter` | 派发 CDP 原生物理级输入，自动清除旧值并填充文本，支持 `pressEnter: true` 自动提交     | 单输入框极速 1 回合填入并提交               |
+| `chrome_batch_actions`              | `actions: [...]`, `waitForSettle: true`      | 在单次调用中按序编排多个点击、填充、按键与等待（含跨域 iframe 坐标转换）              | **多表单填充、连续复合操作的首选 (1 回合)** |
+| `chrome_screenshot`                 | `grid: true`, `targetIndex`, `format`        | 纯内存直通 base64 截取视口图像，绝不污染用户 Downloads 目录；可选叠加半透明坐标标尺   | Canvas 画布、复杂验证码或无 DOM 节点图形    |
+| `chrome_upload_file`                | `index` 或 `clickTargetIndex`, `filePath`    | 动态拦截弹窗或直接向文件输入框注入本地绝对路径                                        | 网页文件上传、头像更换                      |
+| `chrome_get_markdown`               | 无                                           | 提取页面的清晰结构化 Markdown 内容                                                    | 网页内容阅读、文献资料总结                  |
+| `chrome_grep`                       | `query`, `searchType`                        | 毫秒级正则/文本定向检索，支持多 Frame 索引重映射与 placeholder/aria-label 检索        | 长列表或大页面极速定位目标元素              |
+| `chrome_inspect_media`              | `index` 或 `selector`                        | 无损内存提取图片原始高画质 Data URL 或局部超采样截图                                  | 验证码、图表、商品原图精准识别              |
+| `chrome_request_human_intervention` | `reason`, `timeoutMs`                        | 纯 DOM 安全构建（免疫 DOM XSS）唤起毛玻璃顶栏挂起流程并让渡控制权给用户               | 遭遇滑块验证、2FA 或安全支付时              |
+| `chrome_undo_last_action`           | 无                                           | 单步回滚最近一次页面跳转或表单填充                                                    | 操作失误时的容错与快速撤销                  |
+| `chrome_close_tabs`                 | `tabIds`, `url`, `confirm`                   | 安全关闭标签页，关闭当前活跃标签页需显式传入 `confirm: true` 或携带会话亲缘，防止误关 | 任务完成清理或定向关闭特定网页              |
+| `chrome_javascript`                 | `code`, `tabId`                              | 执行页面 JavaScript，支持顶级 await 与单表达式自动包装 `return (...)`                 | 即席数据计算、高级 DOM 探测                 |
+| `chrome_tool_docs`                  | `category`, `activateForSession`             | 查询并免重启会话级动态激活 8 大类工具（HTTP/SSE 与 Stdio 双通道支持）                 | Profile 裁剪模式下按需调用高级工具          |
 
 ---
 
