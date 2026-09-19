@@ -34,6 +34,7 @@ hermes plugins enable browserclaw
    npm run start:server
    ```
    The server listens on `http://127.0.0.1:12306/mcp` (or custom `BROWSERCLAW_MCP_URL`).
+3. **Bridge token**: The native server requires a bearer token on every `/mcp` request. The plugin sends it automatically, resolving in order `BROWSERCLAW_MCP_TOKEN`, `CHROME_MCP_TOKEN`, then the file `~/.chrome-mcp/bridge-token` the server writes on first start. If tools return an HTTP 401 error, set one of those variables or make sure that file is readable by the Hermes process.
 
 ## Core Provided Tools
 
