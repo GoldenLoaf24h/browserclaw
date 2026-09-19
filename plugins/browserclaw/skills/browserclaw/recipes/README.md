@@ -50,7 +50,3 @@ When creating a new site recipe (e.g. `recipes/my-service.md`), follow this stan
   - _Fix_: Call `chrome_read_dom` and dismiss modal first if `activeModal` is detected.
 - _Gotcha_: Search input is debounced by 300ms.
   - _Fix_: Settle automatically waits for network quiescence.
-
-```
-
-```

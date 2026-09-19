@@ -10,18 +10,19 @@ Executes sequential browser interactions atomically inside a single MCP turn, el
 
 ### Action Types Reference
 
-| Action    | Required Fields                       | Optional Fields                  | Description                                       |
-| :-------- | :------------------------------------ | :------------------------------- | :------------------------------------------------ |
-| `click`   | `index` or `selector` or `coordinate` | `button`, `modifiers`            | Physical mouse click (`isTrusted: true`)          |
-| `fill`    | (`index` or `selector`) + `text`      | `pressEnter: true`               | Clears field, types text, dispatches input/change |
-| `type`    | `text`                                | -                                | Raw keyboard text typing                          |
-| `key`     | `key`                                 | `modifiers`                      | Key press (e.g. `Enter`, `Tab`, `Escape`)         |
-| `wait`    | `duration` (ms)                       | -                                | Explicit pause between actions                    |
-| `hover`   | `index` or `selector` or `coordinate` | -                                | Moves pointer over target                         |
-| `select`  | (`index` or `selector`) + `value`     | -                                | Selects option from native dropdown               |
-| `drag`    | `from` + `to`                         | `dnd: true` (HTML5 DnD)          | Pointer drag or native HTML5 Drag-and-Drop        |
-| `assert`  | `selector` or `index` + `condition`   | `expectedText`, `abortOnFailure` | Validates DOM state mid-pipeline                  |
-| `extract` | `selector` or `index` + `property`    | `variableName`, `attributeName`  | Extracts data directly to response payload        |
+| Action         | Required Fields                       | Optional Fields                                   | Description                                           |
+| :------------- | :------------------------------------ | :------------------------------------------------ | :---------------------------------------------------- |
+| `click`        | `index` or `selector` or `coordinate` | `modifiers`, `waitForSettle`, `settleTimeoutMs`   | Physical mouse click (`isTrusted: true`)              |
+| `double_click` | `index` or `selector` or `coordinate` | `modifiers`                                       | Double click at target element or coordinate          |
+| `right_click`  | `index` or `selector` or `coordinate` | `modifiers`                                       | Context menu click                                    |
+| `fill`         | (`index` or `selector`) + `text`      | `clear: true`, `pressEnter: true`, `submit: true` | Clears field, types text, dispatches input and change |
+| `hover`        | `index` or `selector` or `coordinate` | -                                                 | Moves pointer over target                             |
+| `scroll`       | `direction` + `amount`                | `coordinate`                                      | Scrolls viewport (`up`, `down`, `left`, `right`)      |
+| `press_key`    | `key`                                 | -                                                 | Dispatches key press event (e.g. `Enter`, `Tab`)      |
+| `wait`         | `durationMs` (or `at`)                | -                                                 | Explicit pause or deadline epoch timestamp in ms      |
+| `fill_form`    | `fields` array                        | -                                                 | Batch fills multiple fields sequentially              |
+| `assert`       | `selector` or `index` + `condition`   | `expectedText`, `timeoutMs`, `abortOnFailure`     | Validates DOM state mid-pipeline                      |
+| `extract`      | `selector` or `index` + `property`    | `variableName`, `attributeName`                   | Extracts data directly to response payload            |
 
 ### Complete Example Pipeline
 
@@ -29,7 +30,7 @@ Executes sequential browser interactions atomically inside a single MCP turn, el
 {
   "tabId": 101,
   "actions": [
-    { "type": "fill", "index": 2, "text": "flight from JFK to LHR" },
+    { "type": "fill", "index": 2, "text": "flight from JFK to LHR", "pressEnter": true },
     { "type": "click", "index": 5 },
     {
       "type": "assert",
@@ -46,21 +47,42 @@ Executes sequential browser interactions atomically inside a single MCP turn, el
     }
   ],
   "includeDelta": true,
-  "captureNetwork": true
+  "captureNetwork": {
+    "urlPattern": "*/api/flights*",
+    "method": "GET"
+  }
 }
 ```
 
 ### Assert Conditions
 
-- `visible`: Target element must be present in DOM and non-hidden (`offsetParent !== null`).
-- `hidden`: Target element must be absent or hidden.
-- `text_contains`: `innerText` must contain `expectedText`.
-- `value_equals`: Input `value` must match `expectedText`.
-- `not_empty`: Text or value must be non-empty.
+- `visible`: Target element is present in DOM and rendered (`offsetParent !== null`).
+- `not_visible`: Target element is absent or hidden.
+- `contains`: Text content or value contains `expectedText` (case-insensitive substring).
+- `not_contains`: Text does not contain `expectedText`.
+- `equals`: Text content or value strictly equals `expectedText`.
+- `matches`: Text content or value matches regular expression `expectedText`.
+- `enabled`: Target element is not disabled.
+- `disabled`: Target element has `disabled` attribute or state.
+- `valid`: Target form input passes HTML5 constraint validation.
+- `invalid`: Target form input fails HTML5 constraint validation.
+- `checked`: Checkbox or radio button is checked.
+- `unchecked`: Checkbox or radio button is unchecked.
 
-### Inline Network Capture (`captureNetwork: true`)
+### Inline Network Capture (`captureNetwork`)
 
-When enabled, returns all HTTP requests, responses, status codes, and JSON API payloads initiated during the batch execution directly under `networkEvents`, removing the need for a separate `chrome_network_request` turn.
+Pass an object configuration to capture matching HTTP requests and responses triggered during batch execution:
+
+```json
+"captureNetwork": {
+  "urlPattern": "*/api/order*",
+  "method": "POST",
+  "timeoutMs": 5000,
+  "statusCodes": [200, 201]
+}
+```
+
+Returns matching request headers, response headers, HTTP status, and parsed JSON payload directly under `networkEvents`, eliminating extra turns.
 
 ---
 
@@ -72,16 +94,16 @@ Dedicated autonomous form filler for multi-step onboarding, surveys, checkout fo
 {
   "tabId": 101,
   "fields": [
-    { "selector": "#full-name", "value": "Jane Doe", "type": "text" },
-    { "selector": "#email", "value": "jane@example.com", "type": "text" },
-    { "selector": "#role", "value": "developer", "type": "select" },
-    { "selector": "#terms", "value": true, "type": "checkbox" }
+    { "query": "Full Name", "value": "Jane Doe", "type": "text" },
+    { "query": "Work Email", "value": "jane@example.com", "type": "text" },
+    { "query": "Role", "value": "Developer", "type": "choice" },
+    { "query": "Submit Application", "value": "Enter", "type": "enter" }
   ],
-  "submitSelector": "#submit-btn",
-  "waitForNavigation": true,
-  "timeoutMs": 15000
+  "maxSteps": 20,
+  "autoAdvance": true
 }
 ```
 
 - **True Input Commitment**: Verifies native input state triggers framework change events (`React`, `Vue`, `Angular`).
+- **Auto-Advance**: When `autoAdvance: true` (default), automatically triggers step advancement (via Enter or clicking Next/Submit button).
 - **Auto-Retry on Occlusion**: If a field is momentarily obscured by sticky headers or toasts, automatically scrolls into view and retries.

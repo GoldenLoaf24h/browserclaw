@@ -24,32 +24,26 @@ BrowserClaw automatically resamples all screenshots using `OffscreenCanvas` to e
 
 ---
 
-## 3. Visual Perception Tools
+## 3. Visual Perception Tools (`chrome_screenshot`)
 
 ### A. Calibrated Coordinate Grid & Perimeter Rulers
 
 ```json
 {
   "grid": true,
-  "showRuler": true,
-  "format": "jpeg",
+  "format": "webp",
   "quality": 80
 }
 ```
 
-- Overlays semi-transparent 100px grid rulers directly on the viewport.
-- Perimeter rulers mark exact CSS pixel ticks along the top and left borders.
+- Overlays semi-transparent coordinate reference grid with perimeter tape measure rulers (20/50/100px ticks) and interior reticle crosshairs (`+`) to eliminate visual estimation error.
 
 ### B. Set-of-Mark 2.0 (SoM)
 
 ```json
 {
   "som": true,
-  "somOptions": {
-    "filterVisibleOnly": true,
-    "maxElements": 60,
-    "collisionAvoidance": true
-  }
+  "format": "webp"
 }
 ```
 
@@ -67,16 +61,16 @@ BrowserClaw automatically resamples all screenshots using `OffscreenCanvas` to e
 
 - Emulates GoFullPage: stitches viewports sequentially, restores original scroll offset, hides fixed-position headers to prevent ghost duplication, and handles sticky elements cleanly.
 
-### D. Lossless ROI Sub-Region Crops & Zoom
+### D. Lossless ROI Sub-Region Crops & High Clarity
 
 ```json
 {
-  "clip": { "x": 300, "y": 200, "width": 400, "height": 300 },
-  "zoom": 2.0
+  "region": { "x0": 300, "y0": 200, "x1": 700, "y1": 500 },
+  "highClarity": true
 }
 ```
 
-- Captures zoomed sub-regions at native device fidelity for tiny captchas, small icons, or dense data tables.
+- Captures unscaled sub-regions at native device fidelity for tiny captchas, small icons, or dense data tables without lossy downscaling.
 
 ---
 
@@ -84,8 +78,8 @@ BrowserClaw automatically resamples all screenshots using `OffscreenCanvas` to e
 
 For visual clicks and typing, BrowserClaw supports Polymorphic Coordinate Input (PCIE):
 
-- **Object Format**: `{ "action": "left_click", "coordinate": { "x": 450, "y": 320 } }`
-- **Array Format**: `{ "action": "left_click", "coordinate": [450, 320] }`
-- **Supported Actions**: `left_click`, `right_click`, `double_click`, `triple_click`, `middle_click`, `mouse_down`, `mouse_up`, `mouse_move`, `type`, `key`, `drag`, `scroll`.
+- **Object Format**: `{ "action": "left_click", "coordinates": { "x": 450, "y": 320 } }`
+- **Array Format**: `{ "action": "left_click", "coordinates": [450, 320] }`
+- **Supported Actions**: `left_click`, `right_click`, `double_click`, `triple_click`, `left_click_drag`, `scroll`, `type`, `key`, `hover`, `wait`, `fill`.
 - **Pre-flight Occlusion Inspection**: Automatically runs `DOM.getNodeForLocation` / `DOM.getBoxModel` to prevent clicking obscured elements.
 - **Natural Kinematics**: Enforces humanized deceleration trajectories within a 65px radius, 80-120ms physiological settling pauses, and supports hold durations up to 3000ms.

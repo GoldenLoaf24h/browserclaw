@@ -15,7 +15,7 @@ Activate this skill when the user asks to browse, interact with websites, search
 
 | User Intent / Trigger Scenario            | Primary Tool / Pipeline                        | Strategy & Key Arguments                                                                                    |
 | :---------------------------------------- | :--------------------------------------------- | :---------------------------------------------------------------------------------------------------------- |
-| **Navigate to URL or open page**          | `chrome_navigate`                              | `{ url: "...", newTab: true, active: false }` preserves background isolation.                               |
+| **Navigate to URL or open page**          | `chrome_navigate`                              | `{ url: "...", background: true }` opens in background without stealing focus.                              |
 | **Read page content / documentation**     | `chrome_get_markdown`                          | Extract clean, structured text stripped of layout blobs (`fit: true` for main body).                        |
 | **Quick text / element search**           | `chrome_grep`                                  | Search without full DOM dump: `{ query: "...", searchType: "interactive_only" }`.                           |
 | **On-page interactive goals** _(Default)_ | `chrome_act_toward_goal`                       | **System 1 default**: `{ goal: "...", maxSteps: 10 }` (local 200–400ms micro-loop).                         |
@@ -23,7 +23,7 @@ Activate this skill when the user asks to browse, interact with websites, search
 | **Deterministic atomic click / hover**    | `chrome_interact_index`                        | `{ index: 1, action: "click" }` dispatches native CDP event (`isTrusted: true`).                            |
 | **Multi-step sequence / assertions**      | `chrome_batch_actions`                         | Pipeline fills, clicks, waits, and assertions in 1 turn (_see `references/batch-pipeline.md`_).             |
 | **Autonomous multi-step wizard / form**   | `chrome_form_pipeline`                         | Advance surveys, onboarding, or multi-field forms (_see `references/batch-pipeline.md`_).                   |
-| **Dynamic script / authenticated API**    | `chrome_javascript` / `chrome_network_request` | Evaluate JS with auto-return and `mcp.*` helpers; fetch JSON bypassing UI.                                  |
+| **Dynamic script / authenticated API**    | `chrome_javascript` / `chrome_network_request` | Evaluate JS (`{ code: "..." }`) with `mcp.*` helpers; fetch JSON bypassing UI.                              |
 | **Canvas / WebGL / visual icons**         | `chrome_screenshot` + `chrome_computer`        | High-DPI 1:1 grid (`{ grid: true, format: "webp" }`) + PCIE clicks (_see `references/visual-fallback.md`_). |
 | **CAPTCHA / 2FA / Payment Handoff**       | `chrome_request_human_intervention`            | Mount frosted-glass banner, park cursor, safely yield to human user.                                        |
 | **Tab / Window discovery & hygiene**      | `get_windows_and_tabs` / `chrome_close_tabs`   | Inspect active tabs; close background tabs (`confirm: true` protects active tab).                           |
@@ -128,7 +128,7 @@ BrowserClaw divides responsibilities between two complementary reasoning layers:
 
 ### `chrome_interact_index`
 
-- **Input**: `{ index: number, action?: "click"|"hover"|"double_click"|"right_click"|"drag", includeDelta?: boolean, waitForNavigation?: boolean }`
+- **Input**: `{ index: number, action?: "click"|"hover"|"double_click"|"right_click"|"drag", includeDelta?: boolean, waitForSettle?: boolean, waitForNetworkQuiescence?: boolean }`
 - **Output**: `{ success: boolean, mutated: boolean, urlChanged: boolean, delta?: { added: string[], removed: string[] } }`
 
 ### `chrome_fill_index`
@@ -138,7 +138,7 @@ BrowserClaw divides responsibilities between two complementary reasoning layers:
 
 ### `chrome_batch_actions`
 
-- **Input**: `{ actions: Array<{ type: "click"|"fill"|"type"|"key"|"wait"|"hover"|"select"|"drag"|"assert"|"extract", ... }>, includeDelta?: boolean, captureNetwork?: boolean, waitForSettle?: boolean }`
+- **Input**: `{ actions: Array<{ type: "click"|"double_click"|"right_click"|"fill"|"hover"|"scroll"|"press_key"|"key"|"wait"|"fill_form"|"assert"|"extract", ... }>, includeDelta?: boolean, captureNetwork?: { urlPattern: string, method?: string, timeoutMs?: number }, waitForSettle?: boolean }`
 - Eliminates multi-turn network round-trips by executing atomic sequences and assertions locally (_see `references/batch-pipeline.md`_).
 
 ### `chrome_grep`
@@ -162,7 +162,8 @@ BrowserClaw divides responsibilities between two complementary reasoning layers:
    - Always use `grid: true` for visual calibration overlays.
    - Always use `action: "accept"` for browser dialogs.
    - In `chrome_upload_file`, use `index` or `clickTargetIndex`.
-3. **Background Tab Non-Intrusiveness**: Agent-spawned tabs must set `active: false` and windows `focused: false`. Never steal focus or disrupt the human user's foreground display.
+   - In `chrome_javascript`, use `code` (not `script`).
+3. **Background Tab Non-Intrusiveness**: Agent-spawned tabs run in the background by default (`background: true`, opening tabs with `active: false` and windows with `focused: false`). Never pass `background: false` unless the user explicitly requests foreground display.
 4. **Native Event Fidelity (`isTrusted: true`)**: All clicks, keystrokes, and form inputs dispatch native CDP events (`isTrusted: true`), natively triggering React 18/19 synthetic events, Vue reactivity, Angular change detection, and Shadow DOM handlers.
 5. **Active Tab Closure Protection**: `chrome_close_tabs` requires explicit `confirm: true` or specific `tabIds`/`sessionId`. Never close the human user's active foreground working tab blindly.
 6. **Zero-RTT Commits (`pressEnter: true`)**: Always pass `pressEnter: true` on `chrome_fill_index` when submitting search boxes or single-input forms to execute and submit in a single turn.
@@ -173,7 +174,7 @@ BrowserClaw divides responsibilities between two complementary reasoning layers:
 
 - **Local File Upload**: `chrome_upload_file { index: 5, filePath: "D:/data/document.pdf" }` (or `{ clickTargetIndex: 5, filePath: "D:/data/document.pdf" }` for custom upload triggers).
 - **Native Browser Dialogs**: `chrome_handle_dialog { action: "accept", promptText: "confirmation_code" }`.
-- **In-Page JavaScript Evaluation**: `chrome_javascript { script: "document.title" }` supports top-level `await`, automatic `return (...)` wrapping, and injected `mcp.*` utilities (`mcp.run`, `mcp.waitFor`, `mcp.click`, `mcp.fill`).
+- **In-Page JavaScript Evaluation**: `chrome_javascript { code: "document.title" }` supports top-level `await`, automatic `return (...)` wrapping, and injected `mcp.*` utilities (`mcp.run`, `mcp.waitFor`, `mcp.click`, `mcp.fill`).
 - **CAPTCHA & 2FA Takeover**: `chrome_request_human_intervention { reason: "Please solve slider verification" }` displays a frosted-glass banner, parks the cursor, and safely resumes upon user completion.
 - **Dynamic Tool Activation**: If a tool is hidden under the active profile (`core` or `crawl`), call `chrome_tool_docs { category: "network", activateForSession: true }` to unlock all category tools for the session without restarting.
 - **System Diagnostics**: Run `chrome_doctor {}` to verify port `12306`, extension connectivity, bridge token, and native host status.
