@@ -89,131 +89,135 @@ export class SmartScrollTool extends BaseBrowserToolExecutor {
             selector: args.selector,
             ref: refIndex,
             coordinate: resolvedCoordinate,
+            direction,
           },
         ]);
 
-      const target = (targetResults?.[0]?.result || {
-        found: true,
-        isWindow: true,
-        tagName: 'window',
-        x: 400,
-        y: 300,
-        width: 800,
-        height: 600,
-        scrollLeft: 0,
-        scrollTop: 0,
-        scrollWidth: 800,
-        scrollHeight: 1200,
-        clientWidth: 800,
-        clientHeight: 600,
-        canScrollDown: true,
-        canScrollUp: false,
-        canScrollRight: false,
-        canScrollLeft: false,
-      }) as SmartScrollTargetInfo;
+        const target = (targetResults?.[0]?.result || {
+          found: true,
+          isWindow: true,
+          tagName: 'window',
+          x: 400,
+          y: 300,
+          width: 800,
+          height: 600,
+          scrollLeft: 0,
+          scrollTop: 0,
+          scrollWidth: 800,
+          scrollHeight: 1200,
+          clientWidth: 800,
+          clientHeight: 600,
+          canScrollDown: true,
+          canScrollUp: false,
+          canScrollRight: false,
+          canScrollLeft: false,
+        }) as SmartScrollTargetInfo;
 
-      // 2. Compute pixel distance
-      let pixelDistance: number;
-      const refHeight = target.isWindow ? target.height : target.clientHeight;
-      const refWidth = target.isWindow ? target.width : target.clientWidth;
+        // 2. Compute pixel distance
+        let pixelDistance: number;
+        const refHeight = target.isWindow ? target.height : target.clientHeight;
+        const refWidth = target.isWindow ? target.width : target.clientWidth;
 
-      if (args.amount === 'half_page') {
-        pixelDistance = Math.round(
-          (direction === 'left' || direction === 'right' ? refWidth : refHeight) * 0.5,
-        );
-      } else if (args.amount === 'page' || args.amount === undefined) {
-        pixelDistance = Math.round(
-          (direction === 'left' || direction === 'right' ? refWidth : refHeight) * 0.85,
-        );
-      } else {
-        const parsed = Number(args.amount);
-        pixelDistance = !isNaN(parsed) && parsed > 0 ? parsed : Math.round(refHeight * 0.85);
-      }
-
-      let deltaX = 0;
-      let deltaY = 0;
-      if (direction === 'down') deltaY = pixelDistance;
-      else if (direction === 'up') deltaY = -pixelDistance;
-      else if (direction === 'right') deltaX = pixelDistance;
-      else if (direction === 'left') deltaX = -pixelDistance;
-
-      let isBackground = false;
-      try {
-        const fullTab = await chrome.tabs.get(tabId).catch(() => null);
-        isBackground = Boolean(fullTab && !fullTab.active);
-      } catch {}
-
-      // 3. Attempt physical CDP mouseWheel scroll
-      let cdpSuccess = false;
-      const skipUntil = smartScrollWheelSkipUntil.get(tabId) || 0;
-      if (!isBackground && skipUntil < Date.now()) {
-        try {
-          await cdpSessionManager.withSession(tabId, 'smart_scroll', async () => {
-            await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-              type: 'mouseWheel',
-              x: target.x,
-              y: target.y,
-              deltaX,
-              deltaY,
-            });
-          });
-          cdpSuccess = true;
-          smartScrollWheelSkipUntil.delete(tabId);
-        } catch (wheelErr) {
-          if (wheelErr instanceof DialogOpenedError) {
-            return createDialogInterruptResponse(wheelErr);
-          }
-          smartScrollWheelSkipUntil.set(tabId, Date.now() + 60_000);
-          console.warn(
-            '[SmartScrollTool] CDP wheel dispatch failed, falling back to in-page scroll:',
-            wheelErr,
+        if (args.amount === 'half_page') {
+          pixelDistance = Math.round(
+            (direction === 'left' || direction === 'right' ? refWidth : refHeight) * 0.5,
           );
-          // Fall back to in-page scroll
+        } else if (args.amount === 'page' || args.amount === undefined) {
+          pixelDistance = Math.round(
+            (direction === 'left' || direction === 'right' ? refWidth : refHeight) * 0.85,
+          );
+        } else {
+          const parsed = Number(args.amount);
+          pixelDistance = !isNaN(parsed) && parsed > 0 ? parsed : Math.round(refHeight * 0.85);
         }
-      }
 
-      // 4. In-page scroll fallback if CDP wheel failed
-      if (!cdpSuccess) {
-        await executeInPage({ tabId }, 'inPagePerformSmartScroll', [
-          target.isWindow,
-          target.selector,
-          deltaX,
-          deltaY,
-          args.smooth !== false,
-        ]);
-      }
+        let deltaX = 0;
+        let deltaY = 0;
+        if (direction === 'down') deltaY = pixelDistance;
+        else if (direction === 'up') deltaY = -pixelDistance;
+        else if (direction === 'right') deltaX = pixelDistance;
+        else if (direction === 'left') deltaX = -pixelDistance;
 
-      // 5. Wait for page settle
-      let settleResult: any = undefined;
-      if (args.waitForSettle !== false) {
-        settleResult = await waitForPageSettle(tabId, { timeoutMs: args.settleTimeoutMs });
-      }
+        let isBackground = false;
+        try {
+          const fullTab = await chrome.tabs.get(tabId).catch(() => null);
+          isBackground = Boolean(fullTab && !fullTab.active);
+        } catch {}
 
-      // 6. Inspect updated container status
-      let updatedStatus: SmartScrollTargetInfo | null = null;
-      try {
-        const updateCheck = await executeInPage({ tabId }, 'inPageFindSmartScrollTarget', [
-          {
-            selector: target.isWindow ? undefined : target.selector,
-            ref: args.ref,
-            isWindow: target.isWindow,
-          },
-        ]);
-        updatedStatus = updateCheck?.[0]?.result as SmartScrollTargetInfo;
-      } catch {}
+        // 3. Attempt physical CDP mouseWheel scroll
+        let cdpSuccess = false;
+        const skipUntil = smartScrollWheelSkipUntil.get(tabId) || 0;
+        if (!isBackground && skipUntil < Date.now()) {
+          try {
+            await cdpSessionManager.withSession(tabId, 'smart_scroll', async () => {
+              await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                type: 'mouseWheel',
+                x: target.x,
+                y: target.y,
+                deltaX,
+                deltaY,
+              });
+            });
+            cdpSuccess = true;
+            smartScrollWheelSkipUntil.delete(tabId);
+          } catch (wheelErr) {
+            if (wheelErr instanceof DialogOpenedError) {
+              return createDialogInterruptResponse(wheelErr);
+            }
+            smartScrollWheelSkipUntil.set(tabId, Date.now() + 60_000);
+            console.warn(
+              '[SmartScrollTool] CDP wheel dispatch failed, falling back to in-page scroll:',
+              wheelErr,
+            );
+            // Fall back to in-page scroll
+          }
+        }
 
-      const currentScrollTop = updatedStatus ? updatedStatus.scrollTop : target.scrollTop + deltaY;
-      const currentScrollLeft = updatedStatus
-        ? updatedStatus.scrollLeft
-        : target.scrollLeft + deltaX;
-      const maxScrollY = Math.max(
-        1,
-        (updatedStatus?.scrollHeight || target.scrollHeight) -
-          (updatedStatus?.clientHeight || target.clientHeight),
-      );
-      const scrollProgress = Math.round(
-        Math.min(100, Math.max(0, (currentScrollTop / maxScrollY) * 100)),
-      );
+        // 4. In-page scroll fallback if CDP wheel failed
+        if (!cdpSuccess) {
+          await executeInPage({ tabId }, 'inPagePerformSmartScroll', [
+            target.isWindow,
+            target.selector,
+            deltaX,
+            deltaY,
+            args.smooth !== false,
+          ]);
+        }
+
+        // 5. Wait for page settle
+        let settleResult: any = undefined;
+        if (args.waitForSettle !== false) {
+          settleResult = await waitForPageSettle(tabId, { timeoutMs: args.settleTimeoutMs });
+        }
+
+        // 6. Inspect updated container status
+        let updatedStatus: SmartScrollTargetInfo | null = null;
+        try {
+          const updateCheck = await executeInPage({ tabId }, 'inPageFindSmartScrollTarget', [
+            {
+              selector: target.isWindow ? undefined : target.selector,
+              ref: args.ref,
+              direction,
+              isWindow: target.isWindow,
+            },
+          ]);
+          updatedStatus = updateCheck?.[0]?.result as SmartScrollTargetInfo;
+        } catch {}
+
+        const currentScrollTop = updatedStatus
+          ? updatedStatus.scrollTop
+          : target.scrollTop + deltaY;
+        const currentScrollLeft = updatedStatus
+          ? updatedStatus.scrollLeft
+          : target.scrollLeft + deltaX;
+        const maxScrollY = Math.max(
+          1,
+          (updatedStatus?.scrollHeight || target.scrollHeight) -
+            (updatedStatus?.clientHeight || target.clientHeight),
+        );
+        const scrollProgress = Math.round(
+          Math.min(100, Math.max(0, (currentScrollTop / maxScrollY) * 100)),
+        );
 
         return {
           content: [

@@ -213,7 +213,10 @@ export class InsertMediaTool extends BaseBrowserToolExecutor {
         },
         (message: any) => {
           clearTimeout(timeout);
-          if (message.payload?.success && message.payload?.base64Data) {
+          if (
+            message.payload?.success &&
+            (message.payload?.base64Data || message.payload?.mediaUrl)
+          ) {
             resolve(message.payload);
           } else {
             resolve({

@@ -171,6 +171,11 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
 
             let verification: any = null;
             let fillMethod = 'cdp_native';
+            const isSingleLineInput =
+              coords?.tagName === 'input' &&
+              coords?.inputType !== 'search' &&
+              !coords?.isComposer &&
+              !coords?.isEditor;
 
             await cdpSessionManager.withSession(targetTabId, 'fill-index', async () => {
               // Humanized micro-trajectory to bypass anti-bot path listeners
@@ -232,7 +237,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
 
               if (textToFill) {
                 const lines = String(textToFill).split(/\r?\n/);
-                if (lines.length > 1) {
+                if (lines.length > 1 && !isSingleLineInput) {
                   for (let i = 0; i < lines.length; i++) {
                     const line = lines[i];
                     if (line.length > 0) {
@@ -303,6 +308,9 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
                 );
                 for (const char of textToFill) {
                   if (char === '\n') {
+                    if (isSingleLineInput) {
+                      continue;
+                    }
                     await raceCdp(targetTabId, 'Input.dispatchKeyEvent', {
                       type: 'rawKeyDown',
                       windowsVirtualKeyCode: 13,

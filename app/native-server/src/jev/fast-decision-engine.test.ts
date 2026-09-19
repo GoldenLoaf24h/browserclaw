@@ -710,6 +710,13 @@ describe('Fast Decision Engine Integration Tests (§4, §5, §6)', () => {
       expect(findMatchingPauseKeyword('click [5] button "Submit form"', ['submit', 'pay'])).toBe(
         'submit',
       );
+      expect(findMatchingPauseKeyword('[1] button "确认提交"', ['确认提交', 'Pay'])).toBe(
+        '确认提交',
+      );
+      // Word boundary prevents false positive substring matching
+      expect(findMatchingPauseKeyword('type [2] textbox "postal_code"', ['Post'])).toBeNull();
+      expect(findMatchingPauseKeyword('type [3] textbox "deposit amount"', ['Post'])).toBeNull();
+      expect(findMatchingPauseKeyword('click [4] link "compost bin"', ['Post'])).toBeNull();
       expect(findMatchingPauseKeyword('click [1] button "Cancel"', ['Post', 'Submit'])).toBeNull();
       expect(findMatchingPauseKeyword('', ['Post'])).toBeNull();
       expect(findMatchingPauseKeyword('click [1] button "Post"', [])).toBeNull();

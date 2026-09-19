@@ -41,8 +41,23 @@ export function findMatchingPauseKeyword(targetText: string, keywords?: string[]
     if (!kw || typeof kw !== 'string') continue;
     const cleanKw = kw.trim();
     if (!cleanKw) continue;
-    if (textLower.includes(cleanKw.toLowerCase())) {
-      return cleanKw;
+    const kwLower = cleanKw.toLowerCase();
+
+    // If keyword consists of alphanumeric/dash words (Latin/standard token), match on word boundaries
+    // to prevent false positives like "postal_code" matching "post" or "deposit" matching "post"
+    if (/^[a-zA-Z0-9_-]+$/.test(cleanKw)) {
+      const regex = new RegExp(
+        `(^|[^a-zA-Z0-9_])${cleanKw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[^a-zA-Z0-9_]|$)`,
+        'i',
+      );
+      if (regex.test(targetText)) {
+        return cleanKw;
+      }
+    } else {
+      // Non-Latin/CJK characters (e.g. "确认提交", "发布", "付款") - substring match
+      if (textLower.includes(kwLower)) {
+        return cleanKw;
+      }
     }
   }
   return null;
@@ -433,7 +448,11 @@ export class FastDecisionEngine {
               Array.isArray(params.pauseBeforeKeywords) &&
               params.pauseBeforeKeywords.length > 0
             ) {
-              const checkTarget = `${actionToTake} ${targetLine || ''}`;
+              const checkTarget = targetLine
+                ? `${targetLine}${actionToTake === 'submit' ? ' submit' : ''}`
+                : targetIndex !== undefined
+                  ? `[${targetIndex}]`
+                  : actionToTake;
               const matchedKw = findMatchingPauseKeyword(checkTarget, params.pauseBeforeKeywords);
               if (matchedKw) {
                 return this.formatResult(
@@ -514,7 +533,11 @@ export class FastDecisionEngine {
               pauseAction = 'click';
             }
           }
-          const checkTarget = `${pauseAction} ${targetLine || ''}`;
+          const checkTarget = targetLine
+            ? `${targetLine}${pauseAction === 'submit' ? ' submit' : ''}`
+            : targetIndex !== undefined
+              ? `[${targetIndex}]`
+              : pauseAction;
           const matchedKw = findMatchingPauseKeyword(checkTarget, params.pauseBeforeKeywords);
           if (matchedKw) {
             return this.formatResult(
@@ -559,7 +582,11 @@ export class FastDecisionEngine {
         Array.isArray(params.pauseBeforeKeywords) &&
         params.pauseBeforeKeywords.length > 0
       ) {
-        const checkTarget = `${actionToTake} ${targetLine || ''}`;
+        const checkTarget = targetLine
+          ? `${targetLine}${actionToTake === 'submit' ? ' submit' : ''}`
+          : targetIndex !== undefined
+            ? `[${targetIndex}]`
+            : actionToTake;
         const matchedKw = findMatchingPauseKeyword(checkTarget, params.pauseBeforeKeywords);
         if (matchedKw) {
           return this.formatResult(

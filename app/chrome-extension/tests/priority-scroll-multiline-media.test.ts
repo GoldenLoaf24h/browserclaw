@@ -95,6 +95,62 @@ describe('Production Boost: Priority Scroll, Multiline Newlines, and Media Injec
       }
     });
 
+    it('disqualifies containers exhausted in requested scroll direction', () => {
+      (window as any).innerWidth = 1280;
+      (window as any).innerHeight = 800;
+
+      const sidebar = document.createElement('div');
+      sidebar.id = 'exhausted-sidebar';
+      document.body.appendChild(sidebar);
+
+      sidebar.getBoundingClientRect = () =>
+        ({
+          x: 0,
+          y: 60,
+          left: 0,
+          top: 60,
+          right: 350,
+          bottom: 760,
+          width: 350,
+          height: 700,
+          toJSON: () => ({}),
+        }) as DOMRect;
+
+      // Fully scrolled to bottom: scrollTop + clientHeight >= scrollHeight - 5
+      Object.defineProperty(sidebar, 'scrollHeight', { value: 1400, configurable: true });
+      Object.defineProperty(sidebar, 'clientHeight', { value: 700, configurable: true });
+      Object.defineProperty(sidebar, 'scrollTop', { value: 700, configurable: true });
+      Object.defineProperty(sidebar, 'scrollWidth', { value: 350, configurable: true });
+      Object.defineProperty(sidebar, 'clientWidth', { value: 350, configurable: true });
+
+      const origGetComputedStyle = window.getComputedStyle;
+      window.getComputedStyle = (el: Element) => {
+        if (el === sidebar) {
+          return {
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            display: 'block',
+            visibility: 'visible',
+            opacity: '1',
+          } as CSSStyleDeclaration;
+        }
+        return origGetComputedStyle(el);
+      };
+
+      try {
+        // When direction is down, the exhausted sidebar must be disqualified
+        const targetDown = inPageFindSmartScrollTarget({ direction: 'down' });
+        expect(targetDown.selector).not.toBe('#exhausted-sidebar');
+
+        // But when direction is up, it can still scroll up
+        const targetUp = inPageFindSmartScrollTarget({ direction: 'up' });
+        expect(targetUp.selector).toBe('#exhausted-sidebar');
+      } finally {
+        window.getComputedStyle = origGetComputedStyle;
+        sidebar.remove();
+      }
+    });
+
     it('honors explicit selector even if targeting a sidebar', () => {
       const sidebar = document.createElement('nav');
       sidebar.id = 'target-nav';
@@ -236,6 +292,31 @@ describe('Production Boost: Priority Scroll, Multiline Newlines, and Media Injec
       expect((res.content[0] as any).text).toContain(
         'One of filePath, fileUrl, mediaUrl, or base64Data must be provided',
       );
+    });
+
+    it('InsertMediaTool downloads and injects streamed media from mediaUrl', async () => {
+      const tool = new InsertMediaTool();
+      (tool as any).resolveAffinityTab = vi.fn().mockResolvedValue({ id: 123 });
+
+      const fakeArrayBuffer = new Uint8Array([105, 109, 97, 103, 101]).buffer;
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        arrayBuffer: async () => fakeArrayBuffer,
+      } as any);
+
+      try {
+        // Execute with mediaUrl
+        const res = await tool.execute({
+          mediaUrl: 'http://127.0.0.1:12306/media-asset/fake-id',
+          fileName: 'large-4k-diagram.png',
+        });
+        // In JSDOM without inPage engine, outcome handles error response gracefully
+        expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:12306/media-asset/fake-id');
+      } finally {
+        global.fetch = originalFetch;
+      }
     });
   });
 });

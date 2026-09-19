@@ -5154,6 +5154,7 @@ export function inPageFindSmartScrollTarget(options?: {
   selector?: string;
   ref?: number;
   coordinate?: { x: number; y: number };
+  direction?: 'down' | 'up' | 'left' | 'right';
   isWindow?: boolean;
 }): SmartScrollTargetInfo {
   // If explicitly requested window scroll, skip container search
@@ -5208,16 +5209,46 @@ export function inPageFindSmartScrollTarget(options?: {
       const vpCenterX = winW / 2;
       const vpCenterY = winH / 2;
 
-      // Check whether window/document itself can scroll vertically
+      // Check whether window/document itself can scroll in requested direction
       const doc = (
         typeof document !== 'undefined' ? document.documentElement || document.body : null
       ) as HTMLElement | null;
+      const win = typeof window !== 'undefined' ? window : (globalThis as any).window;
+      const currentScrollY =
+        win?.scrollY ||
+        win?.pageYOffset ||
+        doc?.scrollTop ||
+        (typeof document !== 'undefined' ? document.body?.scrollTop : 0) ||
+        0;
+      const currentScrollX =
+        win?.scrollX ||
+        win?.pageXOffset ||
+        doc?.scrollLeft ||
+        (typeof document !== 'undefined' ? document.body?.scrollLeft : 0) ||
+        0;
       const winScrollHeight = Math.max(
         doc?.scrollHeight || 0,
         (typeof document !== 'undefined' ? document.body?.scrollHeight : 0) || 0,
         winH,
       );
-      const windowCanScrollY = winScrollHeight > winH + 15;
+      const winScrollWidth = Math.max(
+        doc?.scrollWidth || 0,
+        (typeof document !== 'undefined' ? document.body?.scrollWidth : 0) || 0,
+        winW,
+      );
+
+      let windowCanScrollInDir = winScrollHeight > winH + 15;
+      if (options?.direction === 'down') {
+        windowCanScrollInDir =
+          winScrollHeight > winH + 15 && currentScrollY + winH < winScrollHeight - 5;
+      } else if (options?.direction === 'up') {
+        windowCanScrollInDir = currentScrollY > 5;
+      } else if (options?.direction === 'right') {
+        windowCanScrollInDir =
+          winScrollWidth > winW + 15 && currentScrollX + winW < winScrollWidth - 5;
+      } else if (options?.direction === 'left') {
+        windowCanScrollInDir = currentScrollX > 5;
+      }
 
       // Probe scroll container of the central viewport element
       let centerScrollParent: Element | null = null;
@@ -5253,6 +5284,23 @@ export function inPageFindSmartScrollTarget(options?: {
         const sw = el.scrollWidth;
         const cw = el.clientWidth;
         if (sh <= ch + 10 && sw <= cw + 10) continue;
+
+        const scrollTop = el.scrollTop || 0;
+        const scrollLeft = el.scrollLeft || 0;
+        const canScrollDown = scrollTop + ch < sh - 5;
+        const canScrollUp = scrollTop > 5;
+        const canScrollRight = scrollLeft + cw < sw - 5;
+        const canScrollLeft = scrollLeft > 5;
+
+        let canScrollInDir = true;
+        if (options?.direction === 'down') canScrollInDir = canScrollDown;
+        else if (options?.direction === 'up') canScrollInDir = canScrollUp;
+        else if (options?.direction === 'right') canScrollInDir = canScrollRight;
+        else if (options?.direction === 'left') canScrollInDir = canScrollLeft;
+        else canScrollInDir = canScrollDown || canScrollUp || canScrollRight || canScrollLeft;
+
+        // Disqualify containers that are exhausted in the requested direction
+        if (!canScrollInDir) continue;
 
         const style = window.getComputedStyle?.(el);
         if (!style) continue;
@@ -5360,7 +5408,7 @@ export function inPageFindSmartScrollTarget(options?: {
       // Default to window if viewport center has no scroll container and window can scroll,
       // or if best candidate is a penalized sidebar
       const shouldPreferWindow =
-        windowCanScrollY &&
+        windowCanScrollInDir &&
         (!bestEl ||
           (!centerScrollParent && bestScore < winW * winH * 0.35) ||
           bestScore < winW * winH * 0.15);
@@ -5379,8 +5427,21 @@ export function inPageFindSmartScrollTarget(options?: {
       const clientHeight = targetEl.clientHeight || 0;
       const clientWidth = targetEl.clientWidth || 0;
 
-      const id = targetEl.id ? `#${targetEl.id}` : '';
-      const selector = id || targetEl.tagName.toLowerCase();
+      let selector: string;
+      if (targetEl.id) {
+        const safeId =
+          typeof CSS !== 'undefined' && CSS.escape
+            ? CSS.escape(targetEl.id)
+            : targetEl.id.replace(/([ #;?%&,.+*~':"!^$[\]()=>|/@])/g, '\\$1');
+        selector = `#${safeId}`;
+      } else {
+        try {
+          targetEl.setAttribute('data-browserclaw-scroll-target', 'true');
+          selector = `${targetEl.tagName.toLowerCase()}[data-browserclaw-scroll-target="true"]`;
+        } catch {
+          selector = targetEl.tagName.toLowerCase();
+        }
+      }
 
       const winW = typeof window !== 'undefined' ? window.innerWidth || 800 : 800;
       const winH = typeof window !== 'undefined' ? window.innerHeight || 600 : 600;
