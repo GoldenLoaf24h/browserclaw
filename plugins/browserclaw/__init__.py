@@ -20,6 +20,35 @@ DEFAULT_URLS = [
     'http://127.0.0.1:12306/mcp',
 ]
 
+# Same lookup order as app/native-server/src/server/token.ts::resolveBridgeToken,
+# with BROWSERCLAW_MCP_TOKEN as a plugin-specific override.
+BRIDGE_TOKEN_ENV_VARS = ('BROWSERCLAW_MCP_TOKEN', 'CHROME_MCP_TOKEN')
+BRIDGE_TOKEN_FILE = Path('.chrome-mcp') / 'bridge-token'
+
+_AUTH_HELP = (
+    'BrowserClaw bridge rejected the request (HTTP 401): bridge token missing or invalid. '
+    'Set BROWSERCLAW_MCP_TOKEN or CHROME_MCP_TOKEN to the token the native server uses, '
+    'or make sure ~/.chrome-mcp/bridge-token (written by the native server) is readable.'
+)
+
+
+def _bridge_token() -> Optional[str]:
+    """Resolve the native-bridge auth token, or None when nothing is configured.
+
+    Read lazily on every call: the file is tiny and the native server may
+    regenerate it between calls.
+    """
+    for name in BRIDGE_TOKEN_ENV_VARS:
+        value = os.getenv(name, '').strip()
+        if value:
+            return value
+    try:
+        value = (Path.home() / BRIDGE_TOKEN_FILE).read_text(encoding='utf-8').strip()
+    except OSError:
+        return None
+    return value or None
+
+
 def _call_browserclaw(tool_name: str, arguments: dict) -> str:
     remote_name = tool_name
     if tool_name == 'browserclaw_get_windows_and_tabs':
@@ -38,15 +67,19 @@ def _call_browserclaw(tool_name: str, arguments: dict) -> str:
     }).encode('utf-8')
 
     last_error = None
+    token = _bridge_token()
+    headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+    }
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
     for url in DEFAULT_URLS:
         try:
             req = urllib.request.Request(
                 url,
                 data=payload,
-                headers={
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/event-stream',
-                },
+                headers=headers,
                 method='POST',
             )
             with urllib.request.urlopen(req, timeout=45) as resp:
@@ -71,6 +104,11 @@ def _call_browserclaw(tool_name: str, arguments: dict) -> str:
                 except Exception:
                     pass
                 return raw
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                return json.dumps({'error': _AUTH_HELP})
+            last_error = f'HTTP {e.code}'
+            continue
         except urllib.error.URLError as e:
             last_error = str(e)
             continue
