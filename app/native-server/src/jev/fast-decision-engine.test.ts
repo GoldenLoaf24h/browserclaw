@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach } from '@jest/globals';
-import { FastDecisionEngine } from './fast-decision-engine';
+import { FastDecisionEngine, findMatchingPauseKeyword } from './fast-decision-engine';
 import { isSessionKeyInvalid, resetInvalidKeyLatch } from './jev-client';
 
 describe('Fast Decision Engine Integration Tests (§4, §5, §6)', () => {
@@ -703,6 +703,111 @@ describe('Fast Decision Engine Integration Tests (§4, §5, §6)', () => {
       const result = await engine.run({ goal: '重试操作', maxSteps: 3 }, caller);
       expect(result.status).toBe('stuck');
       expect(result.reason).toContain('Jev detected execution loop');
+    });
+
+    test('23. findMatchingPauseKeyword matches case-insensitively and handles boundary cases', () => {
+      expect(findMatchingPauseKeyword('click [12] button "Post"', ['Post', 'Submit'])).toBe('Post');
+      expect(findMatchingPauseKeyword('click [5] button "Submit form"', ['submit', 'pay'])).toBe(
+        'submit',
+      );
+      expect(findMatchingPauseKeyword('click [1] button "Cancel"', ['Post', 'Submit'])).toBeNull();
+      expect(findMatchingPauseKeyword('', ['Post'])).toBeNull();
+      expect(findMatchingPauseKeyword('click [1] button "Post"', [])).toBeNull();
+      expect(findMatchingPauseKeyword('click [1] button "Post"', undefined)).toBeNull();
+    });
+
+    test('24. Safety Breakpoint: halts with status paused before executing action matching pauseBeforeKeywords', async () => {
+      delete process.env.TYPESAFE_API_KEY;
+      const engine = new FastDecisionEngine();
+
+      let actionExecuted = false;
+      const caller = async (toolName: string, args: any): Promise<any> => {
+        if (toolName === 'chrome_read_dom') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  tabUrl: 'https://reddit.com/r/test',
+                  tabTitle: 'Reddit Test',
+                  treeString: '[1] textbox "Title"\n[2] textbox "Body"\n[3] button "Post"',
+                }),
+              },
+            ],
+          };
+        }
+        if (toolName === 'chrome_interact_index') {
+          actionExecuted = true;
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: true }) }],
+          };
+        }
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true }) }],
+        };
+      };
+
+      const result = await engine.run(
+        {
+          goal: '点击 Post 按钮发布帖子',
+          pauseBeforeKeywords: ['Post', 'Submit'],
+          maxSteps: 3,
+        },
+        caller,
+      );
+
+      expect(result.status).toBe('paused');
+      expect(actionExecuted).toBe(false);
+      expect(result.pausedBeforeAction).toBeDefined();
+      expect(result.pausedBeforeAction?.action).toBe('click');
+      expect(result.pausedBeforeAction?.matchedKeyword).toBe('Post');
+      expect(result.pausedBeforeAction?.target).toContain('[3]');
+      expect(result.currentElements?.length).toBeGreaterThan(0);
+    });
+
+    test('25. Safety Breakpoint: proceeds without pausing when action does not match pauseBeforeKeywords', async () => {
+      delete process.env.TYPESAFE_API_KEY;
+      const engine = new FastDecisionEngine();
+
+      let clickedTarget: any = null;
+      const caller = async (toolName: string, args: any): Promise<any> => {
+        if (toolName === 'chrome_read_dom') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  tabUrl: 'https://example.com/wizard',
+                  tabTitle: 'Wizard',
+                  treeString: '[1] button "下一步"\n[2] button "确认提交"',
+                }),
+              },
+            ],
+          };
+        }
+        if (toolName === 'chrome_interact_index') {
+          clickedTarget = args.index;
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: true, mutated: true }) }],
+          };
+        }
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true }) }],
+        };
+      };
+
+      const result = await engine.run(
+        {
+          goal: '点击下一步',
+          pauseBeforeKeywords: ['确认提交', 'Pay'],
+          maxSteps: 1,
+        },
+        caller,
+      );
+
+      // Should have clicked 下一步 without triggering the breakpoint for 确认提交
+      expect(clickedTarget).toBe(1);
+      expect(result.status).not.toBe('paused');
     });
   });
 });

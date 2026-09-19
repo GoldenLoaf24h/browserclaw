@@ -36,7 +36,8 @@ This reference documents BrowserClaw's Fast/System 1 local autonomous loop power
   "maxSteps": 10,
   "timeoutMs": 90000,
   "confidenceThreshold": 0.55,
-  "textHint": "Optional text to type if not clearly quoted in goal"
+  "textHint": "Optional text to type if not clearly quoted in goal",
+  "pauseBeforeKeywords": ["Post", "Submit", "Pay"]
 }
 ```
 
@@ -46,6 +47,7 @@ This reference documents BrowserClaw's Fast/System 1 local autonomous loop power
 - `timeoutMs`: Default 90,000ms (90s); hard cap 300,000ms (5 minutes).
 - `confidenceThreshold`: Default 0.55. Actions below this threshold trigger instant escalation.
 - `textHint`: Explicit text to enter when typing if not clearly quoted in the goal string.
+- `pauseBeforeKeywords`: Array of keyword strings (e.g. `["Post", "Submit", "Pay"]`). Halts execution with `status: "paused"` and `pausedBeforeAction` before dispatching an action against matching elements.
 
 ---
 
@@ -81,6 +83,7 @@ This reference documents BrowserClaw's Fast/System 1 local autonomous loop power
   ],
   "finalPage": { "url": "https://example.com/shop", "title": "Shop" },
   "currentElements": ["[1] input: Search", "[2] button: Cart (0)", "[4] button: Electronics"],
+  "pausedBeforeAction": null,
   "jevUsage": { "calls": 2, "inputTokens": 840, "estCostUsd": 0.000035 }
 }
 ```
@@ -88,6 +91,7 @@ This reference documents BrowserClaw's Fast/System 1 local autonomous loop power
 ### Possible Statuses
 
 - `"done"`: Goal successfully achieved (`goal_done >= 0.85` or heuristic coverage $\ge 0.80$).
+- `"paused"`: Safety breakpoint hit before executing an action matching `pauseBeforeKeywords`. Caller inspects `pausedBeforeAction` and `currentElements` without action execution.
 - `"escalate"`: Low confidence, destructive action detected, or ambiguous decision. Caller LLM should resume with standard Tier 0 tools.
 - `"stuck"`: 3 consecutive steps without DOM mutation, URL change, or visual change.
 - `"blocked"`: Anti-bot challenge or captcha detected.
@@ -98,30 +102,37 @@ This reference documents BrowserClaw's Fast/System 1 local autonomous loop power
 
 ## 5. Escalation Guard Rules
 
-The micro-loop immediately aborts and escalates back to System 2 when:
+The micro-loop evaluates guard conditions in strict priority order:
 
-1. **Low Confidence**: `action confidence < 0.55` or `target confidence < 0.45`.
-2. **Destructive Guard**: Detects actions matching protected keywords (`pay`, `delete`, `purchase`, `buy`, `submit`, `confirm`) or Jev `destructive >= 0.50`.
-3. **Stuck Circuit-Breaker**: 3 consecutive unchanged steps ($mutated=false$, $urlChanged=false$, $visualDiff \le 0.01$).
-4. **Ambiguous Input**: Typing required but text payload cannot be determined.
+1. **Safety Breakpoint Guard (`pauseBeforeKeywords`)**: Evaluated _before_ destructive guard. If the proposed element matches any keyword in `pauseBeforeKeywords`, execution immediately halts with `status: "paused"`, populating `pausedBeforeAction` and fresh `currentElements` while leaving page state untouched.
+2. **Low Confidence**: `action confidence < 0.55` or `target confidence < 0.45`.
+3. **Destructive Guard**: Detects actions matching protected keywords (`pay`, `delete`, `purchase`, `buy`, `submit`, `confirm`) or Jev `destructive >= 0.50`.
+4. **Stuck Circuit-Breaker**: 3 consecutive unchanged steps ($mutated=false$, $urlChanged=false$, $visualDiff \le 0.01$).
+5. **Ambiguous Input**: Typing required but text payload cannot be determined.
 
 ---
 
 ## 6. Macro Supervisor Recovery Protocol
 
-When `chrome_act_toward_goal` yields with `status === "escalate"`, `"stuck"`, or `"max_steps"`, the Macro Planner (System 2) resumes control using the following protocol:
+When `chrome_act_toward_goal` yields with `status === "paused"`, `"escalate"`, `"stuck"`, or `"max_steps"`, the Macro Planner (System 2) resumes control using the following protocol:
 
-1. **Zero-Read Element Re-Use**:
+1. **Handling Safety Breakpoint Pauses (`status === "paused"`)**:
+   - Inspect `pausedBeforeAction` (e.g. `{ action: "click", target: { index: 12, text: "Post" } }`) and review draft content in `currentElements`.
+   - If draft/form state is verified and ready to commit, dispatch `chrome_interact_index { index: pausedBeforeAction.target.index }` (or prompt human user for final approval).
+   - Zero DOM re-read required: target indices are fresh and guaranteed valid.
+
+2. **Zero-Read Element Re-Use**:
    - The escalation response includes `currentElements`, an array of 1-based indexed element strings (e.g. `"[4] button: 'Confirm Purchase'"`).
    - The Macro Planner can select the target index directly from this array without executing an extra `chrome_read_dom` call.
 
-2. **Handling Sensitive / Destructive Actions**:
+3. **Handling Sensitive / Destructive Actions**:
    - If escalated due to `destructive >= 0.50` or protected keywords (`pay`, `delete`, `purchase`, `buy`, `submit`, `confirm`), the Macro Planner evaluates user intent and authorization before dispatching `chrome_interact_index { index: N }`.
 
-3. **Fallback to Tier 0 Primitives**:
+4. **Fallback to Tier 0 Primitives**:
    - For single clicks or selections: `chrome_interact_index { index: N, includeDelta: true }`.
    - For single text entries: `chrome_fill_index { index: N, text: "...", pressEnter: true }`.
+   - For media injection: `chrome_insert_media { index: N, filePath: "...", actionType: "drop" }`.
    - For multi-step sequences: `chrome_batch_actions { actions: [...] }` (_see `batch-pipeline.md`_).
 
-4. **Handling CAPTCHA / Bot Blocks**:
+5. **Handling CAPTCHA / Bot Blocks**:
    - When `status === "blocked"`, immediately invoke `chrome_request_human_intervention { reason: "..." }` to yield control to the human user.

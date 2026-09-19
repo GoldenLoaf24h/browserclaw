@@ -26,7 +26,7 @@ Welcome to the **BrowserClaw** Project Map. Whether you are an end-user, an AI a
   3. Copy your client JSON from **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)** into Cursor, Claude, or Codex.
 - **I am an AI Agent / Prompt Engineer integrating BrowserClaw**:
   1. Study **[skill/SKILL.md](../skill/SKILL.md)**: Encodes dual-engine workflows (DOM-First vs Visual Fallback), the Escalation Ladder, and recovery patterns.
-  2. Consult **[docs/TOOLS.md](./TOOLS.md)**: Auto-generated parameter references for all 47 canonical tools across Core (14), Crawl (12), and Full (47) profiles.
+  2. Consult **[docs/TOOLS.md](./TOOLS.md)**: Auto-generated parameter references for all 48 canonical tools across Core (14), Crawl (12), and Full (48) profiles.
   3. Follow the 6 interaction rules in **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)** (especially `includeDelta: true` and `chrome_grep`).
 - **I want to contribute or audit the architecture**:
   1. Inspect **[docs/ARCHITECTURE.md](./ARCHITECTURE.md)**: Complete system topology, IPC buffer guards, and sequence diagrams.
@@ -42,8 +42,8 @@ mcp-chrome-master/
 ├── packages/
 │   └── shared/                  # 🌟 Single Source of Truth
 │       └── src/
-│           ├── tools.ts         # All 47 canonical tool schemas, tool names
-│           ├── tool-profiles.ts # Profile definitions (Core 14, Crawl 12, Full 47)
+│           ├── tools.ts         # All 48 canonical tool schemas, tool names
+│           ├── tool-profiles.ts # Profile definitions (Core 14, Crawl 12, Full 48)
 │           ├── types.ts         # Universal coordinate, batch item & diff result types
 │           └── error-format.ts  # Standardized error reporting with stack control
 │
@@ -78,7 +78,7 @@ mcp-chrome-master/
 | **[README.md](../README.md)**                                                                     |      English      |    All Users / Community    | Project homepage, architectural benefits, quick start, and feature overview         | Maintained manually                            |
 | **[README.zh-CN.md](../README.zh-CN.md)**                                                         |      Chinese      |     Chinese Developers      | Complete Chinese homepage, Windows file lock resolutions & quickstart guide         | Kept in sync with README.md                    |
 | **[docs/MAP.md](./MAP.md)**                                                                       |      English      |    All Users / AI Agents    | **Master Navigation Hub**: repository topology, reading paths, and capability radar | This document                                  |
-| **[docs/TOOLS.md](./TOOLS.md)**                                                                   |      English      |     Agents / Developers     | Parameter dictionary for all 47 canonical tools across profiles                     | Auto-generated via `scripts/gen-tools-doc.mjs` |
+| **[docs/TOOLS.md](./TOOLS.md)**                                                                   |      English      |     Agents / Developers     | Parameter dictionary for all 48 canonical tools across profiles                     | Auto-generated via `scripts/gen-tools-doc.mjs` |
 | **[docs/ARCHITECTURE.md](./ARCHITECTURE.md)**                                                     |      English      |    Architects / Auditors    | 3-tier architecture topology, Native Messaging protocols, and ADR records           | Updated on architecture changes                |
 | **[docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** ([Chinese](./TROUBLESHOOTING.zh-CN.md))       | English / Chinese | Operators / Troubleshooters | Diagnostic checklist for connection errors, tokens, CDP detachment, etc.            | Updated on issue discovery                     |
 | **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)** ([Chinese](../AGENT_CONFIG_GUIDE.zh-CN.md)) | English / Chinese |     Agents / Developers     | Client configurations (Claude, Cursor, Windsurf) and 6 interaction rules            | Updated on client updates                      |

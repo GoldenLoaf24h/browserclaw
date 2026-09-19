@@ -56,3 +56,4 @@ export { interceptApiTool } from './intercept-api';
 export { grepTool } from './grep';
 export { doctorTool } from './doctor';
 export { formPipelineTool } from './form-pipeline';
+export { insertMediaTool } from './insert-media';

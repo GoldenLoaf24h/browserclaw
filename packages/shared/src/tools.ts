@@ -61,6 +61,7 @@ export const TOOL_NAMES = {
     CDP_EXECUTE: 'chrome_cdp_execute',
     GREP: 'chrome_grep',
     FORM_PIPELINE: 'chrome_form_pipeline',
+    INSERT_MEDIA: 'chrome_insert_media',
   },
   NATIVE: {
     ACT_TOWARD_GOAL: 'chrome_act_toward_goal',
@@ -3162,6 +3163,12 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           type: 'number',
           description: 'Minimum confidence threshold to commit an action (default: 0.55)',
         },
+        pauseBeforeKeywords: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'List of keywords (e.g. ["Post", "Submit", "Pay"]). If the predicted action targets an element whose label, text, or role matches any keyword, the micro-loop suspends before execution and returns status "paused" with target element context for System 2 confirmation.',
+        },
         sessionId: {
           type: 'string',
           description: 'Optional session identifier to bind affinity to a specific tab context',
@@ -3172,6 +3179,73 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         },
       },
       required: ['goal'],
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.INSERT_MEDIA,
+    annotations: {
+      title: 'Insert Media Asset',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    description:
+      'Injects an image or media asset from local disk, URL, or base64 into a rich-text composer (e.g. Reddit, Twitter/X, Notion, Discord, Slack, GitHub) or targeted element via synthesized ClipboardEvent("paste") and DragEvent("drop") containing a real File object in DataTransfer, bypassing browser clipboard security sandboxes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: {
+          type: 'string',
+          description:
+            'Absolute or relative path to the image or media file on local disk (e.g. "C:\\Users\\...\\diagram.png" or "/home/.../photo.jpg")',
+        },
+        fileUrl: {
+          type: 'string',
+          description: 'Remote HTTP/HTTPS URL to fetch the image or media asset from',
+        },
+        base64Data: {
+          type: 'string',
+          description:
+            'Base64-encoded media data string, optionally with "data:<mime>;base64," prefix',
+        },
+        fileName: {
+          type: 'string',
+          description:
+            'Optional filename to associate with the injected file (e.g. "architecture.png")',
+        },
+        mimeType: {
+          type: 'string',
+          description:
+            'MIME type of the media (e.g. "image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"). Auto-detected if omitted.',
+        },
+        index: {
+          type: 'number',
+          description:
+            '1-based compact element index from chrome_read_dom targeting the rich-text editor or composer. Defaults to active element or discovered composer.',
+        },
+        selector: {
+          type: 'string',
+          description: 'CSS selector for the target container (optional fallback for index)',
+        },
+        tabId: {
+          type: 'number',
+          description: 'Target tab ID (optional, defaults to active tab)',
+        },
+        windowId: {
+          type: 'number',
+          description: 'Target window ID (optional)',
+        },
+        sessionId: {
+          type: 'string',
+          description: 'Session identifier for tab affinity binding',
+        },
+        sessionContext: {
+          type: 'string',
+          description: 'Optional alias for sessionId',
+        },
+      },
+      required: [],
     },
   },
 ];

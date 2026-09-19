@@ -17,8 +17,75 @@ import {
   TOOL_CATEGORIES,
   TOOL_NAME_TO_CATEGORY,
 } from 'chrome-mcp-shared';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
+import { fileURLToPath } from 'url';
+import { mediaAssetStore } from '../media-asset-store';
+import { getChromeMcpPort, SERVER_CONFIG } from '../constant';
 import { FastDecisionEngine } from '../jev';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+
+export async function prepareMediaArgsIfNeeded(name: string, args: any): Promise<void> {
+  if (name !== 'chrome_insert_media' || !args) return;
+  let targetPath = args.filePath;
+  if (
+    !targetPath &&
+    args.fileUrl &&
+    typeof args.fileUrl === 'string' &&
+    args.fileUrl.startsWith('file://')
+  ) {
+    try {
+      targetPath = fileURLToPath(args.fileUrl);
+    } catch {
+      targetPath = args.fileUrl.replace(/^file:\/\/\/?/, '');
+    }
+  }
+  if (!targetPath || args.base64Data || args.mediaUrl) return;
+
+  try {
+    const resolvedPath = path.resolve(targetPath);
+    const stats = await fs.promises.stat(resolvedPath);
+    if (!stats.isFile()) return;
+
+    const ext = path.extname(resolvedPath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+      '.bmp': 'image/bmp',
+      '.ico': 'image/x-icon',
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.pdf': 'application/pdf',
+    };
+    const mimeType = args.mimeType || mimeTypes[ext] || 'application/octet-stream';
+    const fileName = args.fileName || path.basename(resolvedPath);
+
+    if (stats.size <= 650 * 1024) {
+      const buffer = await fs.promises.readFile(resolvedPath);
+      args.base64Data = buffer.toString('base64');
+      args.fileName = fileName;
+      args.mimeType = mimeType;
+    } else if (stats.size <= 50 * 1024 * 1024) {
+      const assetId = crypto.randomUUID();
+      mediaAssetStore.set(assetId, {
+        filePath: resolvedPath,
+        mimeType,
+        fileName,
+      });
+      const port = getChromeMcpPort();
+      args.mediaUrl = `http://${SERVER_CONFIG.HOST}:${port}/media-asset/${assetId}`;
+      args.fileName = fileName;
+      args.mimeType = mimeType;
+    }
+  } catch {
+    // If file cannot be read here, let extension try or report error
+  }
+}
 
 // Resolved once at startup: changing the profile requires an MCP server restart.
 const TOOL_PROFILE = resolveToolProfile(process.env.CHROME_MCP_TOOL_PROFILE);
@@ -145,7 +212,6 @@ const handleToolCall = async (
       return result;
     }
 
-    // 发送请求到Chrome扩展并等待响应
     // Dynamic activation hook for chrome_tool_docs
     if (name === 'chrome_tool_docs' && args?.activateForSession && args?.category) {
       const catList = TOOL_CATEGORIES[args.category]
@@ -160,6 +226,9 @@ const handleToolCall = async (
         (server as any).sendToolListChanged().catch(() => {});
       }
     }
+
+    await prepareMediaArgsIfNeeded(name, args);
+
     const response = await nativeMessagingHostInstance.sendRequestToExtensionAndWait(
       {
         name,
@@ -208,6 +277,7 @@ export const callToolInternal = async (
   sessionId?: string,
   timeoutMs = 120000,
 ): Promise<any> => {
+  await prepareMediaArgsIfNeeded(name, args);
   const response = await nativeMessagingHostInstance.sendRequestToExtensionAndWait(
     {
       name,

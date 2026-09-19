@@ -28,7 +28,7 @@ Traditional browser automation frameworks (Playwright, Puppeteer, browser-use) r
 
 ## ⚡ What is BrowserClaw?
 
-BrowserClaw is a **hierarchical dual-brain browser agent platform**. It pairs a high-performance MCP execution surface (47 tools, running inside your real Chrome) with a local semantic micro-loop — so a fast decision engine handles the high-frequency "perceive → decide → act" steps, while your reasoning LLM stays in charge of macro planning.
+BrowserClaw is a **hierarchical dual-brain browser agent platform**. It pairs a high-performance MCP execution surface (48 tools, running inside your real Chrome) with a local semantic micro-loop — so a fast decision engine handles the high-frequency "perceive → decide → act" steps, while your reasoning LLM stays in charge of macro planning.
 
 The result: agent browser control that is **3–5× faster and 70–80%+ cheaper on tokens**, without giving up CDP fidelity, Shadow-DOM penetration, or anti-bot resilience.
 
@@ -39,7 +39,7 @@ The result: agent browser control that is **3–5× faster and 70–80%+ cheaper
 - 🛡️ **Industrial DOM & Event Fidelity**: Composed-tree traversal penetrates closed Shadow DOM boundaries with actionable modal interception diagnostics, optimal visible action-point weighting, and synthetic Click Probe fallback for background tabs.
 - 🔄 **Adaptive Diffing & Targeted Grep**: `includeDelta: true` piggybacks local DOM mutations directly onto click/fill responses, while `chrome_grep` provides instant sub-100 token regex and text queries across large documents.
 - 🖱️ **Human-First Coexistence**: Smooth 1:1 spring-kinematics virtual cursor, dedicated colored Chrome Tab Groups, optional Window Isolation Mode, and a frosted-glass takeover banner that yields cleanly to humans on 2FA or captchas.
-- 🧭 **Comprehensive Local Browser Management**: Beyond standard page automation, exposes 47 canonical MCP tools to manage active tabs, windows, cookies, storage, browsing history, and bookmarks under your existing credentials.
+- 🧭 **Comprehensive Local Browser Management**: Beyond standard page automation, exposes 48 canonical MCP tools to manage active tabs, windows, cookies, storage, browsing history, and bookmarks under your existing credentials.
 
 ---
 
@@ -242,7 +242,7 @@ AI Client (Cursor / Claude / Codex)
          ▼
 Native Messaging Bridge (Fastify + Stdio Host)
          ├── Fast Decision Engine (Jev client + heuristic fallback + micro-loop)
-         └── Passthrough for 46 deterministic tools + 1 autonomous micro-loop (47 tools total)
+         └── Passthrough for 47 deterministic tools + 1 autonomous micro-loop (48 tools total)
          │  Chrome Native Messaging (1MB buffer guard)
          ▼
 Chrome MV3 Extension (Service Worker + WXT + Vue 3)
@@ -258,7 +258,7 @@ See **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** for detailed topology and
 ## 📚 Documentation Map
 
 - **[Project Map & Index](./docs/MAP.md)**: 🗺️ Master navigation hub, reading paths by role, and code topology.
-- **[Tool Reference](./docs/TOOLS.md)**: Auto-generated parameter dictionary for all 47 tools.
+- **[Tool Reference](./docs/TOOLS.md)**: Auto-generated parameter dictionary for all 48 tools.
 - **[Agent Integration Guide](./AGENT_CONFIG_GUIDE.md)**: 6 core interaction rules and client configurations.
 - **[Architecture Deep-Dive](./docs/ARCHITECTURE.md)**: Monorepo design, security boundaries, and ADR records.
 - **[Troubleshooting](./docs/TROUBLESHOOTING.md)**: Instant diagnosis checklist for connection or execution errors.

@@ -270,7 +270,7 @@ When evaluating JavaScript expressions via `chrome_javascript`, you do not need 
 | `CDP_DISPATCH_TIMEOUT`                                     | Background tab execution timed out under heavy system throttling.          | Retry action or briefly switch tab to foreground.                         |
 | `Security check failed: Domain changed`                    | Navigation occurred between screenshot capture and coordinate action.      | Call `chrome_read_dom` or `chrome_take_screenshot` to re-align state.     |
 | `Tool X is not exposed under the ... profile`              | Tool is hidden under active profile (`core`/`crawl`).                      | Call `chrome_tool_docs({ category: "<cat>", activateForSession: true })`. |
-| `Tool X is not a BrowserClaw tool`                         | Non-existent tool name requested.                                          | Consult `tools/list` (47 canonical tools available).                      |
+| `Tool X is not a BrowserClaw tool`                         | Non-existent tool name requested.                                          | Consult `tools/list` (48 canonical tools available).                      |
 | `captureScreenshot returned empty data for background tab` | Background tab was closed or discarded by Chrome memory saver.             | Re-open or navigate to target URL.                                        |
 | `Failed to ... index [X] in cross-origin frame`            | Child iframe was unmounted or restricted by sandbox permissions.           | Inspect frame status using `chrome_read_dom({ filter: "interactive" })`.  |
 | `Message sender rejected / unauthenticated content script` | Security guard blocked unauthorized message sender (`_sender.tab`).        | Ensure requests originate from authentic native bridge channels.          |
@@ -318,5 +318,5 @@ pnpm build
 | :----------------------- | :----------------------------- | :------------------------------------------------------ |
 | **Chrome MV3 Extension** | `app/chrome-extension/`        | `app/chrome-extension/.output/chrome-mv3`               |
 | **Native Bridge Server** | `app/native-server/`           | `127.0.0.1:12306` (Token: `~/.chrome-mcp/bridge-token`) |
-| **Shared Tool Schemas**  | `packages/shared/src/tools.ts` | 47 canonical MCP tool definitions                       |
+| **Shared Tool Schemas**  | `packages/shared/src/tools.ts` | 48 canonical MCP tool definitions                       |
 | **Diagnostics & Repair** | `skill/config/`                | `doctor.mjs`, `mcp-config.json`, `repair.bat`           |

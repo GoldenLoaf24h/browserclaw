@@ -50,7 +50,13 @@ export interface StepRecord {
 export type DecisionEngineType = 'jev' | 'heuristic';
 
 export type ActTowardGoalStatus =
-  'done' | 'escalate' | 'stuck' | 'blocked' | 'max_steps' | 'timeout';
+  'done' | 'escalate' | 'stuck' | 'blocked' | 'max_steps' | 'timeout' | 'paused';
+
+export interface PausedBeforeAction {
+  action: string;
+  target?: string;
+  matchedKeyword: string;
+}
 
 export type FallbackReason =
   'no_api_key' | 'invalid_key' | 'quota_exhausted' | 'rate_limited' | 'network_error' | null;
@@ -62,6 +68,7 @@ export interface ActTowardGoalParams {
   timeoutMs?: number;
   textHint?: string;
   confidenceThreshold?: number;
+  pauseBeforeKeywords?: string[];
   sessionId?: string;
   sessionContext?: string;
   _meta?: {
@@ -76,6 +83,7 @@ export interface ActTowardGoalResult {
   engineSwitched: boolean;
   fallbackReason: FallbackReason;
   reason?: string;
+  pausedBeforeAction?: PausedBeforeAction;
   steps: StepRecord[];
   finalPage: JevPageState;
   currentElements?: string[];

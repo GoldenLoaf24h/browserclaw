@@ -66,6 +66,9 @@ interface ExtensionRequestPayload {
   data?: unknown;
 }
 
+import { MediaAssetEntry, mediaAssetStore } from '../media-asset-store';
+export { MediaAssetEntry, mediaAssetStore };
+
 // ============================================================
 // Server Class
 // ============================================================
@@ -317,6 +320,28 @@ export class Server {
             message: `Failed to reload extension: ${err.message}`,
           });
         }
+      },
+    );
+
+    // GET /media-asset/:assetId: Stream media asset for extension chrome_insert_media
+    this.fastify.get(
+      '/media-asset/:assetId',
+      async (request: FastifyRequest<{ Params: { assetId: string } }>, reply: FastifyReply) => {
+        const { assetId } = request.params;
+        const entry = mediaAssetStore.get(assetId);
+        if (!entry) {
+          return reply.status(404).send({ error: 'Media asset not found or expired' });
+        }
+        reply.header('Content-Type', entry.mimeType || 'application/octet-stream');
+        reply.header('Content-Disposition', `inline; filename="${entry.fileName}"`);
+        if (entry.buffer) {
+          return reply.send(entry.buffer);
+        }
+        if (entry.filePath) {
+          const fs = await import('fs');
+          return reply.send(fs.createReadStream(entry.filePath));
+        }
+        return reply.status(404).send({ error: 'No media content' });
       },
     );
   }

@@ -8,6 +8,8 @@ import * as https from 'https';
 import fetch from 'node-fetch';
 
 import * as dns from 'dns';
+import { mediaAssetStore } from './media-asset-store';
+import { getChromeMcpPort, SERVER_CONFIG } from './constant';
 
 /**
  * Parses IPv6 address into 8 16-bit numeric blocks, supporting compression (::)
@@ -381,6 +383,11 @@ export class FileHandler {
           return await this.readBase64File(filePath);
         }
 
+        case 'readMediaFile': {
+          if (!filePath) return { success: false, error: 'filePath is required' };
+          return await this.readMediaFile(filePath);
+        }
+
         case 'cleanupFile':
           return await this.cleanupFile(filePath);
 
@@ -621,6 +628,71 @@ export class FileHandler {
       };
     } catch (error) {
       throw new Error(`Failed to verify file: ${error}`);
+    }
+  }
+
+  /**
+   * Read media file from local disk (images, videos, documents)
+   * Supports files up to MAX_DOWNLOAD_SIZE (50MB).
+   */
+  async readMediaFile(filePath: string): Promise<any> {
+    try {
+      const resolvedPath = path.resolve(filePath);
+      if (!fs.existsSync(resolvedPath)) {
+        throw new Error(`Media file does not exist: ${filePath}`);
+      }
+      const stats = fs.statSync(resolvedPath);
+      if (!stats.isFile()) {
+        throw new Error(`Path is not a file: ${filePath}`);
+      }
+      if (stats.size > MAX_DOWNLOAD_SIZE) {
+        throw new Error(`File size (${stats.size} bytes) exceeds limit of 50MB`);
+      }
+      const ext = path.extname(resolvedPath).toLowerCase();
+      let mimeType = 'application/octet-stream';
+      if (ext === '.png') mimeType = 'image/png';
+      else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+      else if (ext === '.gif') mimeType = 'image/gif';
+      else if (ext === '.webp') mimeType = 'image/webp';
+      else if (ext === '.svg') mimeType = 'image/svg+xml';
+      else if (ext === '.mp4') mimeType = 'video/mp4';
+      else if (ext === '.webm') mimeType = 'video/webm';
+      else if (ext === '.pdf') mimeType = 'application/pdf';
+
+      if (stats.size > 650 * 1024) {
+        const assetId = crypto.randomUUID();
+        mediaAssetStore.set(assetId, {
+          filePath: resolvedPath,
+          mimeType,
+          fileName: path.basename(resolvedPath),
+        });
+        const port = getChromeMcpPort();
+        return {
+          success: true,
+          filePath: resolvedPath,
+          fileName: path.basename(resolvedPath),
+          size: stats.size,
+          mimeType,
+          mediaUrl: `http://${SERVER_CONFIG.HOST}:${port}/media-asset/${assetId}`,
+        };
+      }
+
+      const buf = await fs.promises.readFile(resolvedPath);
+      const base64 = buf.toString('base64');
+
+      return {
+        success: true,
+        filePath: resolvedPath,
+        fileName: path.basename(resolvedPath),
+        size: stats.size,
+        mimeType,
+        base64Data: base64,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to read media file: ${error instanceof Error ? error.message : String(error)}`,
+      };
     }
   }
 

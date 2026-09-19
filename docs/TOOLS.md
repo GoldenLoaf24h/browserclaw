@@ -5,7 +5,7 @@
 | Profile            | Tool Count | Approximate Prompt Footprint | Description                                                                           |
 | :----------------- | :--------: | :--------------------------: | :------------------------------------------------------------------------------------ |
 | **core** (default) |     14     |        ~11.5k tokens         | High-frequency essentials: 1-based DOM indexing, form filling, visual actions, grep   |
-| **full**           |     47     |        ~19.5k tokens         | Complete canonical tool surface: raw CDP access, tab groups, diagnostics, performance |
+| **full**           |     48     |        ~19.5k tokens         | Complete canonical tool surface: raw CDP access, tab groups, diagnostics, performance |
 | **crawl**          |     12     |         ~5.8k tokens         | High-throughput web extraction, markdown summarization, and media inspection          |
 
 Tools hidden under the active profile can be inspected and dynamically activated for the session via `chrome_tool_docs` without restarting the server.
@@ -156,6 +156,7 @@ Autonomous semantic micro-loop that perceives, decides, and acts toward a natura
 - `timeoutMs` — Total execution timeout in milliseconds (default: 90000, max: 300000)
 - `textHint` — Explicit text hint to enter when typing, if not clearly quoted in goal
 - `confidenceThreshold` — Minimum confidence threshold to commit an action (default: 0.55)
+- `pauseBeforeKeywords` — List of keywords (e.g. ["Post", "Submit", "Pay"]). If the predicted action targets an element whose label, text, or role matches any keyword, the micro-loop suspends before execution and returns status "paused" with target element context for System 2 confirmation.
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
 - `sessionContext` — Optional alias for sessionId
 
@@ -234,6 +235,22 @@ Upload files to web forms with file input elements using Chrome DevTools Protoco
 - `fileName` — Optional filename when using base64 or URL (default: "uploaded-file")
 - `multiple` — Whether the input accepts multiple files (default: false)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
+
+### `chrome_insert_media`
+
+Injects an image or media asset from local disk, URL, or base64 into a rich-text composer (e.g. Reddit, Twitter/X, Notion, Discord, Slack, GitHub) or targeted element via synthesized ClipboardEvent("paste") and DragEvent("drop") containing a real File object in DataTransfer, bypassing browser clipboard security sandboxes.
+
+- `filePath` — Absolute or relative path to the image or media file on local disk (e.g. "C:\Users\...\diagram.png" or "/home/.../photo.jpg")
+- `fileUrl` — Remote HTTP/HTTPS URL to fetch the image or media asset from
+- `base64Data` — Base64-encoded media data string, optionally with "data:`<mime>`;base64," prefix
+- `fileName` — Optional filename to associate with the injected file (e.g. "architecture.png")
+- `mimeType` — MIME type of the media (e.g. "image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"). Auto-detected if omitted.
+- `index` — 1-based compact element index from chrome_read_dom targeting the rich-text editor or composer. Defaults to active element or discovered composer.
+- `selector` — CSS selector for the target container (optional fallback for index)
+- `tabId` — Target tab ID (optional, defaults to active tab)
+- `windowId` — Target window ID (optional)
+- `sessionId` — Session identifier for tab affinity binding
+- `sessionContext` — Optional alias for sessionId
 
 ### `chrome_handle_dialog`
 

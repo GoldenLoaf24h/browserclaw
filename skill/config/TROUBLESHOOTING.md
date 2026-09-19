@@ -164,5 +164,5 @@ Windows users can also double-click [`skill/config/repair.bat`](./repair.bat) or
 | :----------------------- | :----------------------------- | :------------------------------------------------------ |
 | **Chrome MV3 Extension** | `app/chrome-extension/`        | `app/chrome-extension/.output/chrome-mv3`               |
 | **Native Bridge Server** | `app/native-server/`           | `127.0.0.1:12306` (Token: `~/.chrome-mcp/bridge-token`) |
-| **MCP Tool Contract**    | `packages/shared/src/tools.ts` | 47 canonical MCP tool definitions                       |
+| **MCP Tool Contract**    | `packages/shared/src/tools.ts` | 48 canonical MCP tool definitions                       |
 | **Diagnostics & Repair** | `skill/config/`                | `doctor.mjs`, `mcp-config.json`, `repair.bat`           |

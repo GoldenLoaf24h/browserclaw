@@ -12,6 +12,7 @@ import {
   FallbackReason,
   JevHistoryItem,
   JevPageState,
+  PausedBeforeAction,
   StepRecord,
 } from './types';
 import {
@@ -27,6 +28,25 @@ import {
   validateChoice,
 } from './jev-client';
 import { HeuristicEngine } from './heuristic-engine';
+
+/**
+ * Match element text or action against configured safety breakpoints.
+ */
+export function findMatchingPauseKeyword(targetText: string, keywords?: string[]): string | null {
+  if (!targetText || !keywords || !Array.isArray(keywords) || keywords.length === 0) {
+    return null;
+  }
+  const textLower = targetText.toLowerCase();
+  for (const kw of keywords) {
+    if (!kw || typeof kw !== 'string') continue;
+    const cleanKw = kw.trim();
+    if (!cleanKw) continue;
+    if (textLower.includes(cleanKw.toLowerCase())) {
+      return cleanKw;
+    }
+  }
+  return null;
+}
 
 export class FastDecisionEngine {
   private jevClient: JevClientWrapper;
@@ -407,6 +427,36 @@ export class FastDecisionEngine {
             targetIndex = parseInt(chosen, 10);
             targetLine = currentElements.find((l) => l.startsWith(`[${chosen}]`)) || `[${chosen}]`;
 
+            // Safety Breakpoint Guard priority check: if candidate matches pauseBeforeKeywords, pause instead of escalate
+            if (
+              params.pauseBeforeKeywords &&
+              Array.isArray(params.pauseBeforeKeywords) &&
+              params.pauseBeforeKeywords.length > 0
+            ) {
+              const checkTarget = `${actionToTake} ${targetLine || ''}`;
+              const matchedKw = findMatchingPauseKeyword(checkTarget, params.pauseBeforeKeywords);
+              if (matchedKw) {
+                return this.formatResult(
+                  'paused',
+                  engine,
+                  engineSwitched,
+                  fallbackReason,
+                  `Action execution suspended before committing "${actionToTake}" on target "${targetLine || 'element'}" matching pause keyword "${matchedKw}"`,
+                  steps,
+                  finalPage,
+                  currentElements,
+                  jevCalls,
+                  inputTokens,
+                  {
+                    action: actionToTake,
+                    target:
+                      targetLine || (targetIndex !== undefined ? `[${targetIndex}]` : undefined),
+                    matchedKeyword: matchedKw,
+                  },
+                );
+              }
+            }
+
             // Destructive keyword check on target element
             if (isDestructiveTarget(targetLine)) {
               return this.formatResult(
@@ -443,6 +493,50 @@ export class FastDecisionEngine {
       // If engine is heuristic (either by default or downgraded)
       if (engine === 'heuristic') {
         const decision = this.heuristicEngine.evaluate(params.goal, currentElements, history);
+        actionToTake = decision.action;
+        targetIndex = decision.targetIndex;
+        targetLine = decision.targetLine || (targetIndex ? `[${targetIndex}]` : '');
+        confidence = decision.confidence;
+
+        // Safety Breakpoint Guard priority check: if candidate matches pauseBeforeKeywords, pause instead of escalate
+        if (
+          params.pauseBeforeKeywords &&
+          Array.isArray(params.pauseBeforeKeywords) &&
+          params.pauseBeforeKeywords.length > 0
+        ) {
+          let pauseAction = actionToTake;
+          if (pauseAction === 'escalate') {
+            if (targetLine && /(textbox|searchbox|input)/i.test(targetLine)) {
+              pauseAction = 'type';
+            } else if (targetLine && /(select|combobox)/i.test(targetLine)) {
+              pauseAction = 'select';
+            } else {
+              pauseAction = 'click';
+            }
+          }
+          const checkTarget = `${pauseAction} ${targetLine || ''}`;
+          const matchedKw = findMatchingPauseKeyword(checkTarget, params.pauseBeforeKeywords);
+          if (matchedKw) {
+            return this.formatResult(
+              'paused',
+              engine,
+              engineSwitched,
+              fallbackReason,
+              `Action execution suspended before committing "${pauseAction}" on target "${targetLine || 'element'}" matching pause keyword "${matchedKw}"`,
+              steps,
+              finalPage,
+              currentElements,
+              jevCalls,
+              inputTokens,
+              {
+                action: pauseAction,
+                target: targetLine || (targetIndex !== undefined ? `[${targetIndex}]` : undefined),
+                matchedKeyword: matchedKw,
+              },
+            );
+          }
+        }
+
         if (decision.shouldEscalate) {
           return this.formatResult(
             'escalate',
@@ -457,11 +551,35 @@ export class FastDecisionEngine {
             inputTokens,
           );
         }
+      }
 
-        actionToTake = decision.action;
-        targetIndex = decision.targetIndex;
-        targetLine = decision.targetLine || (targetIndex ? `[${targetIndex}]` : '');
-        confidence = decision.confidence;
+      // Safety Breakpoint Guard (§Issue 2): pauseBeforeKeywords
+      if (
+        params.pauseBeforeKeywords &&
+        Array.isArray(params.pauseBeforeKeywords) &&
+        params.pauseBeforeKeywords.length > 0
+      ) {
+        const checkTarget = `${actionToTake} ${targetLine || ''}`;
+        const matchedKw = findMatchingPauseKeyword(checkTarget, params.pauseBeforeKeywords);
+        if (matchedKw) {
+          return this.formatResult(
+            'paused',
+            engine,
+            engineSwitched,
+            fallbackReason,
+            `Action execution suspended before committing "${actionToTake}" on target "${targetLine || 'element'}" matching pause keyword "${matchedKw}"`,
+            steps,
+            finalPage,
+            currentElements,
+            jevCalls,
+            inputTokens,
+            {
+              action: actionToTake,
+              target: targetLine || (targetIndex !== undefined ? `[${targetIndex}]` : undefined),
+              matchedKeyword: matchedKw,
+            },
+          );
+        }
       }
 
       // Step 3: Execute Action
@@ -763,6 +881,7 @@ export class FastDecisionEngine {
     currentElements: string[],
     jevCalls: number,
     inputTokens: number,
+    pausedBeforeAction?: PausedBeforeAction,
   ): ActTowardGoalResult {
     const estCostUsd = (inputTokens / 1_000_000) * 0.042;
 
@@ -772,10 +891,11 @@ export class FastDecisionEngine {
       engineSwitched,
       fallbackReason,
       ...(reason ? { reason } : {}),
+      ...(pausedBeforeAction ? { pausedBeforeAction } : {}),
       steps,
       finalPage,
-      ...(status === 'escalate' || status === 'stuck'
-        ? { currentElements: currentElements.slice(0, 60) }
+      ...(status === 'escalate' || status === 'stuck' || status === 'paused'
+        ? { currentElements: currentElements.slice(0, 100) }
         : {}),
       ...(jevCalls > 0
         ? {

@@ -9,7 +9,7 @@ BrowserClaw is a high-performance Model Context Protocol (MCP) server engineered
 ## Monorepo Architecture (pnpm)
 
 1. **`packages/shared`** (`chrome-mcp-shared`):
-   - **Single Source of Truth**: Houses all 47 canonical MCP tool schemas (`TOOL_SCHEMAS`), tool profiles (`core`: 14, `crawl`: 12, `full`: 47), the `UnifiedLocatorOptions` coordinate contract, and standardized error formatters.
+   - **Single Source of Truth**: Houses all 48 canonical MCP tool schemas (`TOOL_SCHEMAS`), tool profiles (`core`: 14, `crawl`: 12, `full`: 48), the `UnifiedLocatorOptions` coordinate contract, and standardized error formatters.
 2. **`app/native-server`** (`mcp-chrome-bridge`):
    - **Fastify Native Host**: Manages dual MCP transports (Stdio and HTTP/SSE on `127.0.0.1:12306`), `McpSessionManager` (isolated per-session server instances with 10-minute idle eviction), `bridge-token` authentication, and Chromium performance trace analyzers.
 3. **`app/chrome-extension`** (`chrome-mcp-server`):
@@ -18,7 +18,7 @@ BrowserClaw is a high-performance Model Context Protocol (MCP) server engineered
 ## Key Architectural Principles
 
 - **Tool Surface Strict Parity**: The runtime `toolsMap` is strictly derived from `TOOL_SCHEMAS`. Internal helper executors cannot be invoked directly without explicit schema declaration (guaranteed by tool surface parity test suites).
-- **Profile Layering & Dynamic Discovery**: Features 3 primary profiles (`core`: 14, `crawl`: 12, `full`: 47) across 8 tool categories (`navigate`, `perceive`, `act`, `observe`, `manage`, `diagnose`, `network`, `crawl`). Hidden tools can be inspected via `chrome_tool_docs` and dynamically activated on-demand (`activateForSession: true`) across both HTTP and Stdio without process restarts.
+- **Profile Layering & Dynamic Discovery**: Features 3 primary profiles (`core`: 14, `crawl`: 12, `full`: 48) across 8 tool categories (`navigate`, `perceive`, `act`, `observe`, `manage`, `diagnose`, `network`, `crawl`). Hidden tools can be inspected via `chrome_tool_docs` and dynamically activated on-demand (`activateForSession: true`) across both HTTP and Stdio without process restarts.
 - **Autonomous DOM Diff Piggybacking**: Interactive tools (`chrome_interact_index`, `chrome_fill_index`, `chrome_batch_actions`) support `includeDelta: true`, returning local element mutations directly in the action response to eliminate 50% of round-trip inspection overhead.
 - **Targeted Grep Optimization**: `chrome_grep` supports multi-frame hierarchical remapping and matches against text, `placeholder`, `aria-label`, and `value`. It provides three distinct search modes (interactive elements, full DOM, and plain text), eliminating wasteful multi-thousand-token full DOM dumps.
 - **Closed-Loop Action Pipelines**: `chrome_batch_actions` chains discrete clicks, fills, waits, assertions (`assert`), and field extractions (`extract`) within a single network round-trip, supporting cross-origin iframe coordinate translation.

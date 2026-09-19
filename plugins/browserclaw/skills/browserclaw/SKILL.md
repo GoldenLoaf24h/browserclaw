@@ -13,20 +13,21 @@ Control Google Chrome via the **BrowserClaw MCP Server**. BrowserClaw runs direc
 
 Activate this skill when the user asks to browse, interact with websites, search Google/Amazon, read web pages, submit forms, scrape dynamic content, automate web workflows, or operate on Chrome.
 
-| User Intent / Trigger Scenario            | Primary Tool / Pipeline                        | Strategy & Key Arguments                                                                                    |
-| :---------------------------------------- | :--------------------------------------------- | :---------------------------------------------------------------------------------------------------------- |
-| **Navigate to URL or open page**          | `chrome_navigate`                              | `{ url: "...", background: true }` opens in background without stealing focus.                              |
-| **Read page content / documentation**     | `chrome_get_markdown`                          | Extract clean, structured text stripped of layout blobs (`fit: true` for main body).                        |
-| **Quick text / element search**           | `chrome_grep`                                  | Search without full DOM dump: `{ query: "...", searchType: "interactive_only" }`.                           |
-| **On-page interactive goals** _(Default)_ | `chrome_act_toward_goal`                       | **System 1 default**: `{ goal: "...", maxSteps: 10 }` (local 200–400ms micro-loop).                         |
-| **Single input submission (Zero-RTT)**    | `chrome_fill_index`                            | `{ index: 2, text: "developer@example.com", clear: true, pressEnter: true }` in 1 turn.                     |
-| **Deterministic atomic click / hover**    | `chrome_interact_index`                        | `{ index: 1, action: "click" }` dispatches native CDP event (`isTrusted: true`).                            |
-| **Multi-step sequence / assertions**      | `chrome_batch_actions`                         | Pipeline fills, clicks, waits, and assertions in 1 turn (_see `references/batch-pipeline.md`_).             |
-| **Autonomous multi-step wizard / form**   | `chrome_form_pipeline`                         | Advance surveys, onboarding, or multi-field forms (_see `references/batch-pipeline.md`_).                   |
-| **Dynamic script / authenticated API**    | `chrome_javascript` / `chrome_network_request` | Evaluate JS (`{ code: "..." }`) with `mcp.*` helpers; fetch JSON bypassing UI.                              |
-| **Canvas / WebGL / visual icons**         | `chrome_screenshot` + `chrome_computer`        | High-DPI 1:1 grid (`{ grid: true, format: "webp" }`) + PCIE clicks (_see `references/visual-fallback.md`_). |
-| **CAPTCHA / 2FA / Payment Handoff**       | `chrome_request_human_intervention`            | Mount frosted-glass banner, park cursor, safely yield to human user.                                        |
-| **Tab / Window discovery & hygiene**      | `get_windows_and_tabs` / `chrome_close_tabs`   | Inspect active tabs; close background tabs (`confirm: true` protects active tab).                           |
+| User Intent / Trigger Scenario            | Primary Tool / Pipeline                        | Strategy & Key Arguments                                                                                                |
+| :---------------------------------------- | :--------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------- |
+| **Navigate to URL or open page**          | `chrome_navigate`                              | `{ url: "...", background: true }` opens in background without stealing focus.                                          |
+| **Read page content / documentation**     | `chrome_get_markdown`                          | Extract clean, structured text stripped of layout blobs (`fit: true` for main body).                                    |
+| **Quick text / element search**           | `chrome_grep`                                  | Search without full DOM dump: `{ query: "...", searchType: "interactive_only" }`.                                       |
+| **On-page interactive goals** _(Default)_ | `chrome_act_toward_goal`                       | **System 1 default**: `{ goal: "...", maxSteps: 10, pauseBeforeKeywords: ["Post", "Submit"] }` with safety breakpoints. |
+| **Insert image / media into composer**    | `chrome_insert_media`                          | Synthesize real File paste/drop into Draft.js/Lexical/Reddit/Twitter: `{ filePath: "D:/diagram.png", index: 3 }`.       |
+| **Single input submission (Zero-RTT)**    | `chrome_fill_index`                            | `{ index: 2, text: "developer@example.com", clear: true, pressEnter: true }` in 1 turn (preserves multiline `\n`).      |
+| **Deterministic atomic click / hover**    | `chrome_interact_index`                        | `{ index: 1, action: "click" }` dispatches native CDP event (`isTrusted: true`).                                        |
+| **Multi-step sequence / assertions**      | `chrome_batch_actions`                         | Pipeline fills, clicks, waits, and assertions in 1 turn (_see `references/batch-pipeline.md`_).                         |
+| **Autonomous multi-step wizard / form**   | `chrome_form_pipeline`                         | Advance surveys, onboarding, or multi-field forms (_see `references/batch-pipeline.md`_).                               |
+| **Dynamic script / authenticated API**    | `chrome_javascript` / `chrome_network_request` | Evaluate JS (`{ code: "..." }`) with `mcp.*` helpers; fetch JSON bypassing UI.                                          |
+| **Canvas / WebGL / visual icons**         | `chrome_screenshot` + `chrome_computer`        | High-DPI 1:1 grid (`{ grid: true, format: "webp" }`) + PCIE clicks (_see `references/visual-fallback.md`_).             |
+| **CAPTCHA / 2FA / Payment Handoff**       | `chrome_request_human_intervention`            | Mount frosted-glass banner, park cursor, safely yield to human user.                                                    |
+| **Tab / Window discovery & hygiene**      | `get_windows_and_tabs` / `chrome_close_tabs`   | Inspect active tabs; close background tabs (`confirm: true` protects active tab).                                       |
 
 ---
 
@@ -93,6 +94,7 @@ BrowserClaw divides responsibilities between two complementary reasoning layers:
   ```
 - **Inspect Returned Status**:
   - `status === "done"`: Sub-goal achieved. Continue to next macro step.
+  - `status === "paused"`: Safety breakpoint triggered by `pauseBeforeKeywords` (e.g. `["Post", "Submit"]`). Returns `pausedBeforeAction` and `currentElements` so System 2 can review and explicitly commit.
   - `status === "escalate"`: Jev detected sensitive keywords (pay, delete, buy, submit), ambiguity, or low confidence. The response carries `currentElements` containing indexed candidates. Proceed to Step 3.
   - `status === "stuck"`: 3 consecutive steps without DOM or URL change. Proceed to Step 3.
   - `status === "blocked"`: Captcha or bot-wall detected. Call Tier 4 `chrome_request_human_intervention`.
@@ -104,6 +106,7 @@ BrowserClaw divides responsibilities between two complementary reasoning layers:
 - Execute targeted atomic action:
   - Click: `chrome_interact_index { index: 1, action: "click" }`.
   - Input: `chrome_fill_index { index: 2, text: "developer@example.com", clear: true, pressEnter: true }`.
+  - Media: `chrome_insert_media { index: 3, filePath: "D:/diagram.png" }`.
   - Multi-action: `chrome_batch_actions { actions: [{ type: "fill", index: 2, text: "a@b.com", clear: true, pressEnter: true }, { type: "click", index: 4 }, { type: "wait", durationMs: 300 }], waitForSettle: true }` _(see `references/batch-pipeline.md`)_.
 
 ### Step 4: Verify & Recover
@@ -117,14 +120,26 @@ BrowserClaw divides responsibilities between two complementary reasoning layers:
 
 ### `chrome_act_toward_goal`
 
-- **Input**: `{ goal: string, tabId?: number, maxSteps?: number, timeoutMs?: number, confidenceThreshold?: number, textHint?: string }`
-- **Output**: `{ status: "done"|"escalate"|"stuck"|"blocked", engine: "jev"|"heuristic", steps: [...], finalPage: { url, title }, currentElements: string[], jevUsage: { calls, inputTokens, estCostUsd } }`
+- **Input**: `{ goal: string, tabId?: number, maxSteps?: number, timeoutMs?: number, confidenceThreshold?: number, textHint?: string, pauseBeforeKeywords?: string[] }`
+- **Output**: `{ status: "done"|"escalate"|"stuck"|"blocked"|"paused", engine: "jev"|"heuristic", steps: [...], finalPage: { url, title }, currentElements: string[], pausedBeforeAction?: { action, target, matchedKeyword }, jevUsage: { calls, inputTokens, estCostUsd } }`
+
+### `chrome_insert_media`
+
+- **Input**: `{ filePath?: string, fileUrl?: string, mediaUrl?: string, base64Data?: string, index?: number, selector?: string, fileName?: string, mimeType?: string }`
+- **Output**: `{ success: boolean, target: object, dispatchedEvents: string[], file: { name, mimeType, sizeBytes }, message: string }`
+- Injects local or remote images/diagrams into rich text editors (Draft.js, Lexical, Slate, Reddit, Twitter) via synthesized `ClipboardEvent('paste')` and `DragEvent('drop')` containing a real `File` in `DataTransfer`. Native server streams files up to 50MB without buffer crash.
 
 ### `chrome_read_dom`
 
 - **Input**: `{ selector?: string, isolateModal?: boolean, viewportOnly?: boolean, limit?: number }`
 - **Output**: `{ treeString: string, totalIndexed: number, tabUrl: string, tabTitle: string }`
 - Prunes off-screen and occluded elements into a compact 1-based index hierarchy (`[1]`, `[2]`, `[3]`).
+
+### `chrome_smart_scroll`
+
+- **Input**: `{ direction?: "down"|"up"|"left"|"right", amount?: "page"|"half_page"|number, selector?: string, index?: number, coordinate?: object }`
+- **Output**: `{ success: boolean, scrolledElement: string, pixelsScrolled: number, remaining: { pages_down, pages_up } }`
+- Powered by Priority Scroll Engine: evaluates horizontal center proximity, penalizes narrow sidebars (<300px, `nav`, `aside`), boosts main content/articles, and prioritizes document window scroll over navigation sidebars.
 
 ### `chrome_interact_index`
 
@@ -135,6 +150,7 @@ BrowserClaw divides responsibilities between two complementary reasoning layers:
 
 - **Input**: `{ index: number, text: string, clear?: boolean, pressEnter?: boolean, includeDelta?: boolean }`
 - **Output**: `{ success: boolean, valueCommitted: string, mutated: boolean, delta?: object }`
+- Preserves multiline `\n` linebreaks across rich-text composers (Draft.js, Lexical, ProseMirror, Slate) via physical CDP `Enter` keystrokes and DOM paragraph commands.
 
 ### `chrome_batch_actions`
 

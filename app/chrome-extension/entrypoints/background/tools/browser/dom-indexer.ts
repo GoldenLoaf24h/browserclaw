@@ -150,7 +150,8 @@ export function describeHitTarget(element: Element): string {
  * Prevents non-standard interactive SVG elements from being pruned as decorative.
  */
 export function isInteractiveSvgNode(el: Element, style?: CSSStyleDeclaration): boolean {
-  if (!el || (typeof Element !== 'undefined' && !(el instanceof Element) && !(el as any).tagName)) return false;
+  if (!el || (typeof Element !== 'undefined' && !(el instanceof Element) && !(el as any).tagName))
+    return false;
   const tag = (el.tagName || '').toLowerCase();
   const isSvg =
     tag === 'svg' ||
@@ -539,7 +540,10 @@ export function inPageScrollToIndex(index: number): boolean {
     const scrollMarginTop = parseFloat(elStyle?.scrollMarginTop || '0') || 0;
     const scrollMarginBottom = parseFloat(elStyle?.scrollMarginBottom || '0') || 0;
     const safeTop = Math.min(Math.max(margins.top, scrollMarginTop, 80), Math.round(vh * 0.35));
-    const safeBottom = Math.min(Math.max(margins.bottom, scrollMarginBottom, 80), Math.round(vh * 0.35));
+    const safeBottom = Math.min(
+      Math.max(margins.bottom, scrollMarginBottom, 80),
+      Math.round(vh * 0.35),
+    );
 
     try {
       const r = el.getBoundingClientRect();
@@ -764,10 +768,9 @@ export function detectEditorSemantics(el: Element): {
   const hasSearchAncestor =
     typeof el.closest === 'function' &&
     Boolean(el.closest('[role="search"], form[role="search"], .search-box, .search-form'));
-  const matchesSearchText =
-    /(search|query|find|sousuo|搜索|查找)/i.test(
-      `${id} ${name} ${ariaLabel} ${placeholder} ${dataTestId}`,
-    );
+  const matchesSearchText = /(search|query|find|sousuo|搜索|查找)/i.test(
+    `${id} ${name} ${ariaLabel} ${placeholder} ${dataTestId}`,
+  );
 
   const isSearch =
     isSearchType ||
@@ -782,7 +785,7 @@ export function detectEditorSemantics(el: Element): {
   const isTwitterComposer =
     dataTestId.includes('tweettextarea') ||
     dataTestId.includes('tweet_box') ||
-    /(tweet text|post text|what is happening|what\'s happening|post your reply|compose post|compose tweet|发帖|有什么新鲜事|发布你的回复)/i.test(
+    /(tweet text|post text|what is happening|what's happening|post your reply|compose post|compose tweet|发帖|有什么新鲜事|发布你的回复)/i.test(
       `${ariaLabel} ${placeholder} ${dataTestId}`,
     );
 
@@ -799,8 +802,7 @@ export function detectEditorSemantics(el: Element): {
     el.hasAttribute('data-contents');
 
   const isMultiLineText =
-    tag === 'textarea' ||
-    (role === 'textbox' && el.getAttribute('aria-multiline') === 'true');
+    tag === 'textarea' || (role === 'textbox' && el.getAttribute('aria-multiline') === 'true');
 
   const isPostOrCommentContext =
     /(post|comment|reply|compose|tweet|thread|feed|status|feed-box|message|chat-input|editor|wysiwyg|pinglun|huifu|帖子|评论|回复)/i.test(
@@ -813,8 +815,7 @@ export function detectEditorSemantics(el: Element): {
     (isMultiLineText && isPostOrCommentContext) ||
     (isContentEditable && isTwitterComposer);
 
-  const isEditor =
-    !isComposer && (isRichEditorFramework || isMultiLineText || isContentEditable);
+  const isEditor = !isComposer && (isRichEditorFramework || isMultiLineText || isContentEditable);
 
   return { isComposer, isEditor, isSearch: false };
 }
@@ -933,7 +934,9 @@ export function detectActiveModalBlocker(win: Window = window): ActiveModalBlock
 
       const textSnippet = `${desc} ${name || ''} ${d.textContent?.slice(0, 300) || ''}`;
       const isDiscardOrConfirm =
-        /(discard|abandon|unsaved|confirm|放弃|取消|未保存|确认放弃|是否放弃|离开)/i.test(textSnippet);
+        /(discard|abandon|unsaved|confirm|放弃|取消|未保存|确认放弃|是否放弃|离开)/i.test(
+          textSnippet,
+        );
 
       // Stacking score: Top-Layer > confirmation trap > alertdialog > aria-modal > z-index > DOM order
       let score = 0;
@@ -996,9 +999,15 @@ export function inPageDOMPruner(options?: {
   exclude?: string | string[];
   isolateModal?: boolean;
 }): PrunedDOMTreeResult {
-  const isActiveViewportOnly = options?.activeViewportOnly === true || (options?.activeViewportOnly as any) === 'true';
-  const isViewportOnly = options?.viewportOnly === true || (options?.viewportOnly as any) === 'true';
-  const threshold = isActiveViewportOnly ? 0 : isViewportOnly ? 150 : (options?.viewportThreshold ?? 1000);
+  const isActiveViewportOnly =
+    options?.activeViewportOnly === true || (options?.activeViewportOnly as any) === 'true';
+  const isViewportOnly =
+    options?.viewportOnly === true || (options?.viewportOnly as any) === 'true';
+  const threshold = isActiveViewportOnly
+    ? 0
+    : isViewportOnly
+      ? 150
+      : (options?.viewportThreshold ?? 1000);
   const startingIndex = options?.startingIndex ?? 1;
   const frameId = options?.frameId;
 
@@ -1096,12 +1105,18 @@ export function inPageDOMPruner(options?: {
     return text.includes(pattern);
   }
 
-  function queryHasTextSingleSelector(root: Element | Document, selector: string, single: boolean): Element[] {
+  function queryHasTextSingleSelector(
+    root: Element | Document,
+    selector: string,
+    single: boolean,
+  ): Element[] {
     const parsed = extractFirstHasText(selector);
     if (!parsed) {
       try {
         return single
-          ? (root.querySelector(selector) ? [root.querySelector(selector)!] : [])
+          ? root.querySelector(selector)
+            ? [root.querySelector(selector)!]
+            : []
           : Array.from(root.querySelectorAll(selector));
       } catch {
         return [];
@@ -1145,7 +1160,9 @@ export function inPageDOMPruner(options?: {
         } else {
           try {
             childMatches = single
-              ? (parent.querySelector(childSel) ? [parent.querySelector(childSel)!] : [])
+              ? parent.querySelector(childSel)
+                ? [parent.querySelector(childSel)!]
+                : []
               : Array.from(parent.querySelectorAll(childSel));
           } catch {
             childMatches = [];
@@ -1170,7 +1187,9 @@ export function inPageDOMPruner(options?: {
     if (!selector.includes(':has-text(')) {
       try {
         return single
-          ? (root.querySelector(selector) ? [root.querySelector(selector)!] : [])
+          ? root.querySelector(selector)
+            ? [root.querySelector(selector)!]
+            : []
           : Array.from(root.querySelectorAll(selector));
       } catch {
         return [];
@@ -1197,7 +1216,9 @@ export function inPageDOMPruner(options?: {
     return combined;
   }
 
-  function buildExcludeChecker(exclude?: string | string[]): (el: Element, isRoot?: boolean) => boolean {
+  function buildExcludeChecker(
+    exclude?: string | string[],
+  ): (el: Element, isRoot?: boolean) => boolean {
     if (!exclude) return () => false;
     const rawList = Array.isArray(exclude) ? exclude : [exclude];
     const standardSelectors: string[] = [];
@@ -1871,9 +1892,7 @@ export function inPageDOMPruner(options?: {
         : Array.from(document.querySelectorAll(targetSelector));
       selectorMatched = allRoots.length > 0;
       // Filter out nested roots so child elements are not traversed or indexed twice
-      roots = allRoots.filter(
-        (r) => !allRoots.some((other) => other !== r && other.contains(r)),
-      );
+      roots = allRoots.filter((r) => !allRoots.some((other) => other !== r && other.contains(r)));
     } catch {
       roots = [];
       selectorMatched = false;
@@ -2362,9 +2381,7 @@ export function inPageDOMPruner(options?: {
     focusTrapped: focusTrapped || undefined,
     isConfirmationTrap: isConfirmationTrap || undefined,
     selectorMatched:
-      options?.selector !== undefined || options?.scope !== undefined
-        ? selectorMatched
-        : undefined,
+      options?.selector !== undefined || options?.scope !== undefined ? selectorMatched : undefined,
     modalIsolated: modalIsolated || undefined,
   };
 }
@@ -2446,7 +2463,8 @@ export function scrollRequestForPoint(
       ancestor !== target.ownerDocument?.body &&
       ancestor !== target.ownerDocument?.documentElement
     ) {
-      const style = typeof view.getComputedStyle === 'function' ? view.getComputedStyle(ancestor) : null;
+      const style =
+        typeof view.getComputedStyle === 'function' ? view.getComputedStyle(ancestor) : null;
       if (style) {
         const canScrollX =
           /^(auto|scroll|overlay)$/.test(style.overflowX) &&
@@ -2466,9 +2484,13 @@ export function scrollRequestForPoint(
 
           if (area.right > area.left && area.bottom > area.top) {
             let deltaX =
-              canScrollX && (x < area.left || x >= area.right) ? x - (area.left + area.right) / 2 : 0;
+              canScrollX && (x < area.left || x >= area.right)
+                ? x - (area.left + area.right) / 2
+                : 0;
             let deltaY =
-              canScrollY && (y < area.top || y >= area.bottom) ? y - (area.top + area.bottom) / 2 : 0;
+              canScrollY && (y < area.top || y >= area.bottom)
+                ? y - (area.top + area.bottom) / 2
+                : 0;
 
             if (
               (deltaX < 0 && ancestor.scrollLeft <= 0) ||
@@ -2477,7 +2499,8 @@ export function scrollRequestForPoint(
               deltaX = 0;
             if (
               (deltaY < 0 && ancestor.scrollTop <= 0) ||
-              (deltaY > 0 && ancestor.scrollTop >= ancestor.scrollHeight - ancestor.clientHeight - 1)
+              (deltaY > 0 &&
+                ancestor.scrollTop >= ancestor.scrollHeight - ancestor.clientHeight - 1)
             )
               deltaY = 0;
 
@@ -2541,7 +2564,10 @@ export function extractElementLocationDetails(el: Element): {
   const scrollMarginTop = parseFloat(elStyle?.scrollMarginTop || '0') || 0;
   const scrollMarginBottom = parseFloat(elStyle?.scrollMarginBottom || '0') || 0;
   const safeTop = Math.min(Math.max(margins.top, scrollMarginTop, 80), Math.round(vh * 0.35));
-  const safeBottom = Math.min(Math.max(margins.bottom, scrollMarginBottom, 80), Math.round(vh * 0.35));
+  const safeBottom = Math.min(
+    Math.max(margins.bottom, scrollMarginBottom, 80),
+    Math.round(vh * 0.35),
+  );
   const minSafeTop = safeTop;
   const maxSafeBottom = Math.max(minSafeTop, vh - safeBottom);
 
@@ -2680,7 +2706,7 @@ export function extractElementLocationDetails(el: Element): {
 
   const disabled = Boolean(
     (el as any).disabled === true ||
-      (typeof (el as any).hasAttribute === 'function' && el.hasAttribute('disabled')),
+    (typeof (el as any).hasAttribute === 'function' && el.hasAttribute('disabled')),
   );
   const ariaDisabled =
     typeof (el as any).getAttribute === 'function' && el.getAttribute('aria-disabled') === 'true';
@@ -2706,15 +2732,18 @@ export function extractElementLocationDetails(el: Element): {
       ? (el as any).checked
       : typeof (el as any).getAttribute === 'function' && el.getAttribute('aria-checked') === 'true'
         ? true
-        : typeof (el as any).getAttribute === 'function' && el.getAttribute('aria-checked') === 'false'
+        : typeof (el as any).getAttribute === 'function' &&
+            el.getAttribute('aria-checked') === 'false'
           ? false
           : undefined;
   const selected =
     typeof (el as any).selected === 'boolean'
       ? (el as any).selected
-      : typeof (el as any).getAttribute === 'function' && el.getAttribute('aria-selected') === 'true'
+      : typeof (el as any).getAttribute === 'function' &&
+          el.getAttribute('aria-selected') === 'true'
         ? true
-        : typeof (el as any).getAttribute === 'function' && el.getAttribute('aria-selected') === 'false'
+        : typeof (el as any).getAttribute === 'function' &&
+            el.getAttribute('aria-selected') === 'false'
           ? false
           : undefined;
 
@@ -2731,9 +2760,10 @@ export function extractElementLocationDetails(el: Element): {
     }
     // Pass 2: interactive wrapper match (e.g. inner icon/span of button/link)
     if (matchedIndex === undefined) {
-      const interactiveEl = typeof el.closest === 'function'
-        ? el.closest('button, a, input, select, textarea, [role="button"]')
-        : null;
+      const interactiveEl =
+        typeof el.closest === 'function'
+          ? el.closest('button, a, input, select, textarea, [role="button"]')
+          : null;
       if (interactiveEl && interactiveEl !== el) {
         for (const [idx, entry] of isolatedMap.entries()) {
           const target = derefElement(entry);
@@ -2753,7 +2783,10 @@ export function extractElementLocationDetails(el: Element): {
   } catch {}
 
   const elTag = el.tagName.toLowerCase();
-  const elRole = typeof el.getAttribute === 'function' ? el.getAttribute('role')?.toLowerCase() || undefined : undefined;
+  const elRole =
+    typeof el.getAttribute === 'function'
+      ? el.getAttribute('role')?.toLowerCase() || undefined
+      : undefined;
   const isClickable = Boolean(
     elTag === 'button' ||
     elTag === 'a' ||
@@ -2761,7 +2794,9 @@ export function extractElementLocationDetails(el: Element): {
     (el as HTMLInputElement).type === 'submit' ||
     (el as HTMLInputElement).type === 'button' ||
     typeof (el as any).onclick === 'function' ||
-    (typeof window !== 'undefined' && window.getComputedStyle && window.getComputedStyle(el).cursor === 'pointer')
+    (typeof window !== 'undefined' &&
+      window.getComputedStyle &&
+      window.getComputedStyle(el).cursor === 'pointer'),
   );
 
   return {
@@ -2905,13 +2940,20 @@ export function inPageSnapCoordinate(
     const tag = el.tagName.toLowerCase();
     if (/^(button|input|select|textarea|a|canvas|video|audio|summary)$/.test(tag)) return true;
     const role = el.getAttribute('role')?.toLowerCase();
-    if (role && /^(button|link|checkbox|radio|menuitem|tab|switch|option|combobox|treeitem)$/.test(role)) return true;
-    if (el.hasAttribute('onclick') || el.hasAttribute('data-action') || (el as any).onclick) return true;
-    const tabIndex = typeof (el as HTMLElement).tabIndex === 'number' ? (el as HTMLElement).tabIndex : -1;
+    if (
+      role &&
+      /^(button|link|checkbox|radio|menuitem|tab|switch|option|combobox|treeitem)$/.test(role)
+    )
+      return true;
+    if (el.hasAttribute('onclick') || el.hasAttribute('data-action') || (el as any).onclick)
+      return true;
+    const tabIndex =
+      typeof (el as HTMLElement).tabIndex === 'number' ? (el as HTMLElement).tabIndex : -1;
     if (tabIndex >= 0) return true;
     if (tag === 'svg' || (el as any).ownerSVGElement) {
       const svgRoot = tag === 'svg' ? el : (el as any).ownerSVGElement;
-      if (svgRoot && (svgRoot.hasAttribute('onclick') || svgRoot.getAttribute('role') === 'button')) return true;
+      if (svgRoot && (svgRoot.hasAttribute('onclick') || svgRoot.getAttribute('role') === 'button'))
+        return true;
     }
     if (typeof (el as any).closest === 'function') {
       try {
@@ -2974,7 +3016,11 @@ export function inPageSnapCoordinate(
         try {
           const sampleEl = document.elementFromPoint(px, py);
           let candidate: Element | null = sampleEl;
-          while (candidate && candidate !== document.body && candidate !== document.documentElement) {
+          while (
+            candidate &&
+            candidate !== document.body &&
+            candidate !== document.documentElement
+          ) {
             if (isInteractiveNode(candidate)) {
               const b = candidate.getBoundingClientRect();
               const cx = Math.max(b.left, Math.min(b.right, origX));
@@ -3007,8 +3053,12 @@ export function inPageSnapCoordinate(
     } else {
       const marginX = Math.min(12, Math.floor(bestRect.width * 0.1));
       const marginY = Math.min(12, Math.floor(bestRect.height * 0.1));
-      safeX = Math.round(Math.max(bestRect.left + marginX, Math.min(bestRect.right - marginX, origX)));
-      safeY = Math.round(Math.max(bestRect.top + marginY, Math.min(bestRect.bottom - marginY, origY)));
+      safeX = Math.round(
+        Math.max(bestRect.left + marginX, Math.min(bestRect.right - marginX, origX)),
+      );
+      safeY = Math.round(
+        Math.max(bestRect.top + marginY, Math.min(bestRect.bottom - marginY, origY)),
+      );
     }
     return {
       snapped: true,
@@ -3230,11 +3280,7 @@ export function inPageLocateByText(
 
       const vh = window.innerHeight || 800;
       const vw = window.innerWidth || 1280;
-      const inActiveViewport =
-        rect.top < vh &&
-        rect.bottom > 0 &&
-        rect.left < vw &&
-        rect.right > 0;
+      const inActiveViewport = rect.top < vh && rect.bottom > 0 && rect.left < vw && rect.right > 0;
       const viewportBonus = inActiveViewport ? 1000 : 0;
 
       const semantics = detectEditorSemantics(el);
@@ -3263,7 +3309,10 @@ export function inPageLocateByText(
           placeholder === normalizedTarget
         ) {
           matchScore = 100;
-        } else if (!isExact && (elText.includes(normalizedTarget) || ariaLabel.includes(normalizedTarget))) {
+        } else if (
+          !isExact &&
+          (elText.includes(normalizedTarget) || ariaLabel.includes(normalizedTarget))
+        ) {
           matchScore = 50;
         }
 
@@ -3711,7 +3760,7 @@ export function inPageFillIndex(
     const editTarget =
       (el as HTMLElement).isContentEditable || el.getAttribute('contenteditable') === 'true'
         ? (el as HTMLElement)
-        : ((el.querySelector?.('[contenteditable="true"]') as HTMLElement) || (el as HTMLElement));
+        : (el.querySelector?.('[contenteditable="true"]') as HTMLElement) || (el as HTMLElement);
 
     if (clear) {
       const sel = window.getSelection();
@@ -3726,12 +3775,63 @@ export function inPageFillIndex(
       }
       editTarget.innerText = '';
     }
-    let inserted = false;
-    try {
-      inserted = document.execCommand('insertText', false, textToFill);
-    } catch {}
-    if (!inserted) {
-      editTarget.innerText = textToFill;
+    const lines = textToFill ? textToFill.split(/\r?\n/) : [];
+    if (lines.length > 1) {
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].length > 0) {
+          let insertedLine = false;
+          try {
+            insertedLine = document.execCommand('insertText', false, lines[i]);
+          } catch {}
+          if (!insertedLine && typeof editTarget.appendChild === 'function') {
+            editTarget.appendChild(document.createTextNode(lines[i]));
+          }
+        }
+        if (i < lines.length - 1) {
+          let paraInserted = false;
+          try {
+            paraInserted = document.execCommand('insertParagraph', false);
+          } catch {}
+          if (!paraInserted) {
+            try {
+              paraInserted = document.execCommand('insertLineBreak', false);
+            } catch {}
+          }
+          if (!paraInserted && typeof editTarget.appendChild === 'function') {
+            editTarget.appendChild(document.createElement('br'));
+          }
+          try {
+            editTarget.dispatchEvent(
+              new KeyboardEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                which: 13,
+                bubbles: true,
+                composed: true,
+              }),
+            );
+            editTarget.dispatchEvent(
+              new KeyboardEvent('keyup', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                which: 13,
+                bubbles: true,
+                composed: true,
+              }),
+            );
+          } catch {}
+        }
+      }
+    } else {
+      let inserted = false;
+      try {
+        inserted = document.execCommand('insertText', false, textToFill);
+      } catch {}
+      if (!inserted) {
+        editTarget.innerText = textToFill;
+      }
     }
     try {
       editTarget.dispatchEvent(
@@ -3797,7 +3897,9 @@ export function inPageFillIndex(
     }
   }
 
-  const verification: any = textToFill ? inPageVerifyInputCommitment(index, textToFill) : { committed: true };
+  const verification: any = textToFill
+    ? inPageVerifyInputCommitment(index, textToFill)
+    : { committed: true };
 
   return {
     success: verification.committed,
@@ -3805,7 +3907,9 @@ export function inPageFillIndex(
     index,
     tagName: el.tagName.toLowerCase(),
     filledText: textToFill,
-    ...(verification.submitButtonState ? { submitButtonState: verification.submitButtonState } : {}),
+    ...(verification.submitButtonState
+      ? { submitButtonState: verification.submitButtonState }
+      : {}),
     ...(verification.diagnostics ? { diagnostics: verification.diagnostics } : {}),
   };
 }
@@ -3829,7 +3933,12 @@ export function inPageDeepResetElement(refOrIndex: number | string): {
       ? parseInt(refOrIndex.slice(4), 10)
       : parseInt(refOrIndex, 10);
     if (isNaN(parsed)) {
-      return { success: false, cleared: false, currentLength: 0, error: `Invalid index: ${refOrIndex}` };
+      return {
+        success: false,
+        cleared: false,
+        currentLength: 0,
+        error: `Invalid index: ${refOrIndex}`,
+      };
     }
     index = parsed;
   } else {
@@ -3837,12 +3946,22 @@ export function inPageDeepResetElement(refOrIndex: number | string): {
   }
 
   if (index <= 0) {
-    return { success: false, cleared: false, currentLength: 0, error: `Index must be positive: ${index}` };
+    return {
+      success: false,
+      cleared: false,
+      currentLength: 0,
+      error: `Index must be positive: ${index}`,
+    };
   }
 
   const el = findIndexedElement(index);
   if (!el || !(el instanceof Element)) {
-    return { success: false, cleared: false, currentLength: 0, error: `Element [${index}] not found` };
+    return {
+      success: false,
+      cleared: false,
+      currentLength: 0,
+      error: `Element [${index}] not found`,
+    };
   }
 
   try {
@@ -3860,9 +3979,10 @@ export function inPageDeepResetElement(refOrIndex: number | string): {
       inputEl.select();
     } catch {}
 
-    const proto = el instanceof HTMLInputElement
-      ? window.HTMLInputElement?.prototype
-      : window.HTMLTextAreaElement?.prototype;
+    const proto =
+      el instanceof HTMLInputElement
+        ? window.HTMLInputElement?.prototype
+        : window.HTMLTextAreaElement?.prototype;
     const nativeSetter = Object.getOwnPropertyDescriptor(proto || {}, 'value')?.set;
     if (nativeSetter) {
       nativeSetter.call(inputEl, '');
@@ -3908,7 +4028,7 @@ export function inPageDeepResetElement(refOrIndex: number | string): {
   const editTarget =
     (el as HTMLElement).isContentEditable || el.getAttribute('contenteditable') === 'true'
       ? (el as HTMLElement)
-      : ((el.querySelector?.('[contenteditable="true"]') as HTMLElement) || (el as HTMLElement));
+      : (el.querySelector?.('[contenteditable="true"]') as HTMLElement) || (el as HTMLElement);
 
   try {
     if (typeof editTarget.focus === 'function') {
@@ -4032,12 +4152,24 @@ export function inPageVerifyInputCommitment(
     const editTarget =
       (el as HTMLElement).isContentEditable || el.getAttribute('contenteditable') === 'true'
         ? (el as HTMLElement)
-        : ((el.querySelector?.('[contenteditable="true"]') as HTMLElement) || (el as HTMLElement));
-    currentValue = (editTarget.innerText || editTarget.textContent || '').trim();
+        : (el.querySelector?.('[contenteditable="true"]') as HTMLElement) || (el as HTMLElement);
+    const rawText =
+      typeof editTarget.innerText === 'string' && editTarget.innerText.length > 0
+        ? editTarget.innerText
+        : editTarget.innerHTML
+          ? editTarget.innerHTML
+              .replace(/<br\s*\/?>/gi, '\n')
+              .replace(/<\/div><div>/gi, '\n')
+              .replace(/<\/p><p>/gi, '\n')
+              .replace(/<[^>]+>/g, '')
+          : editTarget.textContent || '';
+    currentValue = rawText.trim();
   }
 
   // Check nearby submit/action button state
-  let submitButtonState: { found: boolean; disabled?: boolean; text?: string; index?: number } = { found: false };
+  let submitButtonState: { found: boolean; disabled?: boolean; text?: string; index?: number } = {
+    found: false,
+  };
   try {
     let container: Element | null =
       el.closest('form') ||
@@ -4057,7 +4189,7 @@ export function inPageVerifyInputCommitment(
 
     const candidateButtons: Element[] = Array.from(
       container.querySelectorAll(
-        'button, [role="button"], input[type="submit"], input[type="button"], a.btn, a[class*="btn" i], a[class*="button" i], a[class*="submit" i], a[href*="doPostBack" i]'
+        'button, [role="button"], input[type="submit"], input[type="button"], a.btn, a[class*="btn" i], a[class*="button" i], a[class*="submit" i], a[href*="doPostBack" i]',
       ),
     );
 
@@ -4065,7 +4197,9 @@ export function inPageVerifyInputCommitment(
     const formEl = el.closest('form');
     if (formEl && formEl.id) {
       const extButtons = Array.from(
-        el.ownerDocument.querySelectorAll(`button[form="${formEl.id}"], input[form="${formEl.id}"]`),
+        el.ownerDocument.querySelectorAll(
+          `button[form="${formEl.id}"], input[form="${formEl.id}"]`,
+        ),
       );
       for (const eb of extButtons) {
         if (!candidateButtons.includes(eb)) candidateButtons.push(eb);
@@ -4076,7 +4210,7 @@ export function inPageVerifyInputCommitment(
     if (candidateButtons.length === 0 && el.parentElement?.parentElement) {
       const expanded = Array.from(
         el.parentElement.parentElement.querySelectorAll(
-          'button, [role="button"], input[type="submit"], input[type="button"], a.btn, a[class*="btn" i], a[class*="button" i]'
+          'button, [role="button"], input[type="submit"], input[type="button"], a.btn, a[class*="btn" i], a[class*="button" i]',
         ),
       );
       candidateButtons.push(...expanded);
@@ -4116,7 +4250,9 @@ export function inPageVerifyInputCommitment(
         id.includes('search') ||
         id.includes('btnsearch') ||
         href.includes('dopostback') ||
-        /(tweet|post|reply|send|submit|发布|发帖|发送|提交|ok|next|continue|确认|确定|查询|搜索|search|query|find|go|enter)/i.test(text)
+        /(tweet|post|reply|send|submit|发布|发帖|发送|提交|ok|next|continue|确认|确定|查询|搜索|search|query|find|go|enter)/i.test(
+          text,
+        )
       );
     });
 
@@ -4138,9 +4274,10 @@ export function inPageVerifyInputCommitment(
         }
         // Pass 2: interactive wrapper match (e.g. inner icon/span of button/link)
         if (candidateBtnIndex === undefined) {
-          const interactiveEl = typeof candidateBtn.closest === 'function'
-            ? candidateBtn.closest('button, a, input, select, textarea, [role="button"]')
-            : null;
+          const interactiveEl =
+            typeof candidateBtn.closest === 'function'
+              ? candidateBtn.closest('button, a, input, select, textarea, [role="button"]')
+              : null;
           if (interactiveEl && interactiveEl !== candidateBtn) {
             for (const [idx, ref] of isolatedMap.entries()) {
               const deref = derefElement(ref);
@@ -4174,7 +4311,10 @@ export function inPageVerifyInputCommitment(
       expectedText === '1' ||
       expectedText === 'checked' ||
       expectedText === 'on' ||
-      (expectedText !== 'false' && expectedText !== '0' && expectedText !== 'off' && Boolean(expectedText));
+      (expectedText !== 'false' &&
+        expectedText !== '0' &&
+        expectedText !== 'off' &&
+        Boolean(expectedText));
     const isChecked = el.checked;
     const committed = isChecked === isTruthy;
     return {
@@ -4185,7 +4325,9 @@ export function inPageVerifyInputCommitment(
       tagName: el.tagName.toLowerCase(),
       isComposer: false,
       submitButtonState: submitButtonState.found ? submitButtonState : undefined,
-      diagnostics: committed ? undefined : `Checkbox checked state (${isChecked}) did not match expected (${isTruthy})`,
+      diagnostics: committed
+        ? undefined
+        : `Checkbox checked state (${isChecked}) did not match expected (${isTruthy})`,
     };
   }
 
@@ -4204,16 +4346,18 @@ export function inPageVerifyInputCommitment(
       tagName: 'select',
       isComposer: false,
       submitButtonState: submitButtonState.found ? submitButtonState : undefined,
-      diagnostics: committed ? undefined : `Select value ("${el.value}") did not match expected ("${expectedText}")`,
+      diagnostics: committed
+        ? undefined
+        : `Select value ("${el.value}") did not match expected ("${expectedText}")`,
     };
   }
 
   function cleanAndNormalize(str: string): string {
     return str
       .replace(/[\u200B-\u200D\uFEFF]/g, '') // strip zero-width characters (Draft.js/Lexical artifacts)
-      .replace(/\u00A0/g, ' ')               // non-breaking space to normal space
-      .replace(/\r\n|\r/g, '\n')              // newline normalization
-      .replace(/[ \t]+/g, ' ')                // collapse horizontal spaces
+      .replace(/\u00A0/g, ' ') // non-breaking space to normal space
+      .replace(/\r\n|\r/g, '\n') // newline normalization
+      .replace(/[ \t]+/g, ' ') // collapse horizontal spaces
       .trim();
   }
 
@@ -4228,12 +4372,12 @@ export function inPageVerifyInputCommitment(
     // Check if input element has maxlength constraint
     const maxLen =
       el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
-        ? (el.maxLength > 0 ? el.maxLength : -1)
+        ? el.maxLength > 0
+          ? el.maxLength
+          : -1
         : -1;
     const cappedExpected =
-      maxLen > 0 && normExpected.length > maxLen
-        ? normExpected.slice(0, maxLen)
-        : normExpected;
+      maxLen > 0 && normExpected.length > maxLen ? normExpected.slice(0, maxLen) : normExpected;
 
     // Committed if current value matches or contains expected text (or matches capped by maxlength)
     committed =
@@ -4244,14 +4388,21 @@ export function inPageVerifyInputCommitment(
   }
 
   // Check if associated action button is still disabled for composer / post targets
-  const isPostOrComposer =
-    Boolean(semantics.isComposer ||
+  const isPostOrComposer = Boolean(
+    semantics.isComposer ||
     semantics.isEditor ||
     (submitButtonState.found &&
-      /^(tweet|post|reply|send|发帖|发送|发布)/i.test(submitButtonState.text || '')));
+      /^(tweet|post|reply|send|发帖|发送|发布)/i.test(submitButtonState.text || '')),
+  );
 
   let diagnostics: string | undefined;
-  if (committed && isPostOrComposer && submitButtonState.found && submitButtonState.disabled && normExpected.length > 0) {
+  if (
+    committed &&
+    isPostOrComposer &&
+    submitButtonState.found &&
+    submitButtonState.disabled &&
+    normExpected.length > 0
+  ) {
     committed = false;
     diagnostics = `Associated action button ("${submitButtonState.text || 'Submit'}") remains disabled, indicating framework reactive state (React/Draft.js) has not committed the input.`;
   } else if (!committed) {
@@ -4355,7 +4506,9 @@ export function inPageDetectPerceptiveSignature(): PerceptiveSignature {
   let stepCurrent: number | undefined;
   let stepTotal: number | undefined;
 
-  const progressBars = Array.from(doc.querySelectorAll('[role="progressbar"]')).filter(isVisibleInViewport);
+  const progressBars = Array.from(doc.querySelectorAll('[role="progressbar"]')).filter(
+    isVisibleInViewport,
+  );
   for (const pb of progressBars) {
     const valNow = pb.getAttribute('aria-valuenow');
     const valMax = pb.getAttribute('aria-valuemax');
@@ -4384,7 +4537,9 @@ export function inPageDetectPerceptiveSignature(): PerceptiveSignature {
       '[data-qa*="step" i]',
       'span, div, p',
     ].join(', ');
-    const candidates = Array.from(doc.querySelectorAll(progressCandidateSelectors)).filter(isVisibleInViewport);
+    const candidates = Array.from(doc.querySelectorAll(progressCandidateSelectors)).filter(
+      isVisibleInViewport,
+    );
     for (const c of candidates) {
       if (c.children.length > 2) continue;
       const t = (c.textContent || '').trim();
@@ -4422,7 +4577,9 @@ export function inPageDetectPerceptiveSignature(): PerceptiveSignature {
 
   const activeInputs: PerceptiveSignature['activeInputs'] = [];
   const inputElements = Array.from(
-    doc.querySelectorAll('input:not([type="hidden"]), textarea, select, [contenteditable="true"], [role="textbox"]')
+    doc.querySelectorAll(
+      'input:not([type="hidden"]), textarea, select, [contenteditable="true"], [role="textbox"]',
+    ),
   ).filter(isVisibleInViewport);
 
   let maxIdx = isolatedMap.size > 0 ? Math.max(...isolatedMap.keys()) : 0;
@@ -4460,7 +4617,9 @@ export function inPageDetectPerceptiveSignature(): PerceptiveSignature {
   // 4. Detect alerts and errors in active viewport
   const alerts: string[] = [];
   const alertElements = Array.from(
-    doc.querySelectorAll('[role="alert"], [role="status"], .error-message, [class*="error" i], [class*="invalid" i]')
+    doc.querySelectorAll(
+      '[role="alert"], [role="status"], .error-message, [class*="error" i], [class*="invalid" i]',
+    ),
   ).filter(isVisibleInViewport);
 
   for (const a of alertElements) {
@@ -4488,18 +4647,20 @@ export function inPageDetectPerceptiveSignature(): PerceptiveSignature {
 export function computePerceptiveDelta(
   pre: PerceptiveSignature | null | undefined,
   post: PerceptiveSignature | null | undefined,
-): {
-  advanced: boolean;
-  questionChanged: boolean;
-  progressChanged: boolean;
-  previousQuestion?: string;
-  currentQuestion?: string;
-  previousProgress?: string;
-  progress?: string;
-  activeInputs: PerceptiveSignature['activeInputs'];
-  errorMessage?: string;
-  urlChanged: boolean;
-} | undefined {
+):
+  | {
+      advanced: boolean;
+      questionChanged: boolean;
+      progressChanged: boolean;
+      previousQuestion?: string;
+      currentQuestion?: string;
+      previousProgress?: string;
+      progress?: string;
+      activeInputs: PerceptiveSignature['activeInputs'];
+      errorMessage?: string;
+      urlChanged: boolean;
+    }
+  | undefined {
   if (!post && !pre) return undefined;
   if (!post && pre) {
     return {
@@ -4533,19 +4694,22 @@ export function computePerceptiveDelta(
   const questionChanged = Boolean(
     (p1.question && p2.question && p1.question !== p2.question) ||
     (!p1.question && p2.question) ||
-    (p1.question && !p2.question)
+    (p1.question && !p2.question),
   );
   const progressChanged = Boolean(
     (p1.progress && p2.progress && p1.progress !== p2.progress) ||
     (!p1.progress && p2.progress) ||
-    (p1.progress && !p2.progress)
+    (p1.progress && !p2.progress),
   );
   const inputsDisappeared = Boolean(
-    (p1.activeInputs && p1.activeInputs.length > 0) &&
-    (!p2.activeInputs || p2.activeInputs.length === 0)
+    p1.activeInputs &&
+    p1.activeInputs.length > 0 &&
+    (!p2.activeInputs || p2.activeInputs.length === 0),
   );
   const stepAdvanced =
-    (typeof p2.stepCurrent === 'number' && typeof p1.stepCurrent === 'number' && p2.stepCurrent > p1.stepCurrent) ||
+    (typeof p2.stepCurrent === 'number' &&
+      typeof p1.stepCurrent === 'number' &&
+      p2.stepCurrent > p1.stepCurrent) ||
     (typeof p2.stepCurrent === 'number' && p1.stepCurrent === undefined) ||
     progressChanged ||
     questionChanged ||
@@ -5033,17 +5197,54 @@ export function inPageFindSmartScrollTarget(options?: {
       }
     }
 
-    // If no explicit target, find the highest scoring scrollable container within viewport
+    // If no explicit target, find the optimal scrollable container using the Priority Scroll Engine
     if (
       !targetEl &&
       typeof document !== 'undefined' &&
       typeof document.querySelectorAll === 'function'
     ) {
+      const winW = typeof window !== 'undefined' ? window.innerWidth || 800 : 800;
+      const winH = typeof window !== 'undefined' ? window.innerHeight || 600 : 600;
+      const vpCenterX = winW / 2;
+      const vpCenterY = winH / 2;
+
+      // Check whether window/document itself can scroll vertically
+      const doc = (
+        typeof document !== 'undefined' ? document.documentElement || document.body : null
+      ) as HTMLElement | null;
+      const winScrollHeight = Math.max(
+        doc?.scrollHeight || 0,
+        (typeof document !== 'undefined' ? document.body?.scrollHeight : 0) || 0,
+        winH,
+      );
+      const windowCanScrollY = winScrollHeight > winH + 15;
+
+      // Probe scroll container of the central viewport element
+      let centerScrollParent: Element | null = null;
+      if (typeof document.elementFromPoint === 'function') {
+        try {
+          let probeEl = document.elementFromPoint(vpCenterX, vpCenterY);
+          while (probeEl && probeEl !== document.body && probeEl !== document.documentElement) {
+            const sh = probeEl.scrollHeight;
+            const ch = probeEl.clientHeight;
+            const sw = probeEl.scrollWidth;
+            const cw = probeEl.clientWidth;
+            if (sh > ch + 10 || sw > cw + 10) {
+              const style = window.getComputedStyle?.(probeEl);
+              const overflow = (style?.overflowY || '') + ' ' + (style?.overflowX || '');
+              if (/(auto|scroll|overlay)/i.test(overflow)) {
+                centerScrollParent = probeEl;
+                break;
+              }
+            }
+            probeEl = probeEl.parentElement;
+          }
+        } catch {}
+      }
+
       let bestScore = -1;
       let bestEl: Element | null = null;
       const allElements = document.querySelectorAll('*');
-      const winW = typeof window !== 'undefined' ? window.innerWidth || 800 : 800;
-      const winH = typeof window !== 'undefined' ? window.innerHeight || 600 : 600;
 
       for (const el of Array.from(allElements)) {
         if (el === document.body || el === document.documentElement) continue;
@@ -5076,19 +5277,95 @@ export function inPageFindSmartScrollTarget(options?: {
         const visibleHeight = vBottom - vTop;
         if (visibleWidth < 50 || visibleHeight < 50) continue;
 
-        const area = visibleWidth * visibleHeight;
+        const elCenterX = rect.left + rect.width / 2;
+        const distX = Math.abs(elCenterX - vpCenterX);
+        const centerProximity = Math.max(0.05, 1 - (distX / (winW / 2)) * 0.85);
+        const straddlesCenter = rect.left <= vpCenterX && rect.right >= vpCenterX;
+
+        // Width & aspect ratio penalty: heavily penalize narrow sidebars / columns (<300px)
+        const widthPenalty = rect.width < 220 ? 0.1 : rect.width < 320 ? 0.3 : 1.0;
+
+        // Semantic analysis: negative weighting for navigation/sidebars
+        const tag = el.tagName.toLowerCase();
+        const role = (el.getAttribute('role') || '').toLowerCase();
+        const idClass = (
+          (el.id || '') +
+          ' ' +
+          (typeof el.className === 'string' ? el.className : '') +
+          ' ' +
+          (el.getAttribute('data-testid') || '') +
+          ' ' +
+          (el.getAttribute('aria-label') || '')
+        ).toLowerCase();
+
+        const isNavOrSidebar =
+          tag === 'nav' ||
+          tag === 'aside' ||
+          tag === 'header' ||
+          tag === 'footer' ||
+          role === 'navigation' ||
+          role === 'banner' ||
+          role === 'complementary' ||
+          role === 'menu' ||
+          role === 'menubar' ||
+          role === 'tablist' ||
+          /(sidebar|side-nav|sidenav|navigation|navbar|rail|drawer|menu-list|toc|panel-left|left-rail|right-rail)/i.test(
+            idClass,
+          );
+
+        const semanticMultiplier = isNavOrSidebar ? 0.05 : 1.0;
+
+        // Content boost for main article / feed containers
+        const isMainContent =
+          tag === 'main' ||
+          tag === 'article' ||
+          role === 'main' ||
+          /(main-content|post-container|feed|scroll-content|timeline|messages|discussion)/i.test(
+            idClass,
+          );
+
+        const contentBoost = isMainContent ? 2.0 : 1.0;
+
+        // Proximity boost if element matches the viewport center's scroll parent
+        const isCenterParent =
+          centerScrollParent &&
+          (el === centerScrollParent ||
+            el.contains(centerScrollParent) ||
+            centerScrollParent.contains(el));
+        const centerParentBoost = isCenterParent ? 3.0 : 1.0;
+
+        const baseArea = visibleWidth * visibleHeight;
         const interactiveCount =
           typeof el.querySelectorAll === 'function'
             ? el.querySelectorAll('button, a, input, select, textarea, [role="button"]').length
             : 0;
-        const score = area * (1 + 0.5 * Math.min(10, interactiveCount));
+        const interactiveFactor = 1 + 0.1 * Math.min(5, interactiveCount);
+
+        const score =
+          baseArea *
+          centerProximity *
+          widthPenalty *
+          semanticMultiplier *
+          contentBoost *
+          centerParentBoost *
+          (straddlesCenter ? 1.5 : 1.0) *
+          interactiveFactor;
 
         if (score > bestScore) {
           bestScore = score;
           bestEl = el;
         }
       }
-      if (bestEl) {
+
+      // Default to window if viewport center has no scroll container and window can scroll,
+      // or if best candidate is a penalized sidebar
+      const shouldPreferWindow =
+        windowCanScrollY &&
+        (!bestEl ||
+          (!centerScrollParent && bestScore < winW * winH * 0.35) ||
+          bestScore < winW * winH * 0.15);
+
+      if (!shouldPreferWindow && bestEl) {
         targetEl = bestEl;
       }
     }
@@ -5108,9 +5385,7 @@ export function inPageFindSmartScrollTarget(options?: {
       const winW = typeof window !== 'undefined' ? window.innerWidth || 800 : 800;
       const winH = typeof window !== 'undefined' ? window.innerHeight || 600 : 600;
       const margins =
-        typeof window !== 'undefined'
-          ? getStickyOcclusionMargins(window)
-          : { top: 0, bottom: 0 };
+        typeof window !== 'undefined' ? getStickyOcclusionMargins(window) : { top: 0, bottom: 0 };
       const safeTopMargin = Math.min(Math.max(margins.top, 80), Math.round(winH * 0.35));
       const safeBottomMargin = Math.min(Math.max(margins.bottom, 80), Math.round(winH * 0.35));
       const vLeft = Math.max(0, rect.left);
@@ -5167,7 +5442,8 @@ export function inPageFindSmartScrollTarget(options?: {
 
   const winMargins = win ? getStickyOcclusionMargins(win) : { top: 0, bottom: 0 };
   const safeTop = Math.min(Math.max(winMargins.top, 80), Math.round(clientHeight * 0.35));
-  const safeBottom = clientHeight - Math.min(Math.max(winMargins.bottom, 80), Math.round(clientHeight * 0.35));
+  const safeBottom =
+    clientHeight - Math.min(Math.max(winMargins.bottom, 80), Math.round(clientHeight * 0.35));
   const effectiveH = Math.max(10, safeBottom - safeTop);
   const windowDispatchY = Math.round(safeTop + effectiveH / 2);
 
@@ -5411,7 +5687,8 @@ export function inPageCheckInterception(
         bg === 'transparent' || bg === 'rgba(0,0,0,0)' || bg === 'hsla(0,0%,0%,0)';
 
       // 5. Transient backdrop masks / loading stubs / fading transitions
-      const classIdStr = `${intercepting.className || ''} ${intercepting.id || ''} ${intercepting.getAttribute('role') || ''}`.toLowerCase();
+      const classIdStr =
+        `${intercepting.className || ''} ${intercepting.id || ''} ${intercepting.getAttribute('role') || ''}`.toLowerCase();
       const isMaskOrBackdrop =
         /(backdrop|mask|overlay|loading|spinner|shim|transition|fading|fade-out|toast|stub)/i.test(
           classIdStr,
@@ -5429,7 +5706,8 @@ export function inPageCheckInterception(
         (isMaskOrBackdrop || isAriaHidden || isPresentation || isTransparentBg || op <= 0.1)
       ) {
         isTransparentOrTransient = true;
-        pierceReason = pierceReason || (isTransparentBg ? 'transparent_background' : 'transient_mask');
+        pierceReason =
+          pierceReason || (isTransparentBg ? 'transparent_background' : 'transient_mask');
       }
     } catch {}
 
@@ -5455,7 +5733,11 @@ export function inPageDispatchSyntheticClick(
   action: 'click' | 'right_click' | 'double_click' = 'click',
 ): boolean {
   let el = typeof index === 'number' && index > 0 ? findIndexedElement(index) : null;
-  if (!el && typeof document !== 'undefined' && typeof (document as any).elementsFromPoint === 'function') {
+  if (
+    !el &&
+    typeof document !== 'undefined' &&
+    typeof (document as any).elementsFromPoint === 'function'
+  ) {
     const elements = (document as any).elementsFromPoint(x, y) || [];
     for (const cand of elements) {
       if (!(cand instanceof Element)) continue;
@@ -5469,9 +5751,15 @@ export function inPageDispatchSyntheticClick(
         const op = parseFloat(s.opacity || '1');
         const bg = (s.backgroundColor || '').toLowerCase().replace(/\s+/g, '');
         const isTransparentBg = bg === 'transparent' || bg === 'rgba(0,0,0,0)';
-        const classId = `${cand.className || ''} ${cand.id || ''} ${cand.getAttribute('role') || ''}`.toLowerCase();
-        const matchesMask = /(backdrop|mask|overlay|loading|spinner|shim|transition|fading|fade-out|toast|stub)/i.test(classId);
-        const hasInteractive = Boolean(cand.querySelector?.('button, a, input, textarea, select, [role="button"]'));
+        const classId =
+          `${cand.className || ''} ${cand.id || ''} ${cand.getAttribute('role') || ''}`.toLowerCase();
+        const matchesMask =
+          /(backdrop|mask|overlay|loading|spinner|shim|transition|fading|fade-out|toast|stub)/i.test(
+            classId,
+          );
+        const hasInteractive = Boolean(
+          cand.querySelector?.('button, a, input, textarea, select, [role="button"]'),
+        );
         if (!hasInteractive && (op <= 0.05 || (matchesMask && isTransparentBg))) {
           isMask = true;
         }
@@ -5727,4 +6015,342 @@ export function inPageCheckCaptcha(): { detected: boolean; type?: string } {
     }
   } catch {}
   return { detected: false };
+}
+
+/**
+ * In-page rich text media insertion engine.
+ * Synthesizes ClipboardEvent('paste') and DragEvent('drop') containing a real File object
+ * inside a DataTransfer container, bypassing browser clipboard security sandboxes.
+ */
+export function inPageInsertMedia(options: {
+  base64Data: string;
+  fileName?: string;
+  mimeType?: string;
+  index?: number;
+  selector?: string;
+}): {
+  success: boolean;
+  target?: {
+    tagName: string;
+    selector?: string;
+    isContentEditable: boolean;
+    index?: number;
+  };
+  dispatchedEvents: string[];
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  error?: string;
+} {
+  try {
+    let targetEl: Element | null = null;
+    const targetIndex = options.index;
+
+    if (typeof targetIndex === 'number' && targetIndex > 0) {
+      targetEl = findIndexedElement(targetIndex);
+    } else if (options.selector) {
+      try {
+        targetEl = document.querySelector(options.selector);
+      } catch {}
+    }
+
+    // If no explicit target, prefer document.activeElement if editable
+    if (!targetEl) {
+      const active = document.activeElement;
+      if (
+        active &&
+        active !== document.body &&
+        active !== document.documentElement &&
+        ((active as HTMLElement).isContentEditable ||
+          active.getAttribute('contenteditable') === 'true' ||
+          active.tagName === 'TEXTAREA' ||
+          active.getAttribute('role') === 'textbox')
+      ) {
+        targetEl = active;
+      }
+    }
+
+    // If still no target, locate the primary composer / rich text editor on page
+    if (!targetEl) {
+      const composerSelectors = [
+        '[data-testid*="tweettextarea" i]',
+        '[data-testid*="post-composer" i]',
+        '[data-testid*="comment" i]',
+        '[data-lexical-editor="true"]',
+        '.drafteditor-root [contenteditable="true"]',
+        '.DraftEditor-root [contenteditable="true"]',
+        '.ProseMirror',
+        '[contenteditable="true"]',
+        '[role="textbox"]',
+        'div[aria-label*="post" i][contenteditable="true"]',
+        'div[aria-label*="comment" i][contenteditable="true"]',
+        'textarea',
+      ];
+      for (const sel of composerSelectors) {
+        const found = document.querySelector(sel);
+        if (found) {
+          targetEl = found;
+          break;
+        }
+      }
+    }
+
+    if (!targetEl) {
+      targetEl = document.body;
+    }
+
+    // Scroll into view & focus
+    try {
+      if (typeof (targetEl as any).scrollIntoView === 'function') {
+        targetEl.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' as any });
+      }
+      if (typeof (targetEl as HTMLElement).focus === 'function') {
+        (targetEl as HTMLElement).focus();
+      }
+    } catch {}
+
+    const cleanBase64 = (options.base64Data || '').replace(/^data:.*?;base64,/, '').trim();
+    if (!cleanBase64) {
+      return {
+        success: false,
+        dispatchedEvents: [],
+        fileName: options.fileName || 'unknown',
+        mimeType: options.mimeType || 'application/octet-stream',
+        fileSize: 0,
+        error: 'base64Data must be a non-empty string',
+      };
+    }
+
+    // Convert base64 string to Uint8Array
+    let byteArray: Uint8Array;
+    if (typeof atob === 'function') {
+      const binaryString = atob(cleanBase64);
+      const len = binaryString.length;
+      byteArray = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        byteArray[i] = binaryString.charCodeAt(i);
+      }
+    } else if (typeof Buffer !== 'undefined') {
+      byteArray = new Uint8Array(Buffer.from(cleanBase64, 'base64'));
+    } else {
+      byteArray = new Uint8Array(0);
+    }
+
+    const extMatch = (options.fileName || '').match(/\.([a-zA-Z0-9]+)$/);
+    const ext = extMatch ? extMatch[1].toLowerCase() : '';
+    let mimeType = options.mimeType;
+    if (!mimeType) {
+      if (ext === 'png') mimeType = 'image/png';
+      else if (ext === 'jpg' || ext === 'jpeg') mimeType = 'image/jpeg';
+      else if (ext === 'gif') mimeType = 'image/gif';
+      else if (ext === 'webp') mimeType = 'image/webp';
+      else if (ext === 'svg') mimeType = 'image/svg+xml';
+      else mimeType = 'image/png';
+    }
+
+    const fileName = options.fileName || `media-${Date.now()}.${mimeType.split('/')[1] || 'png'}`;
+
+    // Construct File and DataTransfer
+    let dt: DataTransfer | null = null;
+    let fileObj: any = null;
+    if (typeof File === 'function') {
+      try {
+        fileObj = new File([byteArray as any], fileName, {
+          type: mimeType,
+          lastModified: Date.now(),
+        });
+      } catch {}
+    }
+    if (!fileObj && typeof Blob === 'function') {
+      try {
+        fileObj = new Blob([byteArray as any], { type: mimeType });
+      } catch {}
+    }
+    if (!fileObj) {
+      fileObj = {
+        name: fileName,
+        type: mimeType,
+        size: byteArray.length,
+        lastModified: Date.now(),
+      };
+    }
+    try {
+      Object.defineProperty(fileObj, 'name', {
+        value: fileName,
+        writable: true,
+        configurable: true,
+      });
+      Object.defineProperty(fileObj, 'type', {
+        value: mimeType,
+        writable: true,
+        configurable: true,
+      });
+    } catch {}
+
+    if (typeof DataTransfer === 'function') {
+      try {
+        dt = new DataTransfer();
+        if (fileObj) {
+          try {
+            dt.items.add(fileObj);
+          } catch {}
+          try {
+            Object.defineProperty(dt, 'files', {
+              get: () => [fileObj],
+              configurable: true,
+            });
+          } catch {}
+        }
+      } catch {}
+    }
+
+    const dispatchedEvents: string[] = [];
+
+    // 1. Dispatch synthetic ClipboardEvent('paste')
+    try {
+      let pasteEvent: any;
+      if (typeof ClipboardEvent === 'function') {
+        try {
+          pasteEvent = new ClipboardEvent('paste', {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            clipboardData: dt || undefined,
+          });
+        } catch {
+          pasteEvent = new Event('paste', { bubbles: true, cancelable: true, composed: true });
+        }
+      } else {
+        pasteEvent = new Event('paste', { bubbles: true, cancelable: true, composed: true });
+      }
+
+      const clipboardDataObj = {
+        items: [
+          {
+            kind: 'file',
+            type: mimeType,
+            getAsFile: () => fileObj,
+          },
+        ],
+        files: [fileObj],
+        types: ['Files'],
+        getData: () => '',
+        setData: () => {},
+        clearData: () => {},
+      };
+
+      try {
+        Object.defineProperty(pasteEvent, 'clipboardData', {
+          get: () => clipboardDataObj,
+          configurable: true,
+        });
+      } catch {
+        try {
+          pasteEvent.clipboardData = clipboardDataObj;
+        } catch {}
+      }
+
+      targetEl.dispatchEvent(pasteEvent);
+      dispatchedEvents.push('paste');
+    } catch {}
+
+    // 2. Dispatch synthetic DragEvent dragenter -> dragover -> drop
+    try {
+      const dragDataObj = {
+        items: [
+          {
+            kind: 'file',
+            type: mimeType,
+            getAsFile: () => fileObj,
+          },
+        ],
+        files: [fileObj],
+        types: ['Files'],
+        getData: () => '',
+        setData: () => {},
+        clearData: () => {},
+      };
+
+      const createDragEvent = (type: string) => {
+        let ev: any;
+        if (typeof DragEvent === 'function') {
+          try {
+            ev = new DragEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              dataTransfer: dt || undefined,
+            });
+          } catch {
+            ev = new Event(type, { bubbles: true, cancelable: true, composed: true });
+          }
+        } else {
+          ev = new Event(type, { bubbles: true, cancelable: true, composed: true });
+        }
+        try {
+          Object.defineProperty(ev, 'dataTransfer', {
+            get: () => dragDataObj,
+            configurable: true,
+          });
+        } catch {
+          try {
+            ev.dataTransfer = dragDataObj;
+          } catch {}
+        }
+        return ev;
+      };
+
+      targetEl.dispatchEvent(createDragEvent('dragenter'));
+      targetEl.dispatchEvent(createDragEvent('dragover'));
+      targetEl.dispatchEvent(createDragEvent('drop'));
+      dispatchedEvents.push('drop');
+    } catch {}
+
+    // 3. Dispatch beforeinput with insertFromPaste
+    try {
+      if (typeof InputEvent === 'function') {
+        const beforeInput = new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          inputType: 'insertFromPaste',
+          dataTransfer: dt || undefined,
+        } as any);
+        targetEl.dispatchEvent(beforeInput);
+        dispatchedEvents.push('beforeinput');
+      }
+    } catch {}
+
+    const isContentEditable = Boolean(
+      (targetEl as HTMLElement).isContentEditable ||
+      targetEl.getAttribute('contenteditable') === 'true' ||
+      targetEl.getAttribute('contenteditable') === '',
+    );
+
+    const targetId = targetEl.id ? `#${targetEl.id}` : '';
+    const selector = targetId || targetEl.tagName.toLowerCase();
+
+    return {
+      success: true,
+      target: {
+        tagName: targetEl.tagName.toLowerCase(),
+        selector,
+        isContentEditable,
+        ...(typeof targetIndex === 'number' ? { index: targetIndex } : {}),
+      },
+      dispatchedEvents,
+      fileName,
+      mimeType,
+      fileSize: byteArray.length,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      dispatchedEvents: [],
+      fileName: options.fileName || 'unknown',
+      mimeType: options.mimeType || 'application/octet-stream',
+      fileSize: 0,
+      error: err?.message || String(err),
+    };
+  }
 }
