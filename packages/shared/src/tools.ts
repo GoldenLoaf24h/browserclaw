@@ -478,7 +478,7 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         groupTitle: {
           type: 'string',
           description:
-            'Task-aligned title for the Chrome tab group in user language (e.g. "GitHub 搜索", "Flight Tracker"). Fallback: "Agent"',
+            'Task-aligned title for the Chrome tab group in user language (e.g. "GitHub Search", "Flight Tracker"). Fallback: "Agent"',
         },
         groupColor: {
           type: 'string',

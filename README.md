@@ -6,7 +6,7 @@
     <a href="./docs/MAP.md">🗺️ Project Map</a> ·
     <a href="./docs/TOOLS.md">Tool Reference (47)</a> ·
     <a href="./AGENT_CONFIG_GUIDE.md">Client Config</a> ·
-    <a href="./README.zh-CN.md">📖 简体中文</a> ·
+    <a href="./README.zh-CN.md">Chinese (zh-CN)</a> ·
     <a href="https://github.com/GoldenLoaf24h/browserclaw/releases">Releases</a>
   </p>
 </div>

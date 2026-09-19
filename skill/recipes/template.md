@@ -8,9 +8,11 @@
 ---
 
 ## 1. Fast Identification
+
 - Key container or unique header identifier: `.main-app`
 
 ## 2. Recommended Action Pipeline
+
 ```json
 {
   "tabId": 123,
@@ -22,5 +24,5 @@
 ```
 
 ## 3. Known Caveats
-- Detail any anti-bot timing, hidden widgets, or required wait times here.
 
+- Detail any anti-bot timing, hidden widgets, or required wait times here.

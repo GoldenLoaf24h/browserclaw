@@ -28,7 +28,7 @@ Task: /goal /boost - Comprehensive Deep Audit + High-Value Fixes + JEV Potential
 ### Candidate 2: P1 - HeuristicEngine evaluate Multi-Quoted Attribute Matching
 
 - **Location**: `app/native-server/src/jev/heuristic-engine.ts:141`
-- **Root Cause**: `line.match(/"([^"]+)"/)` only captured the first quoted string. In elements like `[2] textbox name="email" placeholder="邮箱"`, the first quote was `"email"`, so goals matching `"邮箱"` were missed.
+- **Root Cause**: `line.match(/"([^"]+)"/)` only captured the first quoted string. In elements like `[2] textbox name="email" placeholder="Enter your email"`, the first quote was `"email"`, so goals matching `"Enter your email"` were missed.
 - **Consequence**: Input fields with secondary attributes (e.g. placeholder, value) failed natural language keyword scoring.
 - **Fix**: Extract all quoted strings and HTML inner text; match goal bidirectionally across all candidates.
 

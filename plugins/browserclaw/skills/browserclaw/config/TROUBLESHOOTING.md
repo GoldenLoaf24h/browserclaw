@@ -1,6 +1,6 @@
 # BrowserClaw Troubleshooting & Self-Healing Manual
 
-[📖 简体中文 (Chinese)](./TROUBLESHOOTING.zh-CN.md)
+[Chinese Version (zh-CN)](./TROUBLESHOOTING.zh-CN.md)
 
 This manual compiles typical connectivity, state, and permission issues encountered across major AI Agent platforms (Claude Desktop, Cursor, Windsurf, Cline, Roo Code, Codex, Antigravity), detailing root causes and standard recovery workflows.
 

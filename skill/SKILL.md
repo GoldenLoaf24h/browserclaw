@@ -135,7 +135,7 @@ In modern SPAs (Twitter/X, Notion, Slack, GitHub), compose areas and search boxe
 
 #### Modal Confirmation Trap Warning (`[CONFIRMATION_TRAP]`)
 
-When leaving an unsaved post or composer, SPAs often open a secondary confirmation dialog (e.g. `"Discard draft?"`, `"放弃帖子？"`). BrowserClaw detects this trap, flags `isConfirmationTrap: true`, and injects a high-priority warning banner:
+When leaving an unsaved post or composer, SPAs often open a secondary confirmation dialog (e.g. `"Discard draft?"`, `"Leave page?"`). BrowserClaw detects this trap, flags `isConfirmationTrap: true`, and injects a high-priority warning banner:
 `[Modal Guidance: CRITICAL CONFIRMATION TRAP DETECTED ... You MUST dismiss or confirm this dialog before attempting any other actions]`
 
 ### Phase 2: Act (Single vs. Batch Operations)
@@ -492,7 +492,7 @@ BrowserClaw is specifically engineered to let agents work completely in the back
 2. **Direct `tabId` Targeting**: All core tools (`chrome_read_dom`, `chrome_interact_index`, `chrome_fill_index`, `chrome_screenshot`, `chrome_smart_scroll`, `chrome_batch_actions`, `chrome_computer`, `chrome_get_markdown`, etc.) accept an explicit `tabId`. Always pass the target `tabId` directly. BrowserClaw uses out-of-band CDP sessions to interact with background tabs without bringing them to the front or moving the user's cursor.
 3. **Background Navigation & Task-Aligned Tab Grouping**:
    - `chrome_navigate` opens new tabs in the background (`background: true` by default). Never pass `background: false` unless the user explicitly asked to bring the tab into the foreground.
-   - **Custom Tab Group**: Always generate a short, task-aligned `groupTitle` in the user's language (e.g. `"知乎调研"`, `"GitHub 搜索"`, `"Flight Tracker"`) and pick an appropriate `groupColor` (e.g. `"purple"`, `"cyan"`, `"orange"`). If omitted, it falls back to `"Agent"` and `"blue"`. This gives the user clear visual context of what the agent is currently working on.
+   - **Custom Tab Group**: Always generate a short, task-aligned `groupTitle` in the user's language (e.g. `"Market Research"`, `"GitHub Search"`, `"Flight Tracker"`) and pick an appropriate `groupColor` (e.g. `"purple"`, `"cyan"`, `"orange"`). If omitted, it falls back to `"Agent"` and `"blue"`. This gives the user clear visual context of what the agent is currently working on.
 4. **Session Tab Affinity**: When working across multiple turns, pass `sessionId` to bind your agent session to its target tab, preventing accidental fallback to the user's active tab.
 
 ### F. Session State Inspection (`chrome_storage`)
@@ -537,7 +537,7 @@ When a user asks how to upgrade BrowserClaw, or when diagnosing outdated version
 1. **GitHub Release Download (Direct)**:
    - Download the latest `browserclaw-extension-vX.Y.Z.zip` from [Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest).
    - Unzip and overwrite the existing unpacked extension folder.
-   - Open `chrome://extensions/` and click the **"Reload" (重新载入)** icon on the BrowserClaw card.
+   - Open `chrome://extensions/` and click the **"Reload"** icon on the BrowserClaw card.
 
 2. **Source Code / Git Pull Upgrade**:
 
@@ -686,7 +686,7 @@ When inspecting long-scroll pages (e.g. social feeds, search results, large data
 
 ### 8.12 Window Isolation vs. Tab Groups (Window Mode)
 
-- **Tab Mode (Default)**: Automatically groups temporary task tabs under dedicated, colored Chrome Tab Groups (e.g., `12306查询`) within the current window and emulates background focus.
+- **Tab Mode (Default)**: Automatically groups temporary task tabs under dedicated, colored Chrome Tab Groups (e.g., `"Flight Search"`) within the current window and emulates background focus.
 - **Window Mode**: If the user toggles Window Mode in the popup, Agent tasks open in a separate OS window where CDP debugger infobars are strictly confined, leaving the user's primary workspace 100% untouched.
 
 ### 8.13 Autonomous Semantic Micro-Loop (`chrome_act_toward_goal`)
@@ -695,7 +695,7 @@ For bounded natural language micro-goals on the active page:
 
 ```json
 {
-  "goal": "在搜索框中输入\"BrowserClaw\"并点击搜索",
+  "goal": "Type \"BrowserClaw\" into the search bar and click search",
   "tabId": 42,
   "maxSteps": 10,
   "timeoutMs": 90000,
@@ -724,5 +724,5 @@ The micro-loop immediately halts and escalates to Tier 2 (the caller LLM) when:
 
 1. `action confidence < confidenceThreshold (0.55)`.
 2. `target confidence < 0.45` or top target probability `< 0.35`.
-3. Destructive action detected (14 protected keywords: `pay`, `支付`, `付款`, `删除`, `delete`, `purchase`, `buy`, `submit`, `提交`, `发送`, `post`, `发布`, `confirm`, `确认` or Jev `destructive` noul $\ge 0.50$).
+3. Destructive action detected (14 protected safety keywords: `"pay"`, `"delete"`, `"purchase"`, `"buy"`, `"submit"`, `"post"`, `"confirm"`, and their multilingual equivalents, or Jev `destructive` noul $\ge 0.50$).
 4. Text payload for typing is ambiguous (`"text payload unclear"`).

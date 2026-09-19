@@ -4,7 +4,7 @@ Welcome to the **BrowserClaw** Project Map. Whether you are an end-user, an AI a
 
 ---
 
-## 🧭 1. Reading Paths by Role (按角色导览路线)
+## 🧭 1. Reading Paths by Role
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -21,7 +21,7 @@ Welcome to the **BrowserClaw** Project Map. Whether you are an end-user, an AI a
 ```
 
 - **I just want my AI to drive my browser**:
-  1. Read the **[Quick Start in README.md](../README.md#quick-start-let-ai-do-the-work)** or **[快速上手 (中文)](../README.zh-CN.md#极速上手-把项目交给-ai-即可)**.
+  1. Read the **[Quick Start in README.md](../README.md#quick-start-let-ai-do-the-work)** or the **[Chinese Quick Start](../README.zh-CN.md)**.
   2. Download the prebuilt clean extension from **[Releases](https://github.com/GoldenLoaf24h/browserclaw/releases)** and load it in `chrome://extensions`.
   3. Copy your client JSON from **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)** into Cursor, Claude, or Codex.
 - **I am an AI Agent / Prompt Engineer integrating BrowserClaw**:
@@ -35,7 +35,7 @@ Welcome to the **BrowserClaw** Project Map. Whether you are an end-user, an AI a
 
 ---
 
-## 🗂️ 2. Repository & Monorepo Topology (代码拓扑地图)
+## 🗂️ 2. Repository & Monorepo Topology
 
 ```text
 mcp-chrome-master/
@@ -71,26 +71,26 @@ mcp-chrome-master/
 
 ---
 
-## 📖 3. Complete Documentation Matrix (全量文档矩阵)
+## 📖 3. Complete Documentation Matrix
 
-| 文档名称                                                                                 | 语言 |    主要读者     | 核心定位与价值                                                  | 维护机制                      |
-| :--------------------------------------------------------------------------------------- | :--: | :-------------: | :-------------------------------------------------------------- | :---------------------------- |
-| **[README.md](../README.md)**                                                            | 英文 |  所有人 / 社区  | 项目主页、痛点背景、1 分钟快速开始、6 大核心功能全览            | 手动维护                      |
-| **[README.zh-CN.md](../README.zh-CN.md)**                                                | 中文 |   中文开发者    | 详尽中文主页，完整覆盖 Windows 排他锁困境与极速上手指南         | 与主 README 同步              |
-| **[docs/MAP.md](./MAP.md)**                                                              | 中英 |   所有人 / AI   | **项目地图导览中心**：全工程拓扑、阅读路线、文档矩阵与工具雷达  | 本文档                        |
-| **[docs/TOOLS.md](./TOOLS.md)**                                                          | 英文 | Agent / 开发者  | 全量 47 个规范工具的完整参数输入/输出字典（按分类展示）         | `npm run docs:tools` 自动生成 |
-| **[docs/ARCHITECTURE.md](./ARCHITECTURE.md)**                                            | 英文 | 架构师 / 审核者 | 三层架构拓扑、Native Messaging 通信协议、CDP 状态流转时序图     | 架构变更时更新                |
-| **[docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** ([中文](./TROUBLESHOOTING.zh-CN.md)) | 中英 |  运维 / 排障者  | 常见报错代码速查（12306 连不上、401、CDP 超时、域校验失败等）   | 排障沉淀更新                  |
-| **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)**                                    | 中文 | Agent / 开发者  | Claude Desktop、Cursor、Windsurf 客户端配置 JSON 与六大交互准则 | 客户端适配更新                |
-| **[skill/SKILL.md](../skill/SKILL.md)**                                                  | 英文 |    AI Agent     | 供大模型直接吸纳的技能定义：双轨引擎、梯次升级协议、微模式      | 与 Schema 同步                |
-| **[PROJECT.md](../PROJECT.md)**                                                          | 中英 |     维护者      | 项目工程化摘要、质量门基线、设计原则速览                        | 版本演进更新                  |
-| **[TEST_INFRA.md](../TEST_INFRA.md)**                                                    | 英文 |  测试 / 审计者  | 4 层 E2E 自动化测试架构、测试 Harness 规范与 153 项用例矩阵     | 测试演进更新                  |
+| Document                                                                                          |     Language      |      Primary Audience       | Core Focus & Purpose                                                                | Maintenance Mechanism                          |
+| :------------------------------------------------------------------------------------------------ | :---------------: | :-------------------------: | :---------------------------------------------------------------------------------- | :--------------------------------------------- |
+| **[README.md](../README.md)**                                                                     |      English      |    All Users / Community    | Project homepage, architectural benefits, quick start, and feature overview         | Maintained manually                            |
+| **[README.zh-CN.md](../README.zh-CN.md)**                                                         |      Chinese      |     Chinese Developers      | Complete Chinese homepage, Windows file lock resolutions & quickstart guide         | Kept in sync with README.md                    |
+| **[docs/MAP.md](./MAP.md)**                                                                       |      English      |    All Users / AI Agents    | **Master Navigation Hub**: repository topology, reading paths, and capability radar | This document                                  |
+| **[docs/TOOLS.md](./TOOLS.md)**                                                                   |      English      |     Agents / Developers     | Parameter dictionary for all 47 canonical tools across profiles                     | Auto-generated via `scripts/gen-tools-doc.mjs` |
+| **[docs/ARCHITECTURE.md](./ARCHITECTURE.md)**                                                     |      English      |    Architects / Auditors    | 3-tier architecture topology, Native Messaging protocols, and ADR records           | Updated on architecture changes                |
+| **[docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** ([Chinese](./TROUBLESHOOTING.zh-CN.md))       | English / Chinese | Operators / Troubleshooters | Diagnostic checklist for connection errors, tokens, CDP detachment, etc.            | Updated on issue discovery                     |
+| **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)** ([Chinese](../AGENT_CONFIG_GUIDE.zh-CN.md)) | English / Chinese |     Agents / Developers     | Client configurations (Claude, Cursor, Windsurf) and 6 interaction rules            | Updated on client updates                      |
+| **[skill/SKILL.md](../skill/SKILL.md)**                                                           |      English      |          AI Agents          | Machine-executable skill definition: dual-engine routing and recovery ladders       | Synchronized with MCP schemas                  |
+| **[PROJECT.md](../PROJECT.md)**                                                                   |      English      |         Maintainers         | Engineering specifications, quality gates, and architecture summaries               | Updated on version releases                    |
+| **[TEST_INFRA.md](../TEST_INFRA.md)**                                                             |      English      |     Testers / Auditors      | 4-tier E2E testing architecture, test harness specifications & 153-test matrix      | Updated on test changes                        |
 
 ---
 
-## 🛠️ 4. 47 Canonical Tools Capability Radar (47 工具能力全景雷达)
+## 🛠️ 4. 47 Canonical Tools Capability Radar
 
-BrowserClaw 支持 **Profile 动态分层**，平衡初阶模型的 Token 负担与高阶模型的极致掌控力：
+BrowserClaw supports **Dynamic Profile Layering**, balancing prompt token consumption for smaller models while providing full low-level control for advanced agents:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -124,9 +124,9 @@ BrowserClaw 支持 **Profile 动态分层**，平衡初阶模型的 Token 负担
 
 ---
 
-## ⚡ 5. Core Execution Pipelines (核心执行流水线)
+## ⚡ 5. Core Execution Pipelines
 
-### 5.1 DOM-First 智能点击流水线 (`chrome_interact_index`)
+### 5.1 DOM-First Physical Click Pipeline (`chrome_interact_index`)
 
 ```text
 AI Agent                Native Server             Chrome SW             Page (Isolated World)
@@ -145,7 +145,7 @@ AI Agent                Native Server             Chrome SW             Page (Is
    │    [+ added 3 nodes]    │                        │                          │
 ```
 
-### 5.2 遇到滑块 / 2FA 验证的人机协作闭环 (`chrome_request_human_intervention`)
+### 5.2 Human-in-the-Loop Takeover Pipeline for Captchas & 2FA (`chrome_request_human_intervention`)
 
 ```text
 AI Agent                            BrowserClaw Extension                     User (Human)
@@ -164,27 +164,27 @@ AI Agent                            BrowserClaw Extension                     Us
 
 ---
 
-## 🛡️ 6. Hardened Security & MV3 Lifecycle Architecture (核心安全与架构加固)
+## 🛡️ 6. Hardened Security & MV3 Lifecycle Architecture
 
-| 架构维度                    | 实现机制                                                                                                 | 解决的痛点与安全隐患                                                                       |
-| :-------------------------- | :------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------- |
-| **Sender 权限隔离**         | `chrome.runtime.onMessage` 严格校验 `_sender.id === chrome.runtime.id` 并拒绝 `_sender.tab`              | 彻底杜绝恶意网页 content script 或外部扩展通过消息伪造窃取 Token 或执行特权工具            |
-| **DOM XSS 防护**            | `agent-cursor.content.ts` 纯 DOM 原生 API 节点构建 (`createElement` / `createTextNode`)                  | 消除浮条原因字符串 `reason` 经由 `innerHTML` 拼接导致的 DOM XSS 风险                       |
-| **跨 Frame 隔离防污染**     | 单 Frame 独立执行上下文 (`frameIds: [targetFrameId]`) + 纯符号 WeakRef 索引空间隔离                      | 杜绝跨 Frame 消息串扰，防止子 Frame 污染主 Frame 索引树与全局 WeakRef Map                  |
-| **多 Frame 索引隔离与扫描** | `chrome_grep` 全 Frame 扫描 + 纯只读检索 (不污染子 Frame 索引偏移) + `placeholder/aria-label/value` 检索 | 攻破多层嵌套与跨域 iframe 盲区，消除子 Frame 索引篡改副作用                                |
-| **CDP 域引用计数**          | `CDPSessionManager` 域级别引用计数 (`enableDomain` / `disableDomain`) + 核心域 (`Page`/`Network`) 常驻   | 解决并发与流水线工具中途 disable 导致后续监听器（Dialog / Network / Settle）崩溃的竞态问题 |
-| **调试器防挂死脱钩**        | `timeout-guard` 与 `detachDebugger` 物理级快速强制解挂 (`chrome.debugger.detach`) 清理域引用计数         | 消除页面未响应或断开时引用计数下溢导致的调试会话假死与死锁                                 |
-| **后台 Tab 离屏截图**       | 后台静默 Tab 强制走 CDP `Page.captureScreenshot(fromSurface: true)`                                      | 彻底消除 `captureVisibleTab` 截取前台活跃窗口导致的隐私泄露，消除非激活 Tab 的 rAF 卡死    |
-| **MV3 会话持久化**          | `SessionTabAffinityManager` / `TabGroupManager` / `TabFaviconManager` 全面接入 `chrome.storage.session`  | 抵御 Chrome MV3 30 秒后台 Service Worker 休眠回收，Worker 重启后无损恢复状态               |
-| **误关活跃 Tab 保护**       | `chrome_close_tabs` 空参数关闭活跃 Tab 必须显式传入 `confirm: true` 或携带会话亲缘 `sessionId`           | 杜绝大模型误调用导致意外关闭用户正在操作的日常标签页                                       |
-| **平台按键位掩码**          | macOS Cmd 键位掩码严格对齐 `mod = 4` (Meta)                                                              | 修复 macOS 环境下全选、剪切等组合快捷键位掩码偏差                                          |
-| **单表达式自动 return**     | `chrome_javascript` 智能语法检测，无 return 单表达式自动包装 `return (...)`                              | 提升 Agent 即席计算、DOM 属性查询的体验与容错率                                            |
-| **事件驱动加载等待**        | `chrome_get_web_content` 监听 `chrome.tabs.onUpdated` / `onRemoved` 事件驱动完成                         | 替代盲等休眠，大幅降低等待延迟并增强鲁棒性                                                 |
-| **Windows 宿主进程看门狗**  | Fastify `closeAllConnections()` + 1000ms unref 硬退出看门狗                                              | 彻底根治 Windows 平台 Keep-Alive 长连接导致的 12306 端口占用与僵尸进程                     |
-| **多态坐标 Ajv 严格合规**   | 统一重构 `oneOf` 坐标定义，移除外层 `type: 'object'` 与顶层 `required: ['x', 'y']`                       | 确保大模型输出的 `[x, y]` 数组坐标 100% 通过 Ajv / Claude Desktop / Cursor 严格校验        |
-| **后台标签页滚轮防假死**    | `scroll` 与 `smart_scroll` 识别后台 Tab 自动熔断走 JS 滚动 + Tab 激活/刷新即刻重置 60s 冷却缓存          | 消除 Chromium 挂起后台合成器帧导致的 3000ms 强制超时假死                                   |
-| **脚本跨 Frame 隔离注入**   | `base-browser.ts` 缓存键升级为 `${files.join(',')}\|${world}\|${frameKey}`                               | 彻底防止主子 Frame 间脚本伪命中导致子 Frame 漏注                                           |
+| Architectural Dimension                   | Implementation Mechanism                                                                                                                       | Resolved Vulnerability & Pain Point                                                                                                          |
+| :---------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Sender Permission Isolation**           | `chrome.runtime.onMessage` strictly validates `_sender.id === chrome.runtime.id` and rejects `_sender.tab`                                     | Prevents untrusted webpage content scripts or external extensions from forging messages to steal tokens or execute privileged tools.         |
+| **DOM XSS Defense**                       | `agent-cursor.content.ts` constructs banner nodes purely via native DOM APIs (`createElement` / `createTextNode`)                              | Eliminates DOM XSS vectors caused by string concatenation or `innerHTML` interpolation of user-supplied `reason` strings.                    |
+| **Cross-Frame Context Isolation**         | Single-frame execution context (`frameIds: [targetFrameId]`) paired with isolated symbol-keyed WeakRef index mappings                          | Prevents cross-frame message pollution and eliminates index tree corruption between parent and nested iframes.                               |
+| **Multi-Frame Grep & Scanning**           | Full-frame scanning in `chrome_grep` with read-only index projection, matching across text, `placeholder`, `aria-label`, and `value`           | Penetrates nested and cross-origin iframe boundaries without causing indexing side effects or tree mutations.                                |
+| **CDP Domain Reference Counting**         | Domain-level reference counting (`enableDomain` / `disableDomain`) in `CDPSessionManager`, keeping core domains (`Page`, `Network`) persistent | Resolves race conditions where concurrent or pipelined tools prematurely disable domains required by downstream listeners.                   |
+| **Debugger Anti-Hang Detachment**         | Low-level `timeout-guard` and `detachDebugger` trigger immediate physical detach (`chrome.debugger.detach`) and clean up domain references     | Prevents debugger session freezes and reference counter underflow when pages crash or stop responding.                                       |
+| **Background Tab Offscreen Screenshots**  | Background tabs (`active: false`) strictly use CDP `Page.captureScreenshot(fromSurface: true)`                                                 | Prevents screen leakage of the user's active personal window and eliminates background tab hangs caused by `requestAnimationFrame` freezing. |
+| **MV3 Session Persistence**               | `SessionTabAffinityManager`, `TabGroupManager`, and `TabFaviconManager` persist state in `chrome.storage.session`                              | Resilient against Chrome MV3 30-second Service Worker idle terminations, restoring full state upon wake-up.                                  |
+| **Active Tab Closure Protection**         | Calling `chrome_close_tabs` without target IDs requires explicit `confirm: true` or active `sessionId` affinity                                | Prevents AI agents from inadvertently closing the human user's active foreground working tab due to missing arguments.                       |
+| **Platform Key Modifiers**                | macOS Command modifier explicitly aligned to `mod = 4` (`Meta`)                                                                                | Corrects keyboard modifier bitmasks for Select All, Copy, Cut, and Paste on macOS environments.                                              |
+| **Auto-Return Expressions**               | Intelligent expression evaluation in `chrome_javascript` automatically wraps non-returning expressions in `return (...)`                       | Streamlines ad-hoc agent calculations and DOM property reads without manual closure boilerplate.                                             |
+| **Event-Driven Navigation Waiting**       | `chrome_get_web_content` listens to `chrome.tabs.onUpdated` and `chrome.tabs.onRemoved` lifecycle events                                       | Replaces arbitrary sleep timers with deterministic event-driven readiness, slashing latency and eliminating flakes.                          |
+| **Windows Host Watchdog**                 | Fastify `closeAllConnections()` paired with an unreferenced 1000ms hard exit watchdog                                                          | Permanently prevents keep-alive sockets from holding port 12306 or leaving orphan zombie Node processes on Windows.                          |
+| **Polymorphic Coordinate Ajv Compliance** | Declarative `oneOf` coordinate schemas without conflicting top-level `type: 'object'` constraints                                              | Guarantees strict JSON Schema / Ajv validation passes for both `[x, y]` array and `{x, y}` object coordinates in Claude and Cursor.          |
+| **Background Scroll Circuit-Breaker**     | Detects background tabs in `scroll` and `smart_scroll` to bypass CDP mouse wheel events, falling back to in-page JS scrolling                  | Eliminates 3000ms stalls caused by Chromium pausing compositor frame generation for inactive background tabs.                                |
+| **Cross-Frame Script Injection Cache**    | Injection cache key format upgraded to `${files.join(',')}\|${world}\|${frameKey}` in `base-browser.ts`                                        | Eliminates script injection false-hits between parent and child frames, preventing missed subframe script injection.                         |
 
 ---
 
-_Need quick help? Check [Troubleshooting Guide](./TROUBLESHOOTING.md) or open an issue on [GitHub](https://github.com/GoldenLoaf24h/browserclaw/issues)._
+_Need quick help? Check the [Troubleshooting Guide](./TROUBLESHOOTING.md) or open an issue on [GitHub](https://github.com/GoldenLoaf24h/browserclaw/issues)._

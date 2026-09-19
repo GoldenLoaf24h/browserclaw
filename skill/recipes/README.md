@@ -7,6 +7,7 @@ This directory is designed for **caching, persisting, and reusing proven interac
 When automating repetitive or complex multi-step workflows on specific sites (e.g. internal admin panels, ERP systems, developer consoles, social publishing dashboards), agents do not need to rediscover the DOM from scratch.
 
 By referencing or creating reusable playbooks here, agents and users can:
+
 1. **Save 80%+ Tokens**: Avoid dumping entire DOM trees when critical selectors and interaction sequences are already known.
 2. **Execute Instantly**: Directly run high-speed pipeline batches via `chrome_batch_actions`.
 3. **Bypass Known Gotchas**: Record site-specific modal dismissals, hidden inputs, or timing requirements.
@@ -17,17 +18,19 @@ By referencing or creating reusable playbooks here, agents and users can:
 
 When creating a new site recipe (e.g. `recipes/my-service.md`), follow this standardized layout:
 
-```markdown
+````markdown
 # Site Recipe: <Service Name>
 
 - **Target URL**: https://example.com/dashboard/*
 - **Purpose**: Log in, search, or automate specific actions.
 
 ### 1. Key Elements & Identifiers
+
 - Search Input: `#search-box` or label "Search"
 - Submit Button: `button[type="submit"]` or `[asset N]`
 
 ### 2. Fast-Path Pipeline (`chrome_batch_actions`)
+
 ```json
 {
   "actions": [
@@ -39,11 +42,15 @@ When creating a new site recipe (e.g. `recipes/my-service.md`), follow this stan
   "includeDelta": true
 }
 ```
+````
 
 ### 3. Site Gotchas & Workarounds
-- *Gotcha*: Has a full-screen cookie consent modal on first visit.
-  - *Fix*: Call `chrome_read_dom` and dismiss modal first if `activeModal` is detected.
-- *Gotcha*: Search input is debounced by 300ms.
-  - *Fix*: Settle automatically waits for network quiescence.
+
+- _Gotcha_: Has a full-screen cookie consent modal on first visit.
+  - _Fix_: Call `chrome_read_dom` and dismiss modal first if `activeModal` is detected.
+- _Gotcha_: Search input is debounced by 300ms.
+  - _Fix_: Settle automatically waits for network quiescence.
+
 ```
 
+```

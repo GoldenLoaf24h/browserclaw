@@ -1,6 +1,6 @@
 # BrowserClaw Troubleshooting & Self-Healing Guide
 
-[📖 简体中文 (Chinese)](./TROUBLESHOOTING.zh-CN.md)
+[Chinese Version (zh-CN)](./TROUBLESHOOTING.zh-CN.md)
 
 BrowserClaw consists of three locally coordinated tiers:
 

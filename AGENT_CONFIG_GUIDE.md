@@ -1,79 +1,81 @@
-# AI Agent 浏览器插件配置与高效交互指南
+# AI Agent Configuration & High-Efficiency Interaction Guide
 
-本文档专为 **AI Agent（包括 Claude Code、Cursor、Windsurf、Hermes、Roo Code、Goose 等）** 及其开发者编写，旨在指导 Agent 如何正确配置、接入并以最高能效操控本地 Chrome 浏览器。
+[Chinese Version (zh-CN)](./AGENT_CONFIG_GUIDE.zh-CN.md)
 
----
-
-## 1. 架构速览与工作机制
-
-`BrowserClaw` 是一套基于 **模型上下文协议 (Model Context Protocol, MCP)** 的现代化工业级本地浏览器控制系统：
-
-- **浏览器扩展 (Chrome Extension)**：运行在本地 Chrome 中，通过 Chrome DevTools Protocol (CDP) 注入原生物理级事件（`isTrusted: true`），维护纯内存弱引用 DOM 索引树。
-- **本地网桥服务 (Native Server)**：运行在本地 `127.0.0.1:12306`（或自定义端口），提供标准的 MCP JSON-RPC 接口（支持 Streamable HTTP、SSE 与 stdio 传输）。
-- **进程通信宿主 (Native Messaging Host)**：通过标准输入输出（stdio）与 Chrome 建立安全双向管道，具备 1000KB 截断保护与会话隔离机制。
+This guide is specifically designed for **AI Agents (Claude Code, Cursor, Windsurf, Hermes, Roo Code, Goose, Codex, Antigravity)** and agent developers. It details how to configure, connect, and drive your local Google Chrome browser with maximum performance, minimal token cost, and physical event fidelity.
 
 ---
 
-## 2. 环境部署与一次性配置 (One-Time Setup)
+## 1. System Architecture & Mechanics
 
-在 Agent 连接 MCP 服务前，需要完成以下三步基础环境部署：
+`BrowserClaw` is an industrial-grade browser control platform operating over the **Model Context Protocol (MCP)**:
 
-### 步骤 1：注册 Chrome Native Messaging Host
+- **Chrome MV3 Extension**: Runs directly inside your everyday Google Chrome. It injects native hardware-level events (`isTrusted: true`) via Chrome DevTools Protocol (CDP) and maintains an isolated, pure-memory WeakRef DOM index tree.
+- **Native Bridge Server**: Runs locally on `127.0.0.1:12306` (or a custom port), providing standard MCP JSON-RPC endpoints over Streamable HTTP, Server-Sent Events (SSE), and standard I/O (stdio).
+- **Native Messaging Host**: Bridges bidirectional communication between Chrome and Node.js via standard I/O streams with an internal 1000KB buffer truncation defense and session isolation.
 
-编译产物中自带全自动注册脚本，只需在宿主机执行一次：
+---
 
-- **Windows (PowerShell / CMD)**：
+## 2. One-Time Setup & Deployment
+
+Before connecting your agent client to the MCP server, complete these initial setup steps:
+
+### Step 1: Register Chrome Native Messaging Host
+
+The build artifacts include automated registration scripts. Execute once on your host machine:
+
+- **Windows (PowerShell / CMD)**:
   ```cmd
   cd <repo-root>\app\native-server\dist
   run_host.bat
   ```
-- **macOS / Linux (Bash / Zsh)**：
+- **macOS / Linux (Bash / Zsh)**:
   ```bash
   cd app/native-server/dist
   chmod +x run_host.sh
   ./run_host.sh
   ```
 
-_脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.mcp_chrome.bridge`）或系统目录写入清单配置。_
+_The script registers the manifest in your operating system registry (`HKCU\Software\Google\Chrome\NativeMessagingHosts\com.mcp_chrome.bridge` on Windows) or system application support directory._
 
-### 步骤 2：在 Chrome 中加载扩展
+### Step 2: Load Extension in Google Chrome
 
-1. 打开 Chrome 浏览器，在地址栏输入 `chrome://extensions` 并回车。
-2. 打开页面右上角的 **“开发者模式” (Developer mode)** 开关。
-3. 点击左上角的 **“加载已解压的扩展程序” (Load unpacked)**。
-4. 选择扩展的构建输出目录：
+1. Open Google Chrome and navigate to `chrome://extensions`.
+2. Enable the **Developer mode** toggle in the upper-right corner.
+3. Click **Load unpacked** in the top-left corner.
+4. Select the extension build output directory:
    ```
-   <repo-root>\app\chrome-extension\.output\chrome-mv3
+   <repo-root>/app/chrome-extension/.output/chrome-mv3
    ```
-5. 加载完成后，浏览器工具栏会出现插件图标。
+5. The BrowserClaw icon will appear in Chrome's extension toolbar.
 
-### 步骤 3：验证扩展就绪状态
+### Step 3: Verify Ready State
 
-- **绿色图标**：表示扩展已成功连接 Native Messaging Host，且本地服务就绪。
-- **自动自愈**：如果扩展启动瞬间出现黄色提示，扩展内置的 Watchdog 会在 2 秒内通过 HTTP 探测自愈恢复绿色。
+- **Green Status**: Indicates the extension has successfully connected to the Native Messaging Host and the local bridge is operational.
+- **Automated Self-Healing**: If the indicator momentarily shows yellow upon launch, the built-in watchdog probes over HTTP and recovers within 2 seconds.
 
 ---
 
-## 3. 各大 Agent 客户端 MCP 配置模板
+## 3. Client MCP Configuration Templates
 
-根据你所使用的 Agent 平台，将以下配置片段复制到对应的 MCP 配置文件中。
+Copy the configuration snippet matching your agent platform into your MCP configuration file.
 
-### 3.1 获取认证 Token
+### 3.1 Authentication Token
 
-本服务具备严格的安全防护，要求所有连接均携带本地高熵 Token：
+BrowserClaw enforces local token authentication to prevent unauthorized loopback access:
 
-- **Token 文件路径**：`~/.chrome-mcp/bridge-token`（Windows 下为 `C:\Users\<用户名>\.chrome-mcp\bridge-token`）
-- **环境变量自定义**：可在启动环境设置 `export CHROME_MCP_TOKEN="your_secure_token"`。
+- **Token File Location**: `~/.chrome-mcp/bridge-token` (on Windows: `C:\Users\<username>\.chrome-mcp\bridge-token`)
+- **Environment Override**: You can define `export CHROME_MCP_TOKEN="your_secure_token"` before starting the server.
 
-> **提示**：若使用 `stdio` 模式，Native Server 会自动读取或生成该 Token，并在内部完成与 Chrome 扩展的握手。
+> **Note**: In `stdio` transport mode, the Native Server automatically generates or reads this token and completes internal handshakes with Chrome.
 
 ---
 
-### 3.2 Claude Desktop / Claude Code 配置
+### 3.2 Claude Desktop / Claude Code
 
-配置文件路径：`~/.claude/claude_desktop_config.json` 或项目级 `mcpServers`：
+Configuration file: `~/.claude/claude_desktop_config.json` or project-level `mcpServers`:
 
-#### 方案 A：Streamable HTTP / SSE 模式（推荐，支持多客户端高并发）
+#### Option A: Streamable HTTP / SSE Mode (Recommended for concurrency)
 
 ```json
 {
@@ -81,31 +83,14 @@ _脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Goog
     "browserclaw": {
       "url": "http://127.0.0.1:12306/sse",
       "headers": {
-        "Authorization": "Bearer <从 ~/.chrome-mcp/bridge-token 读取的内容>"
+        "Authorization": "Bearer <TOKEN_FROM_BRIDGE_TOKEN_FILE>"
       }
     }
   }
 }
 ```
 
-#### 方案 B：stdio 管道模式（由 Agent 自动拉起与托管生命周期）
-
-```json
-{
-  "mcpServers": {
-    "browserclaw": {
-      "command": "node",
-      "args": ["<repo-root>\\app\\native-server\\dist\\mcp/mcp-server-stdio.js"]
-    }
-  }
-}
-```
-
----
-
-### 3.3 Cursor 配置
-
-在 `.cursor/mcp.json` 或 Cursor 设置页面（Settings -> Features -> MCP Servers -> Add New MCP Server）中配置：
+#### Option B: Stdio Transport Mode (Agent-managed lifecycle)
 
 ```json
 {
@@ -120,9 +105,9 @@ _脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Goog
 
 ---
 
-### 3.4 Windsurf / Cascade 配置
+### 3.3 Cursor Configuration
 
-配置文件路径：`~/.codeium/windsurf/mcp_config.json`：
+In `.cursor/mcp.json` or Settings -> Features -> MCP Servers -> Add New MCP Server:
 
 ```json
 {
@@ -137,38 +122,55 @@ _脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Goog
 
 ---
 
-## 4. Agent 高效操控心法与交互范式
+### 3.4 Windsurf / Cascade Configuration
 
-为了实现最低的 Token 消耗、最快的执行响应与最高的点击准确率，Agent 在规划浏览器操作时**务必严格遵循以下六条核心交互准则**：
+Configuration file: `~/.codeium/windsurf/mcp_config.json`:
 
-### 准则一：DOM 优先与紧凑数字索引（DOM-First）
+```json
+{
+  "mcpServers": {
+    "browserclaw": {
+      "command": "node",
+      "args": ["<repo-root>/app/native-server/dist/mcp/mcp-server-stdio.js"]
+    }
+  }
+}
+```
 
-- **常规交互主路径（占 90% 场景）**：
-  1. 调用 `chrome_read_dom`。输出为过滤掉所有不可见及无用节点后的紧凑树，每个可交互节点带有清晰的 1-based 数字索引（例如 `[1]`, `[2]`, `[5]`）。
-  2. 直接依据索引调用操作工具：
-     - 点击：`chrome_interact_index({ index: 5 })`
-     - 输入：`chrome_fill_index({ index: 2, text: "my-query" })`
-- **严禁行为**：
-  - 严禁在大模型中盲猜长 CSS 选择器（如 `div.app-container > section:nth-child(3)...`）或脆弱的绝对 XPath。
-  - 严禁假设宿主 DOM 含有 `data-mcp-idx` 属性。
+---
 
-### 准则二：强推批量操作流水线与极速 1 回合规范 (Zero-RTT Submission)
+## 4. Agent Interaction Rules & Best Practices
 
-- **面对查询、表单、登录或多步连续任务时**：
-  - **严禁 3 回合低效往返反模式**：严禁拆成 Turn 1 `read_dom` -> Turn 2 `fill_index` -> Turn 3 `interact_index`！这种拆分导致 2 次多余的模型往返与 10s+ 延迟。
-  - **1 回合极速最佳范式**：
-    1. **搜索框 / 单输入框查询 / 手机号查询**：直接调用 `chrome_fill_index({ index: 15, text: "13800138000", pressEnter: true })`，物理输入并一回合自动回车提交并自适应变动沉淀！
-    2. **输入框 + 独立提交按钮**：在 `chrome_read_dom` 识别到输入框与按钮后，**直接使用 `chrome_batch_actions` 一回合打包提交**：
+To minimize prompt token consumption, maximize responsiveness, and prevent click failures, agents **must adhere to these 6 core interaction rules**:
+
+### Rule 1: DOM-First with 1-Based Numeric Indexing
+
+- **Primary Path (90% of Interactions)**:
+  1. Call `chrome_read_dom`. The output is a pruned accessibility tree stripped of invisible nodes and decorative wrappers, where every interactive element has a clean 1-based numeric index (e.g. `[1]`, `[2]`, `[5]`).
+  2. Dispatch actions directly using the numeric index:
+     - Click: `chrome_interact_index({ index: 5 })`
+     - Type: `chrome_fill_index({ index: 2, text: "my-query" })`
+- **Anti-Patterns to Avoid**:
+  - Never guess long fragile CSS selectors (e.g. `div.app-container > section:nth-child(3)...`) or brittle absolute XPaths.
+  - Never assume host DOM nodes have `data-mcp-idx` attributes.
+
+### Rule 2: Single-Round Action Pipelining (Zero-RTT Submission)
+
+- **For queries, form submissions, logins, and sequential flows**:
+  - **Avoid the 3-Turn Ping-Pong**: Do not split simple workflows into Turn 1 `read_dom` -> Turn 2 `fill_index` -> Turn 3 `interact_index`. This introduces 2 redundant model round-trips and 10+ seconds of unnecessary latency.
+  - **The 1-Turn Fast-Path Pattern**:
+    1. **Search inputs / Single field queries**: Call `chrome_fill_index({ index: 15, text: "query", pressEnter: true })` to type, press Enter, and settle mutations in a single round-trip.
+    2. **Input field with submit button**: Identify both elements from `chrome_read_dom`, then dispatch `chrome_batch_actions` in one round-trip:
        ```json
        {
          "actions": [
-           { "type": "fill", "index": 15, "text": "13800138000", "clear": true },
+           { "type": "fill", "index": 15, "text": "my-query", "clear": true },
            { "type": "click", "index": 18 }
          ],
          "waitForSettle": true
        }
        ```
-    3. **多字段复杂表单**：使用 `chrome_batch_actions` 按序编排填充与提交，或使用 `chrome_form_pipeline` 自动推进：
+    3. **Multi-field forms**: Chain fills and submissions in `chrome_batch_actions` or use `chrome_form_pipeline`:
        ```json
        {
          "actions": [
@@ -180,76 +182,73 @@ _脚本会自动向操作系统注册表（Windows 注册表 `HKCU\Software\Goog
          "waitForSettle": true
        }
        ```
-  - `chrome_batch_actions` 会在底层连续派发真实 CDP 物理级事件，并将执行进度和中间状态一次性结构化返回。
 
-### 准则三：纯视觉保底与坐标网格标尺（Visual Fallback）
+### Rule 3: Visual Fallback & Coordinate Grid Rulers
 
-- **遇到以下特殊场景时启用视觉兜底（占 10% 场景）**：
-  1. 页面为纯 Canvas 应用、WebGL、动态图表或防爬虫混淆 DOM。
-  2. 微小图标按钮在 DOM 树中未暴露文字或 Accessibility 属性。
-- **视觉定位最佳实践**：
-  1. 调用 `chrome_screenshot({ grid: true })`：
-     - 截图会自动在图像上叠加**高对比度半透明像素网格标尺**（包含 X/Y 轴坐标标签与辅助线）。
-     - Agent 可直接从图像上的网格精确读出物理像素坐标，彻底消除传统视觉大模型“盲猜像素”产生的漂移幻觉。
-  2. 调用 `chrome_interact_index` 并传入坐标：
+- **When to invoke Visual Fallback (10% of Interactions)**:
+  1. Pure HTML5 Canvas, WebGL, dynamic charts, or bot-obfuscated DOM trees.
+  2. Icon-only buttons lacking ARIA labels or readable text nodes.
+- **Visual Grounding Best Practices**:
+  1. Call `chrome_screenshot({ grid: true })`:
+     - Renders a semi-transparent high-contrast coordinate grid ruler over the viewport (with X/Y axis labels).
+     - Agents read physical CSS pixel coordinates directly off the ruler, eliminating model coordinate drift hallucinations.
+  2. Call `chrome_interact_index` with measured coordinates:
      ```json
      {
        "coordinate": { "x": 640, "y": 380 }
      }
      ```
-  3. 若元素极为微小，可指定 `targetIndex` 启用局部高清扩充（ROI 将微小元素居中扩充至 400×400 高清切片）。
 
-### 准则四：自驱动 Diff 携带机制（省 50% 交互往返）
+### Rule 4: Autonomous Delta Piggybacking (Saves 50% RTT)
 
-- 调用 `chrome_interact_index`、`chrome_fill_index` 或 `chrome_batch_actions` 时，**务必开启 `includeDelta: true`**。
-- 系统在操作执行后会自动比对局部 DOM，在响应中直接回传 `delta: { added, modified, removed }`。Agent 无需再次发起 `chrome_read_dom` 即可确认界面是否弹出下拉菜单或弹窗。
+- Always specify `includeDelta: true` when calling `chrome_interact_index`, `chrome_fill_index`, or `chrome_batch_actions`.
+- The extension captures DOM changes during the action's settle window and returns `delta: { added, modified, removed }` directly in the action response. You do not need to call `chrome_read_dom` again just to verify that a dropdown opened or a banner appeared.
 
-### 准则五：海量页面定向轻量检索（`chrome_grep`）
+### Rule 5: Targeted Lightweight Grep (`chrome_grep`)
 
-- 面对节点数 > 500 的大型或长列表页面，避免盲目 dump 全量 DOM，优先调用 `chrome_grep({ query: "登录" })` 秒级定位元素索引，单次 Token 消耗降低 90%+。
-- 系统全面支持跨多层嵌套 iframe 与跨域子 Frame 扫描（层次化重映射索引），并深度比对节点文本、角色、`placeholder`、`aria-label` 与 `value` 属性。
+- For large or infinite-scrolling pages with $>500$ nodes, avoid dumping the entire DOM tree. Call `chrome_grep({ query: "Login" })` to locate element indices in sub-milliseconds while slashing token consumption by 90%+.
+- Supports multi-frame iframe penetration (hierarchically remapping child frame indices) and searches across element text, roles, `placeholder`, `aria-label`, and `value`.
 
-### 准则六：自适应变动沉淀与自愈引导
+### Rule 6: Adaptive Action Settle & Stale Index Self-Healing
 
-- **变动沉淀等待（Action Settle）**：
-  - 工具参数自带 `waitForSettle: true`。操作执行后，系统内部的 Watchdog 会监听 DOM MutationObserver 与活跃网络请求。当页面静默无新增请求时，仅需 50ms 即可快速返回；遇长加载自动平滑等待，兼顾极速与稳定性。
-- **索引过期自愈机制**：
-  - 当页面发生刷新、单页路由跳转或弹窗遮挡导致某个元素索引失效时，工具不会静默挂死，而是返回明确的诊断自愈指令：
+- **Adaptive Settle (`waitForSettle: true`)**:
+  - The internal watchdog monitors DOM MutationObservers and in-flight network requests. For idle pages, actions return in 50ms; for pages undergoing network fetch, the watchdog smoothly waits for completion.
+- **Stale Index Self-Healing**:
+  - When SPA navigation or async re-rendering invalidates an index, the tool returns a clear diagnostic instruction:
     `ACTION REQUIRED: Please call 'chrome_read_dom' to refresh the index tree before re-attempting interaction`
-  - Agent 收到此类错误提示时，**切勿盲目重复重试**，应立即重新调用一次 `chrome_read_dom`，基于刷新后的最新索引继续任务。
+  - Never blindly retry the same stale index. Re-invoke `chrome_read_dom` to refresh indices, then continue.
 
 ---
 
-## 5. 常用工具参数速查
+## 5. Canonical Tool Quick Reference
 
-| 工具名称                            | 核心参数                                     | 作用说明                                                                              | 推荐场景                                    |
-| :---------------------------------- | :------------------------------------------- | :------------------------------------------------------------------------------------ | :------------------------------------------ |
-| `chrome_read_dom`                   | `viewportOnly: true`                         | 获取极简剪枝 DOM 交互树与数字索引，Token 压缩 85%+                                    | **每个网页分析的第一步必调**                |
-| `chrome_interact_index`             | `index` 或 `coordinate: {x,y}`               | 派发物理级鼠标点击或悬停                                                              | 单个按钮点击、链接跳转                      |
-| `chrome_fill_index`                 | `index`, `text`, `clear: true`, `pressEnter` | 派发 CDP 原生物理级输入，自动清除旧值并填充文本，支持 `pressEnter: true` 自动提交     | 单输入框极速 1 回合填入并提交               |
-| `chrome_batch_actions`              | `actions: [...]`, `waitForSettle: true`      | 在单次调用中按序编排多个点击、填充、按键与等待（含跨域 iframe 坐标转换）              | **多表单填充、连续复合操作的首选 (1 回合)** |
-| `chrome_screenshot`                 | `grid: true`, `targetIndex`, `format`        | 纯内存直通 base64 截取视口图像，绝不污染用户 Downloads 目录；可选叠加半透明坐标标尺   | Canvas 画布、复杂验证码或无 DOM 节点图形    |
-| `chrome_upload_file`                | `index` 或 `clickTargetIndex`, `filePath`    | 动态拦截弹窗或直接向文件输入框注入本地绝对路径                                        | 网页文件上传、头像更换                      |
-| `chrome_get_markdown`               | 无                                           | 提取页面的清晰结构化 Markdown 内容                                                    | 网页内容阅读、文献资料总结                  |
-| `chrome_grep`                       | `query`, `searchType`                        | 毫秒级正则/文本定向检索，支持多 Frame 索引重映射与 placeholder/aria-label 检索        | 长列表或大页面极速定位目标元素              |
-| `chrome_inspect_media`              | `index` 或 `selector`                        | 无损内存提取图片原始高画质 Data URL 或局部超采样截图                                  | 验证码、图表、商品原图精准识别              |
-| `chrome_request_human_intervention` | `reason`, `timeoutMs`                        | 纯 DOM 安全构建（免疫 DOM XSS）唤起毛玻璃顶栏挂起流程并让渡控制权给用户               | 遭遇滑块验证、2FA 或安全支付时              |
-| `chrome_undo_last_action`           | 无                                           | 单步回滚最近一次页面跳转或表单填充                                                    | 操作失误时的容错与快速撤销                  |
-| `chrome_close_tabs`                 | `tabIds`, `url`, `confirm`                   | 安全关闭标签页，关闭当前活跃标签页需显式传入 `confirm: true` 或携带会话亲缘，防止误关 | 任务完成清理或定向关闭特定网页              |
-| `chrome_javascript`                 | `code`, `tabId`                              | 执行页面 JavaScript，支持顶级 await 与单表达式自动包装 `return (...)`                 | 即席数据计算、高级 DOM 探测                 |
-| `chrome_tool_docs`                  | `category`, `activateForSession`             | 查询并免重启会话级动态激活 8 大类工具（HTTP/SSE 与 Stdio 双通道支持）                 | Profile 裁剪模式下按需调用高级工具          |
+| Tool Name                           | Key Parameters                               | Function & Description                                                  | Recommended Scenario                     |
+| :---------------------------------- | :------------------------------------------- | :---------------------------------------------------------------------- | :--------------------------------------- |
+| `chrome_read_dom`                   | `viewportOnly: true`                         | Pruned 1-based numbered accessibility tree; 85%+ token savings          | **First step on any new page**           |
+| `chrome_interact_index`             | `index` or `coordinate: {x,y}`               | Hardware-level click, hover, double-click, or drag                      | Button clicks, link navigation           |
+| `chrome_fill_index`                 | `index`, `text`, `clear: true`, `pressEnter` | Native physical typing, value clearance, and Enter key submission       | Single-field query and submission        |
+| `chrome_batch_actions`              | `actions: [...]`, `waitForSettle: true`      | Sequential multi-step execution of clicks, fills, waits, and assertions | **Multi-field forms & complex flows**    |
+| `chrome_screenshot`                 | `grid: true`, `targetIndex`, `format`        | In-memory base64 screenshot with optional coordinate grid ruler         | Canvas, complex captchas, non-DOM UI     |
+| `chrome_upload_file`                | `index` or `clickTargetIndex`, `filePath`    | Uploads local files via OS path injection into file inputs              | File uploads, profile pictures           |
+| `chrome_get_markdown`               | `includeLinks: true`                         | Clean, beautifully formatted markdown extraction                        | Article reading, page summarization      |
+| `chrome_grep`                       | `query`, `searchType`                        | Sub-millisecond regex/text scan across frames and attributes            | Finding elements in large documents      |
+| `chrome_inspect_media`              | `index` or `selector`                        | Extracts raw high-resolution image Data URLs or crops                   | Captchas, charts, raw product photos     |
+| `chrome_request_human_intervention` | `reason`, `timeoutMs`                        | Mounts frosted-glass takeover banner, yielding control to user          | 2FA, slider captchas, sensitive payments |
+| `chrome_undo_last_action`           | none                                         | Rolls back the most recent navigation or form fill step                 | Fast error recovery                      |
+| `chrome_close_tabs`                 | `tabIds`, `url`, `confirm`                   | Closes tabs; requires `confirm: true` to close active foreground tab    | Tab cleanup, closing task pages          |
+| `chrome_javascript`                 | `code`, `tabId`                              | Evaluates JavaScript with top-level await and auto-return expressions   | Ad-hoc calculations, DOM inspection      |
+| `chrome_tool_docs`                  | `category`, `activateForSession`             | Dynamic discovery and on-demand session activation of tool categories   | Profile mode tool expansion              |
 
 ---
 
-## 6. 故障排查与诊断指南
+## 6. Diagnostic Checklist
 
-1. **连接被拒绝 (ECONNREFUSED `127.0.0.1:12306`)**：
-   - 检查本地 Chrome 扩展是否处于打开状态（Service Worker 是否存活）。
-   - 可在终端运行 `curl http://127.0.0.1:12306/ping`，若返回 `{"status":"ok","message":"pong"}` 说明服务已就绪。
-2. **401 Unauthorized**：
-   - 检查请求头中是否遗漏了 `Authorization: Bearer <token>`，或者 Token 是否与 `~/.chrome-mcp/bridge-token` 中的高熵密钥一致。
-3. **扩展卡黄色警告（“未连接或服务未启动”）**：
-   - 检查第 2 步中 `run_host.bat` (Windows) 或 `run_host.sh` 是否已成功以当前用户权限执行并成功写入注册表。
-   - 点击 Chrome 扩展图标，在弹出的 Popup 界面点击“重新连接”按钮触发强制握手。
-4. **超大文件传输报错**：
-   - Native Messaging 管道存在 1MB 物理上限限制。文件上传或读取请直接传递本地文件的**绝对路径**（例如 `D:/docs/sample.pdf`），系统将在本地文件系统中直接读取，严禁将大文件转换为巨量 Base64 字符串通过管道传递。
+1. **Connection Refused (`ECONNREFUSED 127.0.0.1:12306`)**:
+   - Ensure Google Chrome is running with the BrowserClaw extension enabled.
+   - Run `curl http://127.0.0.1:12306/ping` in terminal. A response of `{"status":"ok","message":"pong"}` confirms the service is listening.
+2. **401 Unauthorized**:
+   - Verify your client config includes `Authorization: Bearer <token>` matching `~/.chrome-mcp/bridge-token`.
+3. **Extension Displays Yellow Warning**:
+   - Check that `run_host.bat` (Windows) or `run_host.sh` has registered the manifest. Click "Reconnect" in the popup.
+4. **Large File Uploads**:
+   - Always supply local absolute file paths (e.g. `D:/docs/sample.pdf`). Do not convert files into multi-megabyte base64 strings across the Native Messaging pipe.
