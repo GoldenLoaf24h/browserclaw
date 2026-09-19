@@ -40,7 +40,7 @@ In accordance with the Chrome Web Store Minimum Permissions policy, each request
 
 ## 4. Open Source Transparency
 
-BrowserClaw is open-source software distributed under the Apache-2.0 License. The complete source code is publicly auditable at:  
+BrowserClaw is open-source software distributed under the GNU Affero General Public License v3.0 (AGPL-3.0). The complete source code is publicly auditable at:  
 [https://github.com/GoldenLoaf24h/browserclaw](https://github.com/GoldenLoaf24h/browserclaw)
 
 ---

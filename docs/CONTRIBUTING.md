@@ -1,6 +1,6 @@
 # Contributing Guide 🤝
 
-Thank you for your interest in contributing to Chrome MCP Server! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to BrowserClaw! This document provides guidelines and information for contributors.
 
 ## 🎯 How to Contribute
 
@@ -20,7 +20,6 @@ We welcome contributions in many forms:
 - **Node.js 20+** and **pnpm or npm** (latest version)
 - **Chrome/Chromium** browser for testing
 - **Git** for version control
-- **Rust** (for WASM development, optional)
 - **TypeScript** knowledge
 
 ### Development Setup
@@ -28,8 +27,8 @@ We welcome contributions in many forms:
 1. **Fork and clone the repository**
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/chrome-mcp-server.git
-cd chrome-mcp-server
+git clone https://github.com/YOUR_USERNAME/browserclaw.git
+cd browserclaw
 ```
 
 2. **Install dependencies**
@@ -52,7 +51,7 @@ npm run dev
 ## 🏗️ Project Structure
 
 ```
-chrome-mcp-server/
+browserclaw/
 ├── app/
 │   ├── chrome-extension/     # Chrome extension MV3 (WXT + Vue 3)
 │   │   ├── entrypoints/      # Background SW, popup, and isolated inpage scripts
@@ -207,7 +206,7 @@ For feature requests, please provide:
 
 ## 📄 License
 
-By contributing to Chrome MCP Server, you agree that your contributions will be licensed under the MIT License.
+By contributing to BrowserClaw, you agree that your contributions will be licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
 ## 🎯 Contributor Guidelines
 
@@ -250,4 +249,4 @@ We value every contribution, no matter how big or small. Contributors will be re
 - **Contributor badges**: Contributor badges on GitHub profiles
 - **Community recognition**: Special thanks in community discussions
 
-Thank you for considering contributing to Chrome MCP Server! Your participation makes this project better.
+Thank you for considering contributing to BrowserClaw! Your participation makes this project better.

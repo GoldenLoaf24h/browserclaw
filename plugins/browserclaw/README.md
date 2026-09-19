@@ -65,4 +65,4 @@ skill_view("browserclaw:browserclaw")
 
 ## License
 
-Apache-2.0
+GNU Affero General Public License v3.0 (AGPL-3.0)
