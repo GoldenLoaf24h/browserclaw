@@ -4,7 +4,7 @@
   <p><b>Take full control of everything in your own browser.</b></p>
   <p>
     <a href="./docs/MAP.md">🗺️ Project Map</a> ·
-    <a href="./docs/TOOLS.md">Tool Reference (45)</a> ·
+    <a href="./docs/TOOLS.md">Tool Reference (47)</a> ·
     <a href="./AGENT_CONFIG_GUIDE.md">Client Config</a> ·
     <a href="./README.zh-CN.md">📖 简体中文</a> ·
     <a href="https://github.com/GoldenLoaf24h/browserclaw/releases">Releases</a>
@@ -28,11 +28,15 @@ Traditional browser automation frameworks (Playwright, Puppeteer, browser-use) r
 
 ## ⚡ What is BrowserClaw?
 
-BrowserClaw is a high-performance Model Context Protocol (MCP) platform that gives AI agents complete, authenticated control over your active Chrome browser:
+BrowserClaw is a **hierarchical dual-brain browser agent platform**. It pairs a high-performance MCP execution surface (47 tools, running inside your real Chrome) with a local semantic micro-loop — so a fast decision engine handles the high-frequency "perceive → decide → act" steps, while your reasoning LLM stays in charge of macro planning.
 
+The result: agent browser control that is **3–5× faster and 70–80%+ cheaper on tokens**, without giving up CDP fidelity, Shadow-DOM penetration, or anti-bot resilience.
+
+- 🧠 **Hierarchical Dual-Brain (`chrome_act_toward_goal`)**: a semantic micro-loop perceives, decides, and acts locally at ~200–400ms/step with **zero MCP round-trips**. Your LLM plans; the fast engine executes.
+- 🪜 **Three-Engine Fallback Ladder**: TypeSafe Jev (System One) → zero-dependency heuristic scorer → structured escalate back to the planner with pre-fetched DOM. The tool **never hard-fails** — it degrades gracefully.
 - 🍪 **100% Session & Auth Reuse**: Keeps your active Google, GitHub, and enterprise SSO sessions. No re-logging in.
 - 🎯 **Dual-Engine Precision**: 1-based pruned DOM tree (token savings >85%) with 1:1 CSS viewport coordinate visual fallback.
-- 🌲 **AX Compact Semantic Tree (`format: "compact"`)**: Accessibility-tree-inspired representation without verbose closing tags, slashing token usage by 60%~75%.
+- 🌲 **AX Compact Semantic Tree**: Accessibility-tree-inspired representation without verbose closing tags, slashing token usage by 60%~75%.
 - 🔗 **Code-Driven Chained Execution (`mcp.*`)**: Run multi-step interactions (`mcp.click`, `mcp.fill`, `mcp.waitFor`, `mcp.extract`) in a single `chrome_javascript` call, reducing 4~6 roundtrips to 1.
 - 🛡️ **Shadow DOM Penetration & Self-Healing Interception**: Deep composed-tree hit testing across closed shadow roots with actionable dialog names returned on obstruction.
 - 🎯 **Optimal Action Point & Click Probe Fallback**: Viewport-weighted visible coordinates with automatic synthetic DOM fallback if Chromium throttles background CDP events.
@@ -45,6 +49,50 @@ BrowserClaw is a high-performance Model Context Protocol (MCP) platform that giv
 - 🩺 **Instant Environment Doctor (chrome_doctor & CLI)**: One-command health checks for 12306 port connectivity, tokens, and browser settings.
 - 📁 **Site Playbook Recipes (skill/recipes/)**: Cache and persist proven DOM interaction pipelines for specific websites, cutting exploration tokens by 80%+.
 - 🌐 **Manage Everything in Your Real Browser**: Unlike conventional automation tools confined to throwaway headless bubbles, BrowserClaw gives your agent full, authenticated control to manage everything in your everyday local browser — active tabs, windows, cookies, browsing history, and bookmarks.
+
+---
+
+## 🧠 How the Dual-Brain Works
+
+```text
+┌─ Tier 2 · Macro Planner (your reasoning LLM) ──────────┐
+│  Task decomposition, long-horizon reasoning,           │
+│  free-text generation, exception takeover              │
+└───────────────────────────┬────────────────────────────┘
+                            │ MCP (low frequency, macro goals)
+                            ▼
+┌─ Tier 1 · Semantic Micro-Loop (Native Server) ─────────┐
+│  chrome_act_toward_goal internal loop:                 │
+│  read_dom → Jev / heuristic decision → act → verify    │
+│  ~200–400ms per step · zero MCP round-trips            │
+└───────────────────────────┬────────────────────────────┘
+                            │ Native Messaging
+                            ▼
+┌─ Tier 0 · Deterministic Primitives (47 MCP tools) ─────┐
+│  batch_actions / form_pipeline / interact_index / ...  │
+│  Chrome MV3 Extension · CDP physical events            │
+└────────────────────────────────────────────────────────┘
+```
+
+**Routing rule of thumb:**
+
+- Target index known, action sequence fixed → **Tier 0** (`chrome_batch_actions` / `chrome_form_pipeline`)
+- Natural-language micro-goal, target on page but location unknown → **Tier 1** (`chrome_act_toward_goal`)
+- Long-horizon task, novel situation, content generation, or Tier 1 escalates → **Tier 2** (your LLM drives the other tools)
+
+**Setup:** set the `TYPESAFE_API_KEY` environment variable to enable the Jev engine. Without it, `chrome_act_toward_goal` automatically falls back to the built-in heuristic engine — always functional, gracefully degraded, and self-reporting via the `engine` field in every response.
+
+### Real-world benchmark (real Jev API, T1–T5)
+
+| Task                 | Wall-clock | Jev calls | Tokens (in/out) | Engine |
+| -------------------- | ---------- | --------- | --------------- | ------ |
+| T1 navigate + search | 2,062ms    | 2         | 1,737 / 52      | jev    |
+| T2 form submit       | 586ms      | 2         | 1,666 / 48      | jev    |
+| T3 select option     | 249ms      | 1         | 781 / 24        | jev    |
+| T4 modal handling    | 518ms      | 2         | 1,654 / 50      | jev    |
+| T5 multi-step        | 574ms      | 2         | 1,654 / 51      | jev    |
+
+Single-step median **~260–350ms**; end-to-end speedup **>75%** and token reduction **>80%** vs an LLM-in-the-loop baseline.
 
 ---
 
@@ -87,7 +135,9 @@ Every tool in the browser automation ecosystem has distinct architectural tradeo
 | Capability / Architecture                 | **BrowserClaw (This Project)**                                                                            | **browser-use (Python/CDP)**                                                                       | **Playwright MCP (Microsoft)**                                                               | **Stagehand (Browserbase)**                                                                      |
 | :---------------------------------------- | :-------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------- |
 | **Everyday Chrome Auth & Logins**         | ✅ **100% Native Extension**<br>Directly reuses active Google, GitHub, and SSO sessions                   | ⚠️ **Manual Profile Setup**<br>Separate process; profile copying often triggers bot challenges     | ❌ **Ephemeral Sandbox**<br>Fresh blank profile on every run; no access to daily logins      | ❌ **Cloud Sandbox**<br>Remote cloud container; requires manual cookie exports                   |
-| **Autonomous Agent Loop Included**        | ⚠️ **MCP Surface Only**<br>Plug into your existing agent (Cursor, Claude, Codex)                          | ✅ **Batteries-Included**<br>Built-in autonomous LLM reasoning loop out of the box                 | ❌ **MCP Tools Only**<br>Pure protocol tools; requires an external agent orchestrator        | ✅ **Natural Language**<br>Drive actions directly via `page.act("click login")`                  |
+| **Fast Local Decision Loop**              | ✅ **Dual-Brain Micro-Loop**<br>~200–400ms/step local perceive→decide→act, zero MCP round-trips           | ⚠️ **LLM-in-Loop**<br>Full agent decision round-trip per step (10s+)                               | ❌ **Tools Only**<br>External orchestrator decides every step                                | ⚠️ **Semantic Steps**<br>Per-step model inference on every action                                |
+| **Decision Fallback & Resilience**        | ✅ **Three-Engine Ladder**<br>Jev → heuristic → structured escalate; never hard-fails                     | ❌ **Single Brain**<br>LLM timeout or failure blocks the whole loop                                | ❌ **N/A**<br>No local decision layer at all                                                 | ⚠️ **Model Retry**<br>Relies on upstream model availability                                      |
+| **Autonomous Agent Loop Included**        | ⚠️ **MCP Surface + Micro-Loop**<br>Plug into your existing agent (Cursor, Claude, Codex)                  | ✅ **Batteries-Included**<br>Built-in autonomous LLM reasoning loop out of the box                 | ❌ **MCP Tools Only**<br>Pure protocol tools; requires an external agent orchestrator        | ✅ **Natural Language**<br>Drive actions directly via `page.act("click login")`                  |
 | **Cross-Engine Support (Firefox/WebKit)** | ❌ **Chromium-Only**<br>Deeply optimized for Chrome, Edge, Brave, and Opera                               | ⚠️ **Chromium-Centric**<br>Primarily targets Chromium via CDP                                      | ✅ **Full Native Engines**<br>Native multi-browser support for Chromium, Firefox & WebKit    | ⚠️ **Chromium-Centric**<br>Cloud containers primarily run Chromium                               |
 | **Cloud Elastic Concurrency**             | ❌ **Local Desktop First**<br>Built for your local workspace, not cloud container clusters                | ⚠️ **Self-Hosted Docker**<br>Requires provisioning your own multi-container infrastructure         | ⚠️ **Self-Hosted CI**<br>Requires setting up your own GitHub Actions / runner matrix         | ✅ **Elastic Cloud Fleet**<br>Instantly scales to thousands of remote browsers on Browserbase    |
 | **Token Cost per Action**                 | ✅ **Ultra-Low (<800 Tokens)**<br>Pruned 1-based DOM tree + autonomous diff (`includeDelta`)              | ⚠️ **Moderate (~5,000 Tokens)**<br>Full DOM snapshot evaluation or vision model roundtrip per step | ❌ **High (>10,000 Tokens)**<br>Dumps full raw ARIA accessibility trees on every interaction | ❌ **High (LLM-in-Loop)**<br>Re-infers target locators through models on every semantic step     |
@@ -103,14 +153,23 @@ Every tool in the browser automation ecosystem has distinct architectural tradeo
 - **Choose [browser-use](https://github.com/browser-use/browser-use)** if you want a complete, standalone Python agent that runs its own autonomous loop from the terminal.
 - **Choose [Playwright MCP](https://github.com/microsoft/playwright-mcp)** if you need an official Microsoft tool to run cross-browser test suites across Firefox, WebKit, and Chromium in CI/CD.
 - **Choose [Stagehand](https://github.com/browserbase/stagehand)** if you need to scale to thousands of ephemeral cloud browsers without managing local desktop infrastructure.
-- **Choose BrowserClaw** if you want your AI coding assistants (Claude Code, Cursor, Windsurf, Codex) to **control the Chrome you actually use every day** — inheriting all your active logins, slashing token costs by 85%+, and enjoying human-grade cursor aesthetics with graceful 2FA takeover.
+- **Choose BrowserClaw** if you want your AI coding assistants (Claude Code, Cursor, Windsurf, Codex) to **control the Chrome you actually use every day** — inheriting all your active logins, a fast local dual-brain decision loop, 85%+ token savings, and human-grade cursor aesthetics with graceful 2FA takeover.
 
 ---
 
-## 🛠️ Complete Tool Catalog (45 MCP Tools)
+## 🛠️ Complete Tool Catalog (47 MCP Tools)
 
-All 45 schema-validated tools are grouped into 6 logical categories below. **Click any category to expand its tool listing.**
+All 47 schema-validated tools are grouped into 6 logical categories below. **Click any category to expand its tool listing.**
 For machine-readable JSON schemas and detailed option flags, consult **[docs/TOOLS.md](./docs/TOOLS.md)**.
+
+<details>
+<summary><b>🧠 0. Autonomous Goal Execution (1 Tool) — New in v2.8</b></summary>
+
+<br/>
+
+- **`chrome_act_toward_goal`**: Autonomous semantic micro-loop that perceives, decides, and acts toward a natural-language goal within a local Native Server loop (~200–400ms/step). Powered by TypeSafe Jev System One with seamless fallback to heuristic scoring when no API key is available or on quota/network degradation. Automatically escalates ambiguous, destructive, or complex actions back to the macro planner with pre-fetched page context and a Top-3 decision probability distribution.
+
+</details>
 
 <details>
 <summary><b>🌐 1. Navigation & Tab Management (7 Tools)</b></summary>
@@ -148,12 +207,13 @@ For machine-readable JSON schemas and detailed option flags, consult **[docs/TOO
 - **`chrome_interact_index`**: Native trusted click, hover, dblclick, or click sequence (`points` array) by 1-based index; supports `includeDelta: true` for autonomous DOM diff feedback.
 - **`chrome_fill_index`**: Native trusted text input with automatic value clearing, Enter key submission, and `includeDelta: true` mutation checking.
 - **`chrome_batch_actions`**: High-performance multi-step pipeline combining click, fill, press, and wait in a single roundtrip, with built-in `assert` and `extract` rules.
+- **`chrome_form_pipeline`**: Deterministic multi-step wizard/questionnaire form pipeline — zero model calls, fastest and most reliable for standard form flows.
 - **`chrome_smart_scroll`**: Viewport overflow-aware scrolling with pixel precision and accurate remaining page counts (`pages_down` / `pages_up`).
 - **`chrome_keyboard`**: Dispatch physical keystrokes (Enter, Tab, Esc), combinations (Ctrl+C/V), or targeted text input.
 - **`chrome_upload_file`**: Intercept file chooser dialogs dynamically or inject absolute local file paths into `<input type="file">`.
 - **`chrome_handle_dialog`**: Handle or pre-arm responses for native JavaScript dialogs (alert, confirm, prompt).
 - **`chrome_handle_download`**: Track, monitor, and manage active native browser file downloads.
-- **`chrome_computer`**: Anthropic Computer Use-compatible unified interface for mouse and keyboard control.
+- **`chrome_computer`**: Anthropic Computer Use-compatible unified interface for mouse and keyboard control. _(Legacy compatibility path — prefer `chrome_act_toward_goal` for new autonomous loops.)_
 - **`chrome_request_human_intervention`**: Softly dim page, display a frosted-glass banner, park the virtual cursor, and yield control to the human for 2FA or slider captchas.
 - **`chrome_undo_last_action`**: 5-step ring buffer undo engine to roll back recent navigation jumps or form input values.
 
@@ -210,6 +270,8 @@ AI Client (Cursor / Claude / Codex)
          │  MCP (HTTP / SSE / Stdio) @ 127.0.0.1:12306
          ▼
 Native Messaging Bridge (Fastify + Stdio Host)
+         ├── Fast Decision Engine (Jev client + heuristic fallback + micro-loop)
+         └── Transparent passthrough for 46 deterministic tools
          │  Chrome Native Messaging (1MB buffer guard)
          ▼
 Chrome MV3 Extension (Service Worker + WXT + Vue 3)
@@ -218,7 +280,7 @@ Chrome MV3 Extension (Service Worker + WXT + Vue 3)
          └── Agent Cursor (Closed Shadow DOM spring kinematics overlay)
 ```
 
-See **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** for detailed topology and sequence flows.
+See **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** for detailed topology and ADR records (including ADR-023: the dual-brain decision layer).
 
 ---
 
@@ -240,6 +302,7 @@ BrowserClaw synthesizes architectural wisdom from the open-source community:
 - **[browser-use/browser-use](https://github.com/browser-use/browser-use)**: Token-efficient DOM-first indexing principles.
 - **[browseros-ai/BrowserOS](https://github.com/browseros-ai/BrowserOS)**: Autonomous DOM diffing (`includeDelta`) and element grep (`chrome_grep`).
 - **[ChatGPT Official Extension](https://chromewebstore.google.com/detail/chatgpt/hehggadaopoacecdllhhajmbjkdcmajg)**: Spring kinematics virtual cursor and tab group lifecycle patterns.
+- **[TypeSafe Jev](https://docs.typesafe.ai)** — and the [jev-browser](https://github.com/jkudish/jev-browser), [jev-voice-browser](https://github.com/moritzkremb/jev-voice-browser) & [jev-ultrafast](https://github.com/browser-use/jev-ultrafast) reference implementations: System One fast-decision patterns, speculative fan-out, and semantic-find criteria design.
 
 ---
 
