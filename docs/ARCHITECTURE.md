@@ -108,18 +108,18 @@ sequenceDiagram
     participant CDP as "CDP Session Manager"
     participant InPage as "Target Tab (Inpage Engine)"
 
-    Agent->>Fastify: POST /mcp (tools/call: chrome_interact_index)
+    Agent->>Fastify: POST /mcp (tools/call chrome_interact_index)
     Note over Fastify: Validates CHROME_MCP_TOKEN Bearer
     Fastify->>Host: Dispatch Native Message
     Host->>SW: Standard IO Framed Message (4-byte length prefix)
-    Note over SW: Enforces 1MB physical buffer defense & Sender Authentication
-    SW->>SW: Check Session-Tab Affinity (chrome.storage.session) & Snapshot Validity
-    SW->>InPage: UnifiedLocator: Resolve Target (Ref / Selector / Text / Coordinate)
-    InPage-->>SW: Target Coords { x, y, resolutionPath }
+    Note over SW: Enforces 1MB physical buffer defense and Sender Authentication
+    SW->>SW: Check Session-Tab Affinity and Snapshot Validity
+    SW->>InPage: UnifiedLocator - Resolve Target (Ref / Selector / Text / Coordinate)
+    InPage-->>SW: Target Coords (x, y, resolutionPath)
     SW->>CDP: Input.dispatchMouseEvent (mousePressed, mouseReleased)
     CDP-->>SW: CDP Ack (isTrusted: true)
     SW->>SW: Invalidate SnapshotCacheManager on navigation
-    SW-->>Host: Tool Result { content, resolutionPath }
+    SW-->>Host: Tool Result (content, resolutionPath)
     Host-->>Fastify: Native Pipe Response
     Fastify-->>Agent: HTTP 200 / SSE tool_result
 ```
@@ -134,18 +134,18 @@ sequenceDiagram
     participant CDP as "CDP Page Domain"
     participant RingBuf as "ScreenshotRingBuffer (Cap: 1)"
 
-    Agent->>SW: chrome_screenshot { format: 'jpeg', quality: 80, tabId: 101 }
+    Agent->>SW: chrome_screenshot (jpeg, quality 80, tabId 101)
     Note over SW: Checks tab.active state
     alt Background Tab (active: false)
-        SW->>CDP: Page.captureScreenshot { format: 'jpeg', quality: 80, fromSurface: true }
-        Note over SW: Bypasses captureVisibleTab to prevent active-window visual leaks & rAF hangs
+        SW->>CDP: Page.captureScreenshot (jpeg, quality 80, fromSurface: true)
+        Note over SW: Bypasses captureVisibleTab to prevent active-window visual leaks and rAF hangs
     else Active Foreground Tab
         SW->>CDP: Page.captureScreenshot or captureVisibleTab fallback
     end
     CDP-->>SW: Raw Base64 Buffer
-    SW->>RingBuf: push({ tabId, dataBase64, mimeType })
-    Note over RingBuf: Evicts older entry; enforces O(1) bounded memory
-    SW-->>Agent: MCP ToolResult with inline { type: 'image', data: base64, mimeType: 'image/jpeg' }
+    SW->>RingBuf: push (tabId, dataBase64, mimeType)
+    Note over RingBuf: Evicts older entry and enforces bounded O(1) memory
+    SW-->>Agent: MCP ToolResult with inline image payload
 ```
 
 ---
