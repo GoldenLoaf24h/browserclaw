@@ -3,11 +3,10 @@
 > 本文档由 `scripts/gen-tools-doc.mjs` 从 `packages/shared/src/tools.ts` 的 schema 生成，与代码保持一致。重新生成：`node scripts/gen-tools-doc.mjs`。
 
 | core（默认） | 14 | ~11.5k tokens | 核心高频利器（DOM 索引直点/表单/视觉/搜索） |
-| full | 46 | ~19.5k tokens | 完整底层 CDP 穿透与扩展控制 |
+| full | 47 | ~19.5k tokens | 完整底层 CDP 穿透与扩展控制 |
 | crawl | 12 | ~5.8k tokens | 极速批量网页抓取与数据提取 |
 
 被 profile 隐藏的工具可用 `chrome_tool_docs` 按类别查询参数（该工具在任何 profile 均可用）。
-
 
 ## 导航与标签页 / Navigation & Tabs
 
@@ -71,9 +70,6 @@ Detach CDP debugger from the tab and release session affinity, dismissing the Ch
 ### `get_windows_and_tabs`
 
 Get all currently open browser windows and tabs
-
-
-
 
 ## 页面感知 / Perception
 
@@ -146,15 +142,27 @@ Return compact parameter documentation for a category of BrowserClaw tools (navi
 - `category:navigate|perceive|act|observe|manage|crawl|diagnose|network`（必填） — Tool category to document
 - `activateForSession` — When true, dynamically exposes all tools in this category for the current MCP session without server restart. Default: false
 
-
 ## 交互操作 / Interaction
+
+### `chrome_act_toward_goal`
+
+Autonomous semantic micro-loop that perceives, decides, and acts toward a natural-language goal within a local Native Server loop (~200-400ms/step). Powered by TypeSafe Jev System One with seamless fallback to heuristic scoring when no API key is available or on quota/network degradation. Automatically escalates ambiguous, destructive, or complex actions back to the macro planner with pre-fetched page context.
+
+- `goal`（必填） — Natural language goal or objective to advance toward on the current page
+- `tabId` — Target tab ID (optional, defaults to active tab)
+- `maxSteps` — Maximum decision steps before terminating (default: 10, max: 60; heuristic capped at <= 5)
+- `timeoutMs` — Total execution timeout in milliseconds (default: 90000, max: 300000)
+- `textHint` — Explicit text hint to enter when typing, if not clearly quoted in goal
+- `confidenceThreshold` — Minimum confidence threshold to commit an action (default: 0.55)
+- `sessionId` — Optional session identifier to bind affinity to a specific tab context
+- `sessionContext` — Optional alias for sessionId
 
 ### `chrome_interact_index`
 
 Click, hover, or interact with an element using its compact 1-based numeric index from chrome_read_dom. When performing predictable multi-step actions (e.g. form submission or chain navigation), prefer chrome_batch_actions to finish in a single round-trip.
 
 - `index` — Compact 1-based numeric index of the target element
-- `coordinate` — Visual fallback coordinates in viewport/CSS pixels: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized, 0~1000 per-mille, or absolute viewport pixels across modern vision agents).
+- `coordinate` — Visual fallback coordinates in viewport/CSS pixels: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~~1.0 normalized, 0~~1000 per-mille, or absolute viewport pixels across modern vision agents).
 - `coordinateSpace:viewport|screenshot` — Coordinate reference space. "viewport" (default) assumes standard CSS viewport pixels. "screenshot" scales coordinates based on the latest screenshot capture resolution.
 - `autoSnap` — When clicking via coordinates or visual fallback, magnetically snap to the closest interactive element if clicked within 24px of whitespace. Default: true.
 - `points` — Click sequence: dispatch a full CDP click at each viewport point with intervalMs pacing (rapid burst for moving canvas targets)
@@ -270,7 +278,7 @@ Use a mouse and keyboard to interact with a web browser, and take screenshots.
 - `dwellMs` — For click actions: milliseconds to hold the button down before release (0-2000). Use 50-150 for targets that reject instant clicks
 - `action:left_click|right_click|double_click|triple_click|left_click_drag|scroll|scroll_to|type|key|fill|fill_form|hover|wait|resize_page|zoom|screenshot`（必填） — Action to perform. There is no plain "click" — use left_click.
 - `ref` — Element ref/index from chrome_read_dom. For click/scroll/scroll_to/key/type and drag end when provided; takes precedence over coordinates.
-- `coordinates` — Coordinates for actions: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~1.0 normalized, 0~1000 per-mille, or absolute viewport pixels across modern vision agents). Interpreted in the space set by coordinateSpace (default: viewport). Required for click/scroll and as end point for drag.
+- `coordinates` — Coordinates for actions: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (supports 0~~1.0 normalized, 0~~1000 per-mille, or absolute viewport pixels across modern vision agents). Interpreted in the space set by coordinateSpace (default: viewport). Required for click/scroll and as end point for drag.
 - `coordinateSpace:viewport|screenshot` — Space of coordinates: viewport (default, absolute CSS pixels) or screenshot (mapped through the most recent screenshot context for this tab).
 - `autoSnap` — Magnetically snap coordinate clicks to the closest interactive element if clicked within 24px of whitespace. Default: true.
 - `startCoordinates` — Starting coordinates for drag action: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box.
@@ -331,7 +339,6 @@ Autonomously fill and advance multi-step forms / wizards (e.g. Typeform, onboard
 - `windowId` — Target window ID (optional)
 - `sessionId` — Optional session identifier to bind affinity to a specific tab context
 - `sessionContext` — Optional alias for sessionId
-
 
 ## 观察与滚动 / Observation & Scrolling
 
@@ -401,7 +408,6 @@ Capture console output from a browser tab. Supports snapshot mode (default; one-
 - `pattern` — Optional regex filter applied to message/exception text. Supports /pattern/flags syntax.
 - `onlyErrors` — Only return error-level console messages (and exceptions when includeExceptions=true). Default: false.
 - `limit` — Deprecated alias for maxMessages. Prefer maxMessages.
-
 
 ## 数据管理 / Data Management
 
@@ -479,7 +485,6 @@ Close all tabs in a tab group and delete the group.
 
 - `groupId`（必填） — The ID of the tab group to close
 
-
 ## 代码诊断与调试 / Diagnostics & Debugging
 
 ### `chrome_doctor`
@@ -511,7 +516,7 @@ Read localStorage, sessionStorage, and cookies for the current tab. Cookies incl
 
 ### `chrome_intercept_api`
 
-Intercepts backend JSON API responses matching a URL pattern (e.g. "*/api/v1/data*") via CDP Network domain, bypassing messy HTML DOM scraping to obtain 100% structured ground-truth data.
+Intercepts backend JSON API responses matching a URL pattern (e.g. "_/api/v1/data_") via CDP Network domain, bypassing messy HTML DOM scraping to obtain 100% structured ground-truth data.
 
 - `urlPattern`（必填） — Glob pattern to match API endpoint URL
 - `triggerAction:inspect_recent|wait_next` — Wait for next response or inspect most recent match (default: inspect_recent)
@@ -540,7 +545,6 @@ Provides a lightweight summary of the last recorded trace. For deep insights (CW
 - `insightName` — Optional insight name for future deep analysis (e.g., "DocumentLatency"). Currently informational only.
 - `timeoutMs` — Timeout for deep analysis via native host (milliseconds). Default 60000. Increase for large traces.
 
-
 ## 网络拦截与捕获 / Network Interception & Capture
 
 ### `chrome_network_request`
@@ -567,6 +571,4 @@ Unified network capture tool. Use action="start" to begin capturing, action="sto
 - `inactivityTimeout` — Stop after inactivity in milliseconds (default: 60000). Set 0 to disable.
 - `includeStatic` — Include static resources like images/scripts/styles (default: false)
 
-
 ## 其他工具 / Remaining tools
-

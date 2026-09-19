@@ -51,5 +51,6 @@ out += '\n## 其他工具 / Remaining tools\n\n';
 for (const t of TOOL_SCHEMAS) {
   if (!seen.has(t.name)) { out += toolDoc(t) + '\n'; seen.add(t.name); }
 }
-fs.writeFileSync(new URL('../docs/TOOLS.md', import.meta.url), out);
+fs.writeFileSync(path.join(here, '../docs/TOOLS.md'), out);
 console.log('docs/TOOLS.md regenerated:', TOOL_SCHEMAS.length, 'tools');
+

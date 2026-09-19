@@ -11,7 +11,8 @@ Use this skill when interacting with the user's real local Chrome browser throug
 
 ## 1. Canonical Tool Contract & Zero-Redundancy Standards
 
-BrowserClaw strictly enforces **Canonical High-Reliability Tools (46 tools total)**. All legacy, brittle selector-based and redundant tools have been permanently purged:
+BrowserClaw strictly enforces **Canonical High-Reliability Tools (47 tools total)**. All legacy, brittle selector-based and redundant tools have been permanently purged:
+
 - **Clicking**: Exclusively use `chrome_interact_index` (1-based index, Shadow DOM pierced, humanized micro-jitter curve). Legacy `click_element` and `burst_interact` are removed.
 - **Filling**: Exclusively use `chrome_fill_index` (handles text, passwords, checkboxes, and dates automatically, with optional `pressEnter: true` to trigger immediate submission, True Input Commitment verification, and cross-platform deep reset) or `chrome_batch_actions` (pipelined). Legacy `fill_or_select` and `fill_form` are removed.
 - **Form Automation**: Use `chrome_form_pipeline` for autonomous multi-step questionnaires, onboarding wizards, and multi-step forms without multi-turn LLM ping-pong.
@@ -62,6 +63,34 @@ Mouse and keyboard input dispatched through the CDP path (`chrome_interact_index
 
 **Exception — `chrome_keyboard`**: named keys and chords go through the content-script simulator, which uses `dispatchEvent(new KeyboardEvent(...))` and is therefore **`isTrusted: false`**. Use it for convenience, not when a page checks trust. Multi-character literal text (e.g. `"AGENT-OK"`) is typed via CDP `Input.insertText` instead and _is_ trusted; `Ctrl+C`/`Ctrl+V` route through the real system clipboard.
 
+### 2.1 Hierarchical Dual-Brain & Three-Tier Execution Ladder
+
+BrowserClaw implements a **Hierarchical Dual-Brain** architecture that compresses the "Perceive → Decide → Act" micro-loop from 3 MCP roundtrips + remote LLM inference (6–10s/step) down to a local Native Server micro-loop (~200–400ms/step), while macro planning and reasoning remain with the primary LLM:
+
+```
+┌─ Tier 2  Macro Planner (Remote LLM) ──────────────────┐
+│  Task decomposition, long-horizon reasoning,          │
+│  creative text generation, and escalation handling    │
+└───────────────────────────────────────────────────────┘
+┌─ Tier 1  Semantic Micro-Loop (Native Server) ─────────┐
+│  chrome_act_toward_goal micro-loop                    │
+│  read_dom → Jev/Heuristic decision → interact → verify│
+└───────────────────────────────────────────────────────┘
+┌─ Tier 0  Deterministic Primitives (46 canonical tools)│
+│  chrome_batch_actions / form_pipeline / interact_index│
+└───────────────────────────────────────────────────────┘
+```
+
+#### Routing Rules (Zero-Ambiguity Ladder):
+
+1. **Tier 0 (Deterministic Primitives)**: Use when target indices are known or the action sequence is predetermined (`chrome_interact_index`, `chrome_fill_index`, `chrome_batch_actions`, `chrome_form_pipeline`). Maximum determinism and zero model latency.
+2. **Tier 1 (Semantic Micro-Loop)**: Use for bounded natural-language goals on the current page where element locations are unknown or require semantic grounding (`chrome_act_toward_goal`). Evaluates ~100–180ms per step via TypeSafe Jev System One with seamless fallback to built-in heuristic scoring.
+3. **Tier 2 (Macro Planner)**: Use for macro strategy, cross-page synthesis, free-form text drafting, or when Tier 1 escalates.
+
+#### Legacy Compatibility Path Notice: `chrome_computer`
+
+- `chrome_computer` is preserved strictly as an external compatibility contract for Anthropic Claude Computer Use clients. All new automation workflows must use `chrome_act_toward_goal` or Tier 0 deterministic primitives.
+
 ---
 
 ## 3. Standard Agent Interaction Workflow
@@ -97,12 +126,15 @@ Mouse and keyboard input dispatched through the CDP path (`chrome_interact_index
 Framework validators (React Hook Form, Angular, VeeValidate) often only set `aria-invalid` / `aria-required` and never touch the native `validity` object; both paths are reported, so a field marked `aria-invalid="true"` also shows `invalid="true"`.
 
 #### Input Disambiguation: Rich Composer vs Search Box
+
 In modern SPAs (Twitter/X, Notion, Slack, GitHub), compose areas and search boxes can both present as text inputs. BrowserClaw automatically flags:
+
 - `[composer]` — Rich tweet/post compose boxes (`contenteditable="true"`, Draft.js, Lexical, multiline textbox). ALWAYS target this element when posting or replying!
 - `[editor]` — Code or rich Markdown editors (ProseMirror, Quill, Monaco, CodeMirror).
 - `searchbox` — Top navigation or search queries. If you accidentally attempt to fill a searchbox with multi-line or long post content, `chrome_fill_index` will return an `[Input Disambiguation Notice]` to prompt targeting the composer.
 
 #### Modal Confirmation Trap Warning (`[CONFIRMATION_TRAP]`)
+
 When leaving an unsaved post or composer, SPAs often open a secondary confirmation dialog (e.g. `"Discard draft?"`, `"放弃帖子？"`). BrowserClaw detects this trap, flags `isConfirmationTrap: true`, and injects a high-priority warning banner:
 `[Modal Guidance: CRITICAL CONFIRMATION TRAP DETECTED ... You MUST dismiss or confirm this dialog before attempting any other actions]`
 
@@ -147,13 +179,17 @@ When filling multiple fields or executing consecutive actions, **always prefer `
 ```
 
 #### Assertions & Reactive Settling
+
 `chrome_batch_actions` supports state assertions with async debounce settling (`timeoutMs`, default 300ms) to eliminate race conditions with React/Vue reactive form validation:
+
 - Conditions: `enabled`, `disabled`, `valid`, `invalid`, `checked`, `unchecked`, `matches` (regex), `contains`, `not_contains`, `equals`, `visible`, `not_visible`.
 - Elements with `aria-invalid="true"` are automatically evaluated as `invalid="true"`.
 - Occlusion Halt: If an element is blocked by a modal backdrop or dialog and cannot be pierced, execution immediately halts with the blocker description.
 
 #### Inline Network Capture (`captureNetwork`)
+
 Both `chrome_interact_index` and `chrome_batch_actions` support capturing HTTP response payloads triggered by interactions in a single roundtrip:
+
 ```json
 {
   "index": 4,
@@ -166,6 +202,7 @@ Both `chrome_interact_index` and `chrome_batch_actions` support capturing HTTP r
   }
 }
 ```
+
 - Decodes and parses JSON/text response bodies safely using `Network.loadingFinished`.
 - Memory safety: 2MB total buffer cap, 50KB response body slice limit.
 - Telemetry/analytics filtering (`google-analytics`, `sentry`, `doubleclick`) and auto-masking of sensitive credentials (`password`, `token`, `apiKey`).
@@ -229,11 +266,14 @@ For multi-step forms, questionnaires, onboarding wizards (e.g. Typeform), or reg
   "maxSteps": 15
 }
 ```
+
 - **Autonomous Step Progression**: Automatically locates active question inputs, performs cross-platform deep resets, verifies input commitment, and triggers advance (Enter or OK/Next button).
 - **Safety Interruption**: Yields immediate structured status (`status: "interrupted"`) if encountering CAPTCHAs, validation errors, or unrecognized questions.
 
 #### Perceptive Delta Feedback (`perceptiveDelta`)
+
 Actions (`chrome_interact_index`, `chrome_fill_index`, `chrome_batch_actions`) automatically compute and return `perceptiveDelta` showing:
+
 - `currentQuestion`: Newly displayed active question/heading.
 - `progress`: Active step counter (e.g. `"3 of 15"`).
 - `advanced`: Boolean indicating whether step progression occurred.
@@ -346,6 +386,7 @@ To inspect or interact with fine details (small dice dots, tiny badges, CAPTCHAs
 ```
 
 Or via `chrome_computer`:
+
 ```json
 {
   "action": "zoom",
@@ -496,6 +537,7 @@ When a user asks how to upgrade BrowserClaw, or when diagnosing outdated version
    - Open `chrome://extensions/` and click the **"Reload" (重新载入)** icon on the BrowserClaw card.
 
 2. **Source Code / Git Pull Upgrade**:
+
    ```bash
    git pull origin main
    pnpm install
@@ -510,6 +552,204 @@ When a user asks how to upgrade BrowserClaw, or when diagnosing outdated version
 ### 6.2 Site Automation Recipes & DIY Playbook Caching (`recipes/`)
 
 BrowserClaw supports persisting and reusing proven interaction patterns for specific websites under `recipes/`:
+
+- **Checking Existing Recipes**: Before exploring complex or repetitive sites from scratch, check if a matching playbook exists in `recipes/<site-name>.md`.
+- **Authoring Reusable Recipes**: When an agent successfully solves a complex multi-step workflow (e.g. specialized ERPs, dev portals, or custom web forms), it can distill the key selectors, fast-path pipelines (`chrome_batch_actions`), and timing gotchas into `recipes/<service>.md` following `recipes/template.md`.
+- **Benefits**: Subsequent runs can bypass redundant full-DOM exploration, saving 80%+ tokens and accelerating execution by 3x~5x.
+
+---
+
+## 7. The Escalation Protocol Reference (Anti-Confusion & Self-Healing Protocol)
+
+To eliminate agent decision confusion and guarantee self-healing across complex web apps, adhere strictly to the **5-Tier Escalation Protocol**:
+
+1. **Tier 1 (High-Level Semantic Engine - Default 90%)**:
+   - chrome_interact_index / chrome_fill_index / chrome_batch_actions
+   - chrome_read_dom / chrome_get_markdown / chrome_smart_scroll / chrome_navigate
+   - Always default to Tier 1. It is 10x more token-efficient, prunes 85% DOM noise, supports `[shadow]` pierced elements, and automatically drives the 1:1 agent cursor.
+   - Check `urlChanged` in interaction responses to immediately confirm form/post submissions without extra rounds.
+
+2. **Tier 2 (In-Page Script & Network Bypass - 5%)**:
+   - `chrome_javascript` (dynamic unlock): Use `mcp.click()`, `mcp.fill()`, or native `composedPath()` when closed ShadowRoots or custom rich-text editors block standard DOM interaction.
+   - `chrome_network_request`: Directly fetch backend JSON APIs using the active session's cookies/credentials to bypass anti-scraping DOM defenses.
+
+3. **Tier 3 (Visual Fallback Engine - 3%)**:
+   - chrome_screenshot (1:1 viewport coordinate grid) -> chrome_computer
+   - Used for headless Canvas games, WebGL visualizations, or unlabeled SVG elements without DOM nodes.
+
+4. **Tier 4 (Human-in-the-Loop Handoff - 1%)**:
+   - `chrome_request_human_intervention`: When encountering anti-bot verification (slider puzzles, Geetest, reCAPTCHA, SMS 2FA, payment approval) where CDP events are blocked or ack times out, call this tool to pop an overlay asking the user to solve it, then resume cleanly.
+
+5. **Tier 5 (Raw CDP Escape Hatch - <1%)**:
+   - chrome_cdp_execute (Target polymorphic, auto-detach timeout guard)
+   - Never call for standard clicks, text inputs, or basic reading.
+   - Use ONLY when high-level tools repeatedly fail twice, or when low-level browser primitives are required (e.g. Network.getCookies, Emulation.setDeviceMetricsOverride, Page.printToPDF, or out-of-process iframe target: { targetId }).
+
+---
+
+## 8. High-Efficiency Agent Patterns & Best Practices
+
+### 8.1 Targeted Search Over Full DOM Dump (`chrome_grep`)
+
+When hunting for a specific button, link, or keyword in huge pages (> 5,000 tokens):
+
+- **DO NOT** call `chrome_read_dom` blindly.
+- **DO** call `chrome_grep { query: "Submit", searchType: "interactive_only" }`.
+- It returns matching 1-based indices and selectors immediately for < 100 tokens, ready for direct `chrome_interact_index`.
+- Supports multi-frame traversal across nested iframes with hierarchical index remapping, and matches against element text, roles, `placeholder`, `aria-label`, and `value` attributes.
+
+### 8.2 Self-Driven Diff Piggybacking (`includeDelta: true`)
+
+To avoid double-roundtrip latency ("click -> wait -> read_dom -> wait"):
+
+- Pass `includeDelta: true` when calling `chrome_interact_index`, `chrome_fill_index`, or `chrome_batch_actions`.
+- The response includes a `delta` object detailing newly added, modified, or removed DOM elements and the new revision.
+- If `delta.unchanged === true`, the page experienced zero DOM mutations, saving a full inspection turn.
+
+### 8.3 Closed-Loop Pipeline with Assert & Extract (`chrome_batch_actions`)
+
+For multi-step flows (e.g. filling search forms and collecting results):
+
+```json
+{
+  "tabId": 123,
+  "actions": [
+    { "type": "fill", "index": 4, "text": "AI Automation" },
+    { "type": "click", "index": 5 },
+    {
+      "type": "assert",
+      "selector": ".results-container",
+      "condition": "visible",
+      "abortOnFailure": true
+    },
+    {
+      "type": "extract",
+      "selector": ".result-count",
+      "property": "text",
+      "variableName": "totalResults"
+    }
+  ],
+  "includeDelta": true
+}
+```
+
+Executes with zero intermediate roundtrip lag and returns extracted values under `extractedData`. Automatically handles cross-origin iframe coordinate translation and subframe probe routing across nested browsing contexts.
+
+### 8.4 Handling Captchas & 2FA (`chrome_request_human_intervention`)
+
+When encountering slider captchas, SMS codes, or payment prompts:
+
+- Call `chrome_request_human_intervention { reason: "Please complete slider verification" }`.
+- Automatically dims page, displays an Apple/OpenAI styled frosted glass top banner constructed with safe DOM APIs (immune to DOM XSS), parks the virtual mouse, and yields control to the user.
+- Resumes seamlessly once the user clicks "Continue" or presses `Enter`.
+
+### 8.5 Inspecting Hard-to-Read Captchas & Charts (`chrome_inspect_media`)
+
+- Call `chrome_inspect_media { index: 12 }` to extract the lossless native bitmap of an `<img>` or `<canvas>`.
+- Complex noisy captchas automatically trigger a 200%+ super-sampling close-up crop.
+
+### 8.6 Silent Debugger Setup Support
+
+- When helping a user install or configure BrowserClaw, always offer to configure Chrome with `--silent-debugger-extension-api`.
+- This suppresses the native top warning bar ("BrowserClaw is debugging this browser") and prevents page-height jitter.
+
+### 8.7 Safe Tab Closure (`chrome_close_tabs`)
+
+- When closing specific tabs, pass `tabIds` or `url`.
+- When closing without `tabIds` or `url`, pass `confirm: true` (or provide `sessionId` for session affinity). This prevents accidental destruction of the human user's active foreground tab.
+
+### 8.8 In-Page JavaScript Evaluation (`chrome_javascript`)
+
+- Supports top-level `await` and automatic single-expression `return (...)` wrapping. You can pass raw expressions such as `document.title` or `window.location.href` directly without manually prepending `return`.
+
+### 8.9 Viewport-Only Token Pruning (`chrome_read_dom` with `viewportOnly: true`)
+
+When inspecting long-scroll pages (e.g. social feeds, search results, large data tables):
+
+- Call `chrome_read_dom { viewportOnly: true }` to constrain extraction to elements within or immediately adjacent (150px) to the current viewport.
+- Eliminates distant off-screen DOM nodes and reduces token consumption by an additional 50%~70%.
+
+### 8.10 VOM Geometric Coverage & Modal Focus Guidance
+
+- BrowserClaw calculates exact geometric viewport overlap: `overlap / (vp.width * vp.height)`.
+- When an overlay covers $\ge 60\%$ of the screen or a modal covers $\ge 12\%$, the compact AX tree prefixes:
+  `[Modal Guidance: Active modal focus trap (<element>). Prioritize interacting with modal elements or dismissing it.]`
+- When you see this header, focus on resolving or closing the active dialog before targeting background elements.
+
+  - Only for canvas, charts, or visual verification.
+
+### E. Focus Isolation & Non-Disruptive Multi-Tab Operation (Zero User Interruption)
+
+BrowserClaw is specifically engineered to let agents work completely in the background without interrupting the user's foreground browsing:
+
+1. **Never switch the user's active tab**: In multi-tab workflows, **DO NOT call `chrome_switch_tab`** unless the user explicitly requested to switch their active tab view. Calling `chrome_switch_tab` forces Chrome to switch active tabs and steal focus from the user!
+2. **Direct `tabId` Targeting**: All core tools (`chrome_read_dom`, `chrome_interact_index`, `chrome_fill_index`, `chrome_screenshot`, `chrome_smart_scroll`, `chrome_batch_actions`, `chrome_computer`, `chrome_get_markdown`, etc.) accept an explicit `tabId`. Always pass the target `tabId` directly. BrowserClaw uses out-of-band CDP sessions to interact with background tabs without bringing them to the front or moving the user's cursor.
+3. **Background Navigation & Task-Aligned Tab Grouping**:
+   - `chrome_navigate` opens new tabs in the background (`background: true` by default). Never pass `background: false` unless the user explicitly asked to bring the tab into the foreground.
+   - **Custom Tab Group**: Always generate a short, task-aligned `groupTitle` in the user's language (e.g. `"知乎调研"`, `"GitHub 搜索"`, `"Flight Tracker"`) and pick an appropriate `groupColor` (e.g. `"purple"`, `"cyan"`, `"orange"`). If omitted, it falls back to `"Agent"` and `"blue"`. This gives the user clear visual context of what the agent is currently working on.
+4. **Session Tab Affinity**: When working across multiple turns, pass `sessionId` to bind your agent session to its target tab, preventing accidental fallback to the user's active tab.
+
+### F. Session State Inspection (`chrome_storage`)
+
+Reads localStorage, sessionStorage, and cookies for the current tab in one call:
+
+```json
+// Call chrome_storage
+{
+  "types": ["localStorage", "cookies"],
+  "filter": "token",
+  "limit": 50
+}
+```
+
+- `cookies` includes **HttpOnly** entries, which `document.cookie` and page-side JS cannot see — the only way to inspect a logged-in session cookie.
+- `includeHttpOnly: false` hides them; `filter` matches key or value case-insensitively; values are capped at 2000 chars with a `truncated` flag.
+- WebSocket frames are captured by `chrome_network_capture` (text payloads up to 4000 chars, binary recorded by size, max 200 frames per connection).
+
+### G. Link Graph Extraction & On-Demand Tool Docs (`chrome_tool_docs`)
+
+- `chrome_get_markdown { includeLinks: true }` returns a complete Markdown document along with every unique absolute URL, anchor text, and link graph metadata — the canonical replacement for multi-page crawls. Pair with `chrome_navigate` + `chrome_get_markdown { fit: true }` per page.
+- **Streamlined Core Profile (14 tools default)**: BrowserClaw defaults to 14 high-frequency tools (`chrome_read_dom`, `chrome_get_markdown`, `chrome_inspect_media`, `chrome_grep`, `chrome_interact_index`, `chrome_fill_index`, `chrome_batch_actions`, `chrome_screenshot`, `chrome_smart_scroll`, `chrome_navigate`, `chrome_switch_tab`, `chrome_close_tabs`, `get_windows_and_tabs`, `chrome_tool_docs`), reducing token overhead by >65%.
+- **Auto-Unlock on Call**: Calling any non-core tool (e.g. `chrome_javascript`, `chrome_history`, `chrome_network_request`) automatically unlocks its entire category and executes without error, while notifying the client via `notifications/tools/list_changed`.
+- `chrome_tool_docs { category: "navigate" | "perceive" | "act" | "observe" | "manage" | "crawl" | "diagnose" | "network", activateForSession?: true }` prints compact parameter docs for one category (~1-3KB).
+- Visual assets: `chrome_read_dom` lists `[asset N]` entries (img/canvas/video/background-image with bounding boxes); `chrome_screenshot { assetIndex: N }` returns the real image resource (falls back to a viewport crop only when bytes are unobtainable).
+
+---
+
+## 6. Configuration & Self-Healing Diagnostics
+
+For complete client configuration files, self-repair diagnostics, and version upgrades:
+
+- **Client Configs**: See [`config/mcp-config.json`](./config/mcp-config.json) for Claude Desktop, Cursor, Windsurf, Cline, Roo Code, and Antigravity.
+- **Diagnostic Tool**: Run `chrome_doctor` or `browserclaw doctor` to run a comprehensive health check on port `12306`, bridge token, Chrome extension connection, and Native Messaging Host registration.
+- **Troubleshooting Guide**: See [`config/TROUBLESHOOTING.md`](./config/TROUBLESHOOTING.md) for quick solutions to common connection or state issues.
+
+### 6.1 Extension & Native Host Upgrade Procedure
+
+When a user asks how to upgrade BrowserClaw, or when diagnosing outdated version mismatches:
+
+1. **GitHub Release Download (Direct)**:
+   - Download the latest `browserclaw-extension-vX.Y.Z.zip` from [Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest).
+   - Unzip and overwrite the existing unpacked extension folder.
+   - Open `chrome://extensions/` and click the **"Reload" (重新载入)** icon on the BrowserClaw card.
+
+2. **Source Code / Git Pull Upgrade**:
+
+   ```bash
+   git pull origin main
+   pnpm install
+   pnpm build
+   ```
+   - Then click the "Reload" icon in `chrome://extensions/` to reload the newly compiled extension output.
+
+3. **Verify Upgrade Success**:
+   - Run `browserclaw doctor` in the terminal or call `chrome_doctor {}` via MCP.
+   - Verify that all core components show `pass` and report the updated version.
+
+### 6.2 Site Automation Recipes & DIY Playbook Caching (`recipes/`)
+
+BrowserClaw supports persisting and reusing proven interaction patterns for specific websites under `recipes/`:
+
 - **Checking Existing Recipes**: Before exploring complex or repetitive sites from scratch, check if a matching playbook exists in `recipes/<site-name>.md`.
 - **Authoring Reusable Recipes**: When an agent successfully solves a complex multi-step workflow (e.g. specialized ERPs, dev portals, or custom web forms), it can distill the key selectors, fast-path pipelines (`chrome_batch_actions`), and timing gotchas into `recipes/<service>.md` following `recipes/template.md`.
 - **Benefits**: Subsequent runs can bypass redundant full-DOM exploration, saving 80%+ tokens and accelerating execution by 3x~5x.
@@ -642,3 +882,41 @@ When inspecting long-scroll pages (e.g. social feeds, search results, large data
 
 - **Tab Mode (Default)**: Automatically groups temporary task tabs under dedicated, colored Chrome Tab Groups (e.g., `12306查询`) within the current window and emulates background focus.
 - **Window Mode**: If the user toggles Window Mode in the popup, Agent tasks open in a separate OS window where CDP debugger infobars are strictly confined, leaving the user's primary workspace 100% untouched.
+
+### 8.13 Autonomous Semantic Micro-Loop (`chrome_act_toward_goal`)
+
+For bounded natural language micro-goals on the active page:
+
+```json
+{
+  "goal": "在搜索框中输入\"BrowserClaw\"并点击搜索",
+  "tabId": 42,
+  "maxSteps": 10,
+  "timeoutMs": 90000,
+  "confidenceThreshold": 0.55
+}
+```
+
+#### Execution Contract & Response Fields:
+
+- `status`: `"done"` | `"escalate"` | `"stuck"` | `"blocked"` | `"max_steps"` | `"timeout"`.
+- `engine`: `"jev"` (TypeSafe Jev System One) or `"heuristic"` (zero-dependency rule engine).
+- `engineSwitched`: `boolean` indicating if a runtime downgrade occurred midway.
+- `fallbackReason`: `"no_api_key"` | `"invalid_key"` (401 session latch) | `"quota_exhausted"` / `"rate_limited"` (429) | `"network_error"` | `null`.
+- `steps`: Array of executed steps, each containing:
+  - `action`: `"click"`, `"type"`, `"select"`, `"scroll_down"`, `"scroll_up"`, `"back"`, `"wait"`.
+  - `confidence`: Confidence score (0.00–1.00).
+  - `jevSuggestion`: `{ action, target, confidence, probabilities: <Top-3 distribution> }` for decision observability.
+  - `outcome`: State transition delta (`urlChanged`, `mutated`, `visualDiff`).
+- `finalPage`: `{ url, title }` of the final page state.
+- `currentElements`: Bounded list of interactive page elements (<=60 lines) returned on `"escalate"` or `"stuck"` for immediate zero-RTT macro planner recovery.
+- `jevUsage`: `{ calls, inputTokens, estCostUsd }` ($0.042 / M input tokens).
+
+#### Autonomous Escalation Protocol:
+
+The micro-loop immediately halts and escalates to Tier 2 (the caller LLM) when:
+
+1. `action confidence < confidenceThreshold (0.55)`.
+2. `target confidence < 0.45` or top target probability `< 0.35`.
+3. Destructive action detected (14 protected keywords: `pay`, `支付`, `付款`, `删除`, `delete`, `purchase`, `buy`, `submit`, `提交`, `发送`, `post`, `发布`, `confirm`, `确认` or Jev `destructive` noul $\ge 0.50$).
+4. Text payload for typing is ambiguous (`"text payload unclear"`).

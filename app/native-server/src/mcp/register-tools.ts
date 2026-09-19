@@ -17,11 +17,14 @@ import {
   TOOL_CATEGORIES,
   TOOL_NAME_TO_CATEGORY,
 } from 'chrome-mcp-shared';
+import { FastDecisionEngine } from '../jev';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 // Resolved once at startup: changing the profile requires an MCP server restart.
 const TOOL_PROFILE = resolveToolProfile(process.env.CHROME_MCP_TOOL_PROFILE);
 const EXPOSED_TOOLS = filterToolSchemas(TOOL_SCHEMAS, TOOL_PROFILE);
+
+const fastDecisionEngine = new FastDecisionEngine();
 
 // Per-session dynamic tool activation store
 const sessionExtraTools = new Map<string, Set<string>>();
@@ -44,11 +47,13 @@ export const setupTools = (server: Server, serverSessionId?: string) => {
 
   // Call tool handler
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const sessionId =
-      (request.params.arguments as any)?.sessionId ||
-      (request.params.arguments as any)?.sessionContext ||
-      serverSessionId;
-    return handleToolCall(request.params.name, request.params.arguments || {}, sessionId, server);
+    const rawArgs = (request.params.arguments || {}) as any;
+    const args = {
+      ...rawArgs,
+      _meta: rawArgs._meta || (request.params as any)?._meta,
+    };
+    const sessionId = args?.sessionId || args?.sessionContext || serverSessionId;
+    return handleToolCall(request.params.name, args, sessionId, server);
   });
 
   // List resources handler - REQUIRED BY MCP PROTOCOL
@@ -113,6 +118,33 @@ const handleToolCall = async (
       };
     }
 
+    // Autonomous semantic micro-loop tool runs locally on Native Server
+    if (name === 'chrome_act_toward_goal') {
+      const actResult = await fastDecisionEngine.run(
+        args,
+        async (toolName: string, toolArgs: any) => {
+          return callToolInternal(toolName, toolArgs, sessionId);
+        },
+        server,
+      );
+      const result: CallToolResult = {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(actResult, null, 2),
+          },
+        ],
+        isError: false,
+      };
+      if (autoActivatedCategory && result && Array.isArray(result.content)) {
+        result.content.unshift({
+          type: 'text',
+          text: `[System Note: Tool category "${autoActivatedCategory}" has been dynamically unlocked for this session.]`,
+        });
+      }
+      return result;
+    }
+
     // 发送请求到Chrome扩展并等待响应
     // Dynamic activation hook for chrome_tool_docs
     if (name === 'chrome_tool_docs' && args?.activateForSession && args?.category) {
@@ -168,4 +200,25 @@ const handleToolCall = async (
       isError: true,
     };
   }
+};
+
+export const callToolInternal = async (
+  name: string,
+  args: any,
+  sessionId?: string,
+  timeoutMs = 120000,
+): Promise<any> => {
+  const response = await nativeMessagingHostInstance.sendRequestToExtensionAndWait(
+    {
+      name,
+      args,
+      sessionId,
+    },
+    NativeMessageType.CALL_TOOL,
+    timeoutMs,
+  );
+  if (response.status === 'success') {
+    return response.data;
+  }
+  throw new Error(response.error || `Error calling internal tool: ${name}`);
 };

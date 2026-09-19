@@ -62,6 +62,9 @@ export const TOOL_NAMES = {
     GREP: 'chrome_grep',
     FORM_PIPELINE: 'chrome_form_pipeline',
   },
+  NATIVE: {
+    ACT_TOWARD_GOAL: 'chrome_act_toward_goal',
+  },
 };
 
 export const RAW_TOOL_SCHEMAS: Tool[] = [
@@ -653,8 +656,7 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
       properties: {
         tabId: {
           type: 'number',
-          description:
-            'Single tab ID to close (convenience alternative to tabIds array).',
+          description: 'Single tab ID to close (convenience alternative to tabIds array).',
         },
         tabIds: {
           type: 'array',
@@ -1525,10 +1527,7 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
             'When true and an active modal dialog is detected, restricts indexing to the active modal while strictly protecting portals, dropdowns, and alert containers.',
         },
         exclude: {
-          oneOf: [
-            { type: 'string' },
-            { type: 'array', items: { type: 'string' } },
-          ],
+          oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
           description:
             'CSS selector(s) to exclude from parsing (e.g. "#footer, #recommendations, .ad-banner"). Matching elements and their entire subtrees are pruned.',
         },
@@ -3075,7 +3074,8 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
             properties: {
               query: {
                 type: 'string',
-                description: 'Question label, field name, placeholder, or keyword to match against active screen',
+                description:
+                  'Question label, field name, placeholder, or keyword to match against active screen',
               },
               value: {
                 type: 'string',
@@ -3084,7 +3084,8 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
               type: {
                 type: 'string',
                 enum: ['text', 'choice', 'enter'],
-                description: 'Input method: "text" (default fill), "choice" (click matching button/option), "enter" (submit via Enter key)',
+                description:
+                  'Input method: "text" (default fill), "choice" (click matching button/option), "enter" (submit via Enter key)',
               },
             },
             required: ['query', 'value'],
@@ -3097,7 +3098,8 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         },
         autoAdvance: {
           type: 'boolean',
-          description: 'Automatically trigger step advance via Enter or clicking OK/Next button after input (default: true)',
+          description:
+            'Automatically trigger step advance via Enter or clicking OK/Next button after input (default: true)',
         },
         tabId: { type: 'number', description: 'Target tab ID (optional)' },
         windowId: { type: 'number', description: 'Target window ID (optional)' },
@@ -3111,6 +3113,57 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         },
       },
       required: ['fields'],
+    },
+  },
+  {
+    name: TOOL_NAMES.NATIVE.ACT_TOWARD_GOAL,
+    annotations: {
+      title: 'Act Toward Goal',
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    description:
+      'Autonomous semantic micro-loop that perceives, decides, and acts toward a natural-language goal within a local Native Server loop (~200-400ms/step). Powered by TypeSafe Jev System One with seamless fallback to heuristic scoring when no API key is available or on quota/network degradation. Automatically escalates ambiguous, destructive, or complex actions back to the macro planner with pre-fetched page context.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: {
+          type: 'string',
+          description: 'Natural language goal or objective to advance toward on the current page',
+        },
+        tabId: {
+          type: 'number',
+          description: 'Target tab ID (optional, defaults to active tab)',
+        },
+        maxSteps: {
+          type: 'number',
+          description:
+            'Maximum decision steps before terminating (default: 10, max: 60; heuristic capped at <= 5)',
+        },
+        timeoutMs: {
+          type: 'number',
+          description: 'Total execution timeout in milliseconds (default: 90000, max: 300000)',
+        },
+        textHint: {
+          type: 'string',
+          description: 'Explicit text hint to enter when typing, if not clearly quoted in goal',
+        },
+        confidenceThreshold: {
+          type: 'number',
+          description: 'Minimum confidence threshold to commit an action (default: 0.55)',
+        },
+        sessionId: {
+          type: 'string',
+          description: 'Optional session identifier to bind affinity to a specific tab context',
+        },
+        sessionContext: {
+          type: 'string',
+          description: 'Optional alias for sessionId',
+        },
+      },
+      required: ['goal'],
     },
   },
 ];
