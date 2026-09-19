@@ -1,60 +1,322 @@
-# Troubleshooting / 故障排查
+# BrowserClaw Troubleshooting & Self-Healing Guide
 
-BrowserClaw 由本地构建的三部分组成：扩展（MV3）、原生宿主（native-server）、MCP 端点（127.0.0.1:12306）。以下按现象排查，全部基于本仓库实际实现。
+[📖 简体中文 (Chinese)](./TROUBLESHOOTING.zh-CN.md)
 
-## 1. MCP 客户端连不上 127.0.0.1:12306
+BrowserClaw consists of three locally coordinated tiers:
 
-1. 确认原生宿主进程存活：宿主由 Chrome 扩展通过 Native Messaging 拉起，Chrome 未运行时宿主不存在是正常的。
-2. 确认端口监听：`netstat -ano | findstr 12306`。
-3. 确认 token：请求头 `Authorization: Bearer <token>`，token 在 `~/.chrome-mcp/bridge-token`（宿主首次启动自动生成）。401/403 检查该文件。
-4. `CHROME_MCP_HOST` / `CHROME_MCP_PORT` 可覆盖默认 127.0.0.1:12306（见 app/native-server/src/constant/index.ts）。
-5. **Windows 僵尸进程防死锁说明（v2.3.8+）**：旧版本在 Chrome 关闭时可能因 HTTP Keep-Alive 未断开导致 Node 进程残留占用端口；当前版本已内置 `closeAllConnections()` 与 1000ms unref 硬看门狗强制退出。若遇历史残留，可执行 `taskkill /F /IM node.exe` 彻底清理。
+1. **Chrome Extension (MV3)**: Runs inside your everyday Google Chrome, executing CDP commands and DOM indexing.
+2. **Native Messaging Host (Node.js)**: Launched automatically by Chrome via Native Messaging, bridging protocol calls.
+3. **MCP Endpoint (127.0.0.1:12306 / Stdio)**: High-speed Fastify MCP server communicating with your AI agent (Cursor, Claude Code, Windsurf, Cline, Codex, Antigravity).
 
-## 2. 扩展 SW 未连接宿主
+This guide provides definitive diagnostics, root cause explanations, and verified fixes for all known runtime and build issues.
 
-1. chrome://extensions → BrowserClaw → service worker 控制台查 `[NativeHost]` 日志。
-2. 首次使用需在 popup 里连接；storage.session 的 `agentControlEnabled=false` 会拦截所有工具调用。
-3. 扩展重载后 Native Messaging 连接断开，宿主需重启。
+---
 
-## 3. 工具调用报错速查
+## ⚡ Quick Self-Healing: One-Click Diagnostics
 
-| 报错                                                                               | 原因与处理                                                                                                                                                   |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Cannot access a chrome:// URL                                                      | 受限页面，换普通页面                                                                                                                                         |
-| executeScript timeout ... renderer not acking                                      | 页面有原生弹窗或 renderer 卡死，先 chrome_handle_dialog                                                                                                      |
-| CDP_DISPATCH_TIMEOUT                                                               | 目标 tab 在后台且批量竞速超时，激活 tab 或重试                                                                                                               |
-| Security check failed: Domain changed                                              | 上次截图域名与当前 tab 不一致，重新截图                                                                                                                      |
-| Tool X is not exposed under the ... profile                                        | 当前 profile 隐藏了该工具，可调用 `chrome_tool_docs({ category: "<category>", activateForSession: true })` 免重启动态激活，或设置环境变量改回 full           |
-| Tool X is not a BrowserClaw tool                                                   | 工具名不存在，tools/list 查看当前 47 个（或 core 14 / crawl 12 / full 47）                                                                                   |
-| No tabIds or url specified. To close the current active tab, pass confirm: true... | 安全防误关机制：调用 `chrome_close_tabs` 未指定 `tabIds` 且无会话亲缘时触发。若确需关闭前台活跃 Tab，请显式传 `confirm: true`，或传入 `tabIds` / `sessionId` |
-| Target closed / not attached / timeout-guard detached                              | 页面崩溃或 CDP 响应超时，底层 `timeout-guard` 触发物理解挂防挂死。刷新页面或重新尝试调用工具                                                                 |
-| captureScreenshot returned empty data for background tab                           | 后台 Tab 离屏截图失败，检查目标 Tab 是否已关闭或被系统内存冻结 (Discarded)                                                                                   |
-| Failed to ... index [X] in cross-origin frame                                      | 跨域 iframe 坐标转换与动作失败，检查子 Frame 是否已卸载或受到严格沙箱 sandbox 属性限制                                                                       |
-| Message sender rejected / unauthenticated content script                           | 扩展安全加固：`chrome.runtime.onMessage` 拦截了来自 content script (`_sender.tab`) 或外部扩展的未经授权工具调用或 Token 读取请求                             |
-
-## 4. 构建问题
+Before manual troubleshooting, run the automated diagnostic script from the repository root:
 
 ```bash
-pnpm install
-pnpm --filter chrome-mcp-shared build   # shared 必须最先构建，否则 TS7016 满天飞
-pnpm build                              # 三包全量
+# Run read-only health checks
+node skill/config/doctor.mjs
+
+# Run automated diagnosis and self-healing (recreates tokens, repairs registry, syncs build artifacts)
+node skill/config/doctor.mjs --fix
 ```
 
-- 扩展产物：app/chrome-extension/.output/chrome-mv3，改码后需在 chrome://extensions 重载扩展。
-- native-server 构建：`pnpm --filter mcp-chrome-bridge build`。
+Windows users can also double-click [`skill/config/repair.bat`](../skill/config/repair.bat) or execute [`skill/config/repair.ps1`](../skill/config/repair.ps1).
 
-## 5. 日志位置
+---
 
-- 扩展 SW：chrome://extensions → service worker 控制台（NativeHost / Screenshot Tool 前缀）。
-- 宿主：随宿主进程 stdout；trace 文件默认写系统临时目录（performance 工具显式 saveToDownloads 才写 Downloads）。
+## 1. Connection Refused: `127.0.0.1:12306`
 
-## 6. 特殊场景与机制说明
+### Symptom
 
-1. **后台 Tab 离屏静默截图与隐私隔离**：
-   对于非激活标签页（`active: false`），BrowserClaw 强制走 CDP `Page.captureScreenshot`（`fromSurface: true`），严禁使用 `chrome.tabs.captureVisibleTab`，既防止把用户当前正在看的前台活跃窗口截屏泄露给 Agent，又彻底消除了后台 Tab 因 `requestAnimationFrame` 挂起导致的死锁。
+Agent client reports: `fetch failed: ECONNREFUSED 127.0.0.1:12306` or `connect ECONNREFUSED 127.0.0.1:12306`.
 
-2. **Stdio 与 HTTP/SSE 模式下的动态 Profile 激活**：
-   在 `core` 或 `crawl` 模式下，Agent 无需重启 MCP 进程，只需调用 `chrome_tool_docs({ category: "manage" | "diagnose" | "network", activateForSession: true })`，即可在当前会话中即时暴露并直接调用该类别的所有底层工具。
+### Root Cause
 
-3. **`chrome_javascript` 单表达式即席执行**：
-   执行无需手动包装 `(function(){ return ... })()`。对于 `document.title`、`window.location.href` 或任何合法单表达式，执行器会自动补齐 `return (...)` 包装，免去手写 return 的烦恼。
+The local Native Bridge service is not currently running. BrowserClaw uses an **on-demand lifecycle**: Chrome automatically starts the Native Messaging Host when Chrome launches and the BrowserClaw extension is active. If Chrome is not open, the bridge does not run.
+
+### Resolution Steps
+
+1. **Launch Google Chrome**: Ensure Chrome is running on your desktop.
+2. **Verify Extension State**: Navigate to `chrome://extensions/` and verify BrowserClaw is enabled (or load unpacked from `app/chrome-extension/.output/chrome-mv3`).
+3. **Inspect Popup Status**: Click the BrowserClaw extension icon in Chrome's toolbar. The status dot in the 200px×80px panel should turn **Green** ("Connected").
+4. **Inspect Port Listening**:
+   ```powershell
+   netstat -ano | findstr :12306
+   ```
+5. **Standalone Background Run (Optional)**: If you need to run the bridge independently without waiting for Chrome Native Messaging:
+   ```bash
+   node app/native-server/dist/index.js
+   ```
+6. **Windows Zombie Process Cleanup**:
+   In older versions, abrupt Chrome terminations could occasionally leave orphan Node processes holding port 12306. BrowserClaw v2.3.8+ includes `closeAllConnections()` and a 1000ms unreferenced watchdog. If an old zombie process still occupies the port:
+   ```powershell
+   taskkill /F /IM node.exe
+   ```
+
+---
+
+## 2. Extension Popup Displays Grey or Yellow ("Service Not Started")
+
+### Symptom
+
+Clicking the BrowserClaw extension icon displays a grey or yellow indicator, warning that the native bridge is unreachable.
+
+### Root Cause & Fixes
+
+1. **Unregistered Native Messaging Host**:
+   Chrome cannot find the native messaging manifest in the OS registry. Run:
+   ```bash
+   node skill/config/doctor.mjs --fix
+   # Or manually register:
+   node app/native-server/dist/scripts/register.js
+   ```
+2. **Port Conflict on 12306**:
+   Another process is occupying port 12306. Identify the conflicting PID:
+   ```powershell
+   netstat -ano | findstr :12306
+   ```
+   Kill the offending process or configure custom ports via `CHROME_MCP_PORT=12307` in your environment.
+3. **Agent Control Disabled in Popup**:
+   The popup toggle stores `agentControlEnabled` in `chrome.storage.session`. If toggled off, all MCP tool execution is intentionally intercepted. Open the popup and verify the toggle is **Active**.
+4. **Extension Reload Requires Host Reconnect**:
+   When you reload the extension in `chrome://extensions`, the native messaging pipe breaks. Click the extension popup once or restart Chrome to re-establish the pipe.
+
+---
+
+## 3. HTTP `401 Unauthorized` or Token Validation Failure
+
+### Symptom
+
+MCP client requests fail with `HTTP 401 Unauthorized: Missing or invalid token` or `Unauthorized: Invalid bridge token`.
+
+### Root Cause
+
+To protect your active browser sessions from untrusted local websites or processes, BrowserClaw strictly enforces token authentication. The client configuration must match the token stored in `~/.chrome-mcp/bridge-token`.
+
+### Resolution Steps
+
+1. **Retrieve Active Token**:
+   ```powershell
+   # Windows PowerShell
+   Get-Content "$HOME\.chrome-mcp\bridge-token"
+   ```
+   ```bash
+   # macOS / Linux
+   cat ~/.chrome-mcp/bridge-token
+   ```
+2. **Update Agent Client Configuration**:
+   Ensure your MCP client headers contain the exact token. Both `x-mcp-token` and standard `Authorization: Bearer <token>` are supported:
+   ```json
+   {
+     "mcpServers": {
+       "browserclaw": {
+         "url": "http://127.0.0.1:12306/mcp",
+         "headers": {
+           "x-mcp-token": "<TOKEN_FROM_BRIDGE_TOKEN_FILE>",
+           "Authorization": "Bearer <TOKEN_FROM_BRIDGE_TOKEN_FILE>"
+         }
+       }
+     }
+   }
+   ```
+3. **Auto-Generate Missing Token**:
+   If the file does not exist, run `node skill/config/doctor.mjs --fix` to generate a fresh cryptographic token.
+
+---
+
+## 4. Stale Element Indexes: `ACTION REQUIRED: Element reference is stale`
+
+### Symptom
+
+Calling `chrome_interact_index`, `chrome_fill_index`, or `chrome_hover_index` returns:
+`ACTION REQUIRED: Element reference is stale. Please call 'chrome_read_dom' to refresh the index tree.`
+
+### Root Cause
+
+Modern Single Page Applications (React, Vue, Next.js) dynamically re-render DOM trees following route changes, modal animations, or API updates. The 1-based index (e.g. `[14]`) previously captured no longer references the active DOM node.
+
+### Standard Agent Protocol
+
+**Do NOT blindly retry the same index!**
+The agent must immediately invoke `chrome_read_dom` to obtain fresh 1-based element indices, then resume actions using the new index. Alternatively, use `chrome_batch_actions` which validates element presence before multi-step dispatch.
+
+---
+
+## 5. High-DPI Displays (125%/150%/200%) & Click Coordinate Drift
+
+### Symptom
+
+When using visual clicking tools (`chrome_click_coordinate`), mouse clicks land offset from the visible target on high-resolution or scaled Windows displays.
+
+### Architecture & Assurance
+
+BrowserClaw implements **1:1 Viewport CSS Geometric Normalization** inside `screenshot.ts`. Screenshots are resampled via `OffscreenCanvas` to exact standard CSS viewport dimensions ($W_{viewport} \times H_{viewport}$).
+
+### Important Agent Guideline
+
+**Never manually multiply coordinates by the Device Pixel Ratio (DPR)!**
+Always dispatch coordinates directly as measured against the screenshot image. BrowserClaw's internal kinematics engine maps 1:1 CSS coordinates directly to CDP hardware events.
+
+---
+
+## 6. Native Dialog Interception (Alert / Confirm / Prompt)
+
+### Symptom
+
+A web page triggers a synchronous browser `window.alert()`, `window.confirm()`, or `window.prompt()`, causing CDP commands or scripts to hang.
+
+### Self-Healing Flow
+
+BrowserClaw automatically intercepts modal dialogs via `Page.javascriptDialogOpening`. When an action triggers a dialog, it immediately returns:
+
+```json
+{
+  "requiresDialogAction": true,
+  "dialog": {
+    "type": "alert",
+    "message": "Are you sure you want to proceed?"
+  }
+}
+```
+
+**Resolution**: Call `chrome_handle_dialog({ action: "accept" })` (or `"dismiss"`, with optional `promptText`) to dismiss the modal and unlock subsequent actions.
+
+---
+
+## 7. Accidental Tab Closure Protection (`confirm: true`)
+
+### Symptom
+
+Calling `chrome_close_tabs({})` fails with:
+`No tabIds or url specified. To close the current active tab, pass confirm: true or specify tabIds explicitly...`
+
+### Safety Rationale
+
+To prevent autonomous agents from accidentally closing the user's active foreground working tabs due to omitted arguments, closing active tabs requires explicit confirmation.
+
+### Resolution
+
+- To close agent-created tabs, provide explicit `tabIds: [tabId]` or target `url`.
+- If working within a bound session, provide `sessionId` to release associated tabs.
+- If you genuinely intend to close the user's current foreground tab, explicitly pass `confirm: true`.
+
+---
+
+## 8. CDP Detachment & Timeout Guards (`timeout-guard detached`)
+
+### Symptom
+
+CDP tool execution returns: `Target closed / not attached / timeout-guard detached`.
+
+### Underlying Mechanism
+
+If a target page crashes, navigates abruptly, or CDP commands exceed safety latency thresholds, the low-level `timeout-guard` triggers an immediate physical detachment (`chrome.debugger.detach`) and purges domain reference counters. This prevents Chrome's Service Worker from deadlocking or leaking memory.
+
+### Resolution
+
+Refresh the page or re-invoke the tool. BrowserClaw will automatically re-attach a fresh, clean CDP debugging session.
+
+---
+
+## 9. Background Tab Offscreen Screenshots & Privacy Isolation
+
+### Architecture
+
+For background tabs (`active: false`), BrowserClaw strictly dispatches CDP `Page.captureScreenshot` (`fromSurface: true`). It **strictly forbids** `chrome.tabs.captureVisibleTab`.
+
+### Benefits
+
+1. **Zero Privacy Leakage**: Prevents capturing the user's active personal screen while an agent operates in the background.
+2. **Deadlock Elimination**: Background tabs suspended by Chrome's `requestAnimationFrame` power-saving mechanisms capture cleanly without hanging.
+
+---
+
+## 10. Dynamic Profile Activation Under Stdio and HTTP/SSE
+
+### Use Case
+
+When running in restricted profiles (`core` 14 tools or `crawl` 12 tools), an agent can dynamically request access to advanced tools (e.g. `manage`, `diagnose`, `network`) without restarting the server process.
+
+### Method
+
+Invoke:
+
+```json
+chrome_tool_docs({ "category": "manage", "activateForSession": true })
+```
+
+The requested tools immediately become callable within the current session across both Stdio and HTTP/SSE transports.
+
+---
+
+## 11. `chrome_javascript` Expression Execution
+
+### Convenience Feature
+
+When evaluating JavaScript expressions via `chrome_javascript`, you do not need to wrap code in `(function(){ return ... })()`. Single expressions such as `document.title`, `window.location.href`, or concise evaluations are automatically wrapped in `return (...)`. For multi-line statements, include standard `return` statements.
+
+---
+
+## 12. Error Code & Diagnostic Reference Table
+
+| Error Signature                                            | Root Cause                                                                 | Verified Action                                                           |
+| :--------------------------------------------------------- | :------------------------------------------------------------------------- | :------------------------------------------------------------------------ |
+| `Cannot access a chrome:// URL`                            | Chrome security restricts extensions from debugging internal system pages. | Navigate to a standard `http://`, `https://`, or `file://` URL.           |
+| `executeScript timeout ... renderer not acking`            | Renderer process unresponsive or blocked by native modal dialog.           | Call `chrome_handle_dialog` or refresh target tab.                        |
+| `CDP_DISPATCH_TIMEOUT`                                     | Background tab execution timed out under heavy system throttling.          | Retry action or briefly switch tab to foreground.                         |
+| `Security check failed: Domain changed`                    | Navigation occurred between screenshot capture and coordinate action.      | Call `chrome_read_dom` or `chrome_take_screenshot` to re-align state.     |
+| `Tool X is not exposed under the ... profile`              | Tool is hidden under active profile (`core`/`crawl`).                      | Call `chrome_tool_docs({ category: "<cat>", activateForSession: true })`. |
+| `Tool X is not a BrowserClaw tool`                         | Non-existent tool name requested.                                          | Consult `tools/list` (47 canonical tools available).                      |
+| `captureScreenshot returned empty data for background tab` | Background tab was closed or discarded by Chrome memory saver.             | Re-open or navigate to target URL.                                        |
+| `Failed to ... index [X] in cross-origin frame`            | Child iframe was unmounted or restricted by sandbox permissions.           | Inspect frame status using `chrome_read_dom({ filter: "interactive" })`.  |
+| `Message sender rejected / unauthenticated content script` | Security guard blocked unauthorized message sender (`_sender.tab`).        | Ensure requests originate from authentic native bridge channels.          |
+
+---
+
+## 13. Monorepo Build Troubleshooting
+
+### Clean Build Sequence
+
+If you encounter TypeScript errors (`TS7016`, missing declarations) when building from source:
+
+```bash
+# 1. Install dependencies
+pnpm install
+
+# 2. Shared types MUST be built first
+pnpm --filter chrome-mcp-shared build
+
+# 3. Build full monorepo
+pnpm build
+```
+
+### Component Build Shortcuts
+
+- **Extension only**: `pnpm --filter @browserclaw/extension build` (output: `app/chrome-extension/.output/chrome-mv3`)
+- **Native Bridge only**: `pnpm --filter @browserclaw/native-server build`
+
+---
+
+## 14. Log Locations & Diagnostics
+
+- **Chrome Extension Service Worker**:
+  Open `chrome://extensions/` → Click **Service Worker** inspect link under BrowserClaw → Inspect console messages prefixed with `[NativeHost]` or `[Screenshot Tool]`.
+- **Native Server Logs**:
+  Output directly to the process `stdout`/`stderr` or your terminal console.
+- **Trace Files**:
+  Performance traces recorded via `chrome_performance_start` default to the OS temporary directory (`os.tmpdir()`), unless `saveToDownloads: true` is explicitly requested.
+
+---
+
+## 15. Component & File Directory Map
+
+| Component                | Source Code Path               | Production Artifact / Endpoint                          |
+| :----------------------- | :----------------------------- | :------------------------------------------------------ |
+| **Chrome MV3 Extension** | `app/chrome-extension/`        | `app/chrome-extension/.output/chrome-mv3`               |
+| **Native Bridge Server** | `app/native-server/`           | `127.0.0.1:12306` (Token: `~/.chrome-mcp/bridge-token`) |
+| **Shared Tool Schemas**  | `packages/shared/src/tools.ts` | 47 canonical MCP tool definitions                       |
+| **Diagnostics & Repair** | `skill/config/`                | `doctor.mjs`, `mcp-config.json`, `repair.bat`           |

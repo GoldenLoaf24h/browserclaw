@@ -1,186 +1,168 @@
-# BrowserClaw (mcp-chrome) 故障排查与自愈手册 (Troubleshooting Guide)
+# BrowserClaw Troubleshooting & Self-Healing Manual
 
-本文档汇总了 BrowserClaw (mcp-chrome) 在实际接入各大 AI Agent 平台（Claude Desktop, Cursor, Windsurf, Cline, Roo Code, Antigravity）过程中可能遇到的典型问题、深层根因及标准修复方案。
+[📖 简体中文 (Chinese)](./TROUBLESHOOTING.zh-CN.md)
+
+This manual compiles typical connectivity, state, and permission issues encountered across major AI Agent platforms (Claude Desktop, Cursor, Windsurf, Cline, Roo Code, Codex, Antigravity), detailing root causes and standard recovery workflows.
 
 ---
 
-## ⚡ 快速自愈：一键诊断与修复
+## ⚡ Quick Self-Healing: One-Click Diagnostics
 
-遇到任何连接或操作异常，请优先在项目根目录运行自动化诊断脚本：
+Run the automated diagnostic script from the project root whenever an anomaly occurs:
 
 ```bash
-# 仅执行健康检查
+# Run read-only health checks
 node skill/config/doctor.mjs
 
-# 执行诊断并自动修复（创建丢失的 Token、修复注册表、同步构建产物）
+# Execute diagnosis and self-repair (creates missing tokens, repairs registry, syncs artifacts)
 node skill/config/doctor.mjs --fix
 ```
 
-Windows 用户亦可直接双击运行 [`skill/config/repair.bat`](./repair.bat)。
+Windows users can also double-click [`skill/config/repair.bat`](./repair.bat) or run [`skill/config/repair.ps1`](./repair.ps1).
 
 ---
 
-## 常见问题与解决方案 (FAQ)
+## Frequently Asked Questions (FAQ)
 
-### 1. 客户端报 `Connection Refused: 127.0.0.1:12306`
+### 1. Client reports `Connection Refused: 127.0.0.1:12306`
 
-- **故障现象**：
-  Agent 客户端在调用工具或初始化连接时报错：`fetch failed: ECONNREFUSED 127.0.0.1:12306`。
-- **根本原因**：
-  本地 Fastify Native Bridge 服务尚未启动。BrowserClaw 的架构是**按需自启**的：当 Chrome 浏览器启动且扩展激活时，扩展通过 Native Messaging Host 自动拉起 Native Bridge。
-- **解决步骤**：
-  1. 打开本地 Chrome 浏览器；
-  2. 确认已在 `chrome://extensions/` 中启用 BrowserClaw（或加载了 `D:\workspace\browserclaw`）；
-  3. 点击浏览器右上角扩展图标，弹出 200px×80px 极简面板，观察状态指示点是否变为**绿色**；
-  4. 若需独立后台运行，可在终端手动启动：
+- **Symptom**:
+  Agent reports: `fetch failed: ECONNREFUSED 127.0.0.1:12306` when initializing connections or executing tools.
+- **Root Cause**:
+  The local Fastify Native Bridge service is not running. BrowserClaw follows an **on-demand lifecycle**: Chrome automatically spawns the Native Bridge through the Native Messaging Host when Chrome is running and the extension is active.
+- **Resolution**:
+  1. Open Google Chrome on your desktop;
+  2. Confirm BrowserClaw is enabled in `chrome://extensions/` (or loaded from unpacked extension directory);
+  3. Click the extension toolbar icon, open the 200px×80px popup, and verify the status indicator is **Green**;
+  4. For standalone terminal execution, start the bridge manually:
      ```bash
      node app/native-server/dist/index.js
      ```
 
 ---
 
-### 2. 扩展图标弹窗显示灰色/黄色（“服务未启动”）
+### 2. Extension popup displays Grey or Yellow ("Service Not Started")
 
-- **故障现象**：
-  点击 Chrome 扩展图标，状态点为灰色或黄色，提示无法连接本地服务。
-- **排查与修复**：
-  1. **检查 Native Messaging Host 注册状态**：
-     运行 `node skill/config/doctor.mjs`。如果提示注册表缺失，运行：
+- **Symptom**:
+  Clicking the Chrome extension icon shows a grey or yellow indicator, failing to reach the local server.
+- **Troubleshooting & Fix**:
+  1. **Check Native Messaging Host Registration**:
+     Run `node skill/config/doctor.mjs`. If the registry key is missing, execute:
      ```bash
      node app/native-server/dist/scripts/register.js
      ```
-  2. **检查端口占用**：
-     在终端运行：
+  2. **Check Port Conflict**:
      ```powershell
      netstat -ano | findstr :12306
      ```
-     如果存在孤儿进程占用了 12306 端口，使用任务管理器或 `taskkill /F /PID <pid>` 结束该进程，随后重新打开 Chrome。
+     Terminate conflicting processes via Task Manager or `taskkill /F /PID <pid>`, then reopen Chrome.
 
 ---
 
-### 3. MCP 响应报 `401 Unauthorized` 或 Token 验证失败
+### 3. MCP Request Fails with `401 Unauthorized` or Token Mismatch
 
-- **故障现象**：
-  MCP 客户端发送请求，收到 HTTP 401 报错：`Unauthorized: Missing or invalid token`。
-- **根本原因**：
-  为防范本地恶意网页或未经授权的本地进程越权控制浏览器，Native Bridge 默认强制校验 Token。客户端配置中的 Token 与本地 `~/.chrome-mcp/bridge-token` 不一致。
-- **解决步骤**：
-  1. 查看本地当前正确 Token：
+- **Symptom**:
+  MCP client calls fail with `Unauthorized: Missing or invalid token` or `Unauthorized: Invalid bridge token`.
+- **Root Cause**:
+  Native Bridge requires token authentication to block malicious local web pages or scripts. The client configuration token does not match `~/.chrome-mcp/bridge-token`.
+- **Resolution**:
+  1. Read the current active token:
      ```powershell
      # Windows PowerShell
      Get-Content "$HOME\.chrome-mcp\bridge-token"
      ```
-  2. 打开客户端配置文件（如 Cursor 的 `mcp.json` 或 Claude Desktop 的 `claude_desktop_config.json`），将请求头中的 `x-mcp-token` 更新为上述实际值：
+  2. Update your agent config headers (e.g. Cursor's `mcp.json` or Claude's config). Both `x-mcp-token` and `Authorization: Bearer <token>` are supported:
      ```json
      "headers": {
-       "x-mcp-token": "粘贴上方读取到的Token"
+       "x-mcp-token": "<TOKEN>",
+       "Authorization": "Bearer <TOKEN>"
      }
      ```
 
 ---
 
-### 4. 交互报错 `ACTION REQUIRED: Please call 'chrome_read_dom' to refresh`
+### 4. `ACTION REQUIRED: Please call 'chrome_read_dom' to refresh`
 
-- **故障现象**：
-  执行 `chrome_interact_index` 或 `chrome_fill_index` 时返回：
+- **Symptom**:
+  Calling `chrome_interact_index` or `chrome_fill_index` returns:
   `ACTION REQUIRED: Element reference is stale. Please call 'chrome_read_dom' to refresh the index tree.`
-- **根本原因**：
-  目标页面发生了 SPA 单页路由跳转、动态加载或局部 DOM 树重渲染，导致上一轮提取的数字索引（`ref`）在当前 DOM 树中已失效。
-- **规范解决行为**：
-  **严禁盲目重试！**
-  Agent 必须立即调用一次 `chrome_read_dom`，获取最新 1-based 索引树，基于新索引继续下发动作。
+- **Root Cause**:
+  SPA routing, modal animations, or asynchronous DOM mutations re-rendered the target tree. The numeric index (`ref`) is stale.
+- **Protocol**:
+  **Do NOT blindly retry!** The agent must invoke `chrome_read_dom` to obtain fresh 1-based indices, then continue.
 
 ---
 
-### 5. Windows 高分屏 (125%/150%/200%) 截图点击坐标偏移
+### 5. High-DPI Displays (125%/150%/200%) Coordinate Alignment
 
-- **故障现象**：
-  在大模型视觉点击模式下，点击位置偏离目标。
-- **底层保障**：
-  BrowserClaw 已在 `screenshot.ts` 中实现全链路 **DPR 1:1 几何归一化**（通过 `OffscreenCanvas` 强制重采样为标准 CSS 视口尺寸 $W_{viewport} \times H_{viewport}$）。
-- **注意事项**：
-  Agent 在计算或下发坐标时，**切勿手动乘以设备像素比（DPR）**！直接使用截图上的物理像素位置下发即可（引擎与视口 CSS 像素 1:1 严格对齐）。
-
----
-
-### 6. 原生系统弹窗（Alert / Confirm / Prompt）阻塞
-
-- **故障现象**：
-  页面弹出原生 `alert()` 或 `confirm()`，导致后续 CDP 指令挂起。
-- **自愈机制**：
-  BrowserClaw 内置了瞬态 Dialog 中断捕获。当弹窗出现时，动作会立刻返回带有 `requiresDialogAction: true` 的提示：
-  ```json
-  {
-    "requiresDialogAction": true,
-    "dialog": {
-      "type": "alert",
-      "message": "Are you sure?"
-    }
-  }
-  ```
-  Agent 只需调用 `chrome_handle_dialog({ action: 'accept' })` 即可平滑解除挂起。
+- **Symptom**:
+  Visual model clicks miss their target on high-resolution screens.
+- **Assurance**:
+  BrowserClaw normalizes all screenshots to **1:1 Viewport CSS Coordinates** ($W_{viewport} \times H_{viewport}$) inside `screenshot.ts`.
+- **Rule**:
+  **Do NOT manually multiply coordinates by DPR!** Measure directly from the screenshot and pass raw CSS values.
 
 ---
 
-### 7. 调用 `chrome_close_tabs` 报需显式确认 (`confirm: true`)
+### 6. Native Dialogs (Alert / Confirm / Prompt) Blocking Execution
 
-- **故障现象**：
-  Agent 调用 `chrome_close_tabs({})` 报错：`No tabIds or url specified. To close the current active tab, pass confirm: true or specify tabIds explicitly...`。
-- **根本原因与防误关保护**：
-  为防止 AI Agent 在未绑定特定标签页或参数缺省时意外关闭人类用户正在查看的前台活跃工作标签页，系统强制开启活跃 Tab 确认保护。
-- **规范解决行为**：
-  - 若需关闭 Agent 创建的特定标签页，显式传递目标 `tabIds: [tabId]` 或 `url`；
-  - 若已建立会话亲缘，传递 `sessionId` 即可安全释放绑定的 Agent Tab；
-  - 若确需关闭当前用户前台活跃 Tab，显式传入 `confirm: true`。
+- **Symptom**:
+  A native `alert()` or `confirm()` halts CDP commands.
+- **Handling**:
+  BrowserClaw intercepts the dialog and returns `requiresDialogAction: true`. Call `chrome_handle_dialog({ action: "accept" })` to dismiss and unfreeze execution.
 
 ---
 
-### 8. CDP 调试器解挂与连接超时 (`timeout-guard detached`)
+### 7. Explicit Confirmation Required for `chrome_close_tabs` (`confirm: true`)
 
-- **故障现象**：
-  调用 CDP 相关工具报错：`Target closed / not attached / timeout-guard detached`。
-- **底层机制**：
-  当目标页面崩溃、极度卡死或 CDP 协议响应超过安全阈值时，底层的 `timeout-guard` 守护机制会直接触发物理级快速脱钩（`chrome.debugger.detach`）并清理会话映射与域引用计数，坚决阻止 Service Worker 产生未响应挂起或引用计数下溢死锁。
-- **处理方案**：
-  刷新目标页面或重新发起工具调用，系统将自动重新建立健康的 CDP 调试会话。
+- **Symptom**:
+  `chrome_close_tabs({})` fails with `No tabIds or url specified. To close the current active tab, pass confirm: true...`.
+- **Safety Mechanism**:
+  Protects users from accidental tab loss when agents omit target parameters. Pass `confirm: true` only if intentionally closing the active tab, or supply explicit `tabIds` / `sessionId`.
 
 ---
 
-### 9. 后台 Tab 离屏截图与隐私隔离
+### 8. CDP Debugger Detached & Timeout Guards (`timeout-guard detached`)
 
-- **底层机制**：
-  对于非激活标签页（`active: false`），BrowserClaw 强制采用 CDP `Page.captureScreenshot`（`fromSurface: true`），严禁使用 Chrome 扩展默认的 `chrome.tabs.captureVisibleTab`。
-- **核心收益**：
-  1. 彻底消除前台屏幕泄露隐患（避免后台 Agent 获取到用户当前前台私密屏幕）；
-  2. 消除后台非激活标签页因 `requestAnimationFrame` 睡眠冻结导致的死锁。
+- **Symptom**:
+  `Target closed / not attached / timeout-guard detached`.
+- **Mechanism**:
+  On slow or unresponsive pages, the `timeout-guard` cleanly detaches (`chrome.debugger.detach`) to protect the Service Worker from deadlocks.
+- **Action**:
+  Refresh the tab or re-call the tool. The session will automatically re-attach cleanly.
 
 ---
 
-### 10. Stdio 与 HTTP/SSE 模式下的动态 Profile 激活
+### 9. Background Tab Offscreen Screenshots & Privacy Isolation
 
-- **应用场景**：
-  在 `core` 或 `crawl` 模式下，若任务需要额外调用高级工具（如管理、诊断或网络工具），无需重启 MCP 进程或更改启动环境变量。
-- **操作方法**：
-  直接调用：
+- **Mechanism**:
+  Background tabs strictly use CDP `Page.captureScreenshot` with `fromSurface: true`. Never captures user's foreground display, and eliminates `requestAnimationFrame` freezing deadlocks.
+
+---
+
+### 10. Dynamic Profile Activation Under Stdio and HTTP/SSE
+
+- **Method**:
+  In `core` or `crawl` profiles, call:
   ```json
   chrome_tool_docs({ "category": "manage", "activateForSession": true })
   ```
-  支持类别：`navigate`, `perceive`, `act`, `observe`, `manage`, `diagnose`, `network`, `crawl`。Stdio 与 HTTP/SSE 均原生支持在后续调用中立即使用新开放的工具。
+  to dynamically expose advanced tools within the active session without restarting the server.
 
 ---
 
-### 11. `chrome_javascript` 即席表达式执行
+### 11. `chrome_javascript` Expression Evaluation
 
-- **使用技巧**：
-  执行 JavaScript 时，Agent 无需手动编写 `(function(){ return ... })()`。无论是单表达式如 `document.title`、`window.location.href`，还是包含注释的单个求值表达式，执行器均会自动探测并包装 `return (...)`。对于多行复合逻辑，保持标准 `return` 关键字即可。
+- **Feature**:
+  Single expressions like `document.title` or `window.location.href` are automatically wrapped in `return (...)`.
 
 ---
 
-## 技术支持与目录对照
+## Directory & Component Map
 
-| 组件                   | 源码路径                       | 独立免编译目录                                          |
-| :--------------------- | :----------------------------- | :------------------------------------------------------ |
-| **Chrome MV3 扩展**    | `app/chrome-extension/`        | `app/chrome-extension/.output/chrome-mv3`               |
-| **Native Bridge 服务** | `app/native-server/`           | `127.0.0.1:12306` (Token: `~/.chrome-mcp/bridge-token`) |
-| **MCP 工具与契约声明** | `packages/shared/src/tools.ts` | 导出 47 个规范工具供客户端自动内省与校验                |
-| **诊断与配置**         | `skill/config/`                | `doctor.mjs`, `mcp-config.json`, `repair.bat`           |
+| Component                | Source Path                    | Artifact / Runtime Endpoint                             |
+| :----------------------- | :----------------------------- | :------------------------------------------------------ |
+| **Chrome MV3 Extension** | `app/chrome-extension/`        | `app/chrome-extension/.output/chrome-mv3`               |
+| **Native Bridge Server** | `app/native-server/`           | `127.0.0.1:12306` (Token: `~/.chrome-mcp/bridge-token`) |
+| **MCP Tool Contract**    | `packages/shared/src/tools.ts` | 47 canonical MCP tool definitions                       |
+| **Diagnostics & Repair** | `skill/config/`                | `doctor.mjs`, `mcp-config.json`, `repair.bat`           |

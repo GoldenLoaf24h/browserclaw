@@ -133,6 +133,8 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 <br/>
 
+- **`chrome_act_toward_goal`**：自主语义微闭环执行器，在 Native Server 本地以 200~400ms/步 极速闭环感知、决策与执行。由 TypeSafe Jev System One 驱动，无 Key 或遇额度网络降级时无缝切换内置启发式引擎；遭遇歧义、破坏性动作（14 个敏感词拦截）或卡滞时结构化反抛交回宏规划大模型。
+
 </details>
 
 <details>
@@ -254,7 +256,7 @@ Chrome MV3 扩展 (Service Worker + WXT + Vue 3)
 - **[全量工具字典](./docs/TOOLS.md)**：自动化生成的 47 个工具完整参数输入输出参考手册。
 - **[Agent 交互实操心法](./AGENT_CONFIG_GUIDE.md)**：面向大模型的六大高能交互准则与主流客户端配置样例。
 - **[深度系统架构](./docs/ARCHITECTURE.md)**：多进程拓扑、IPC 安全边界与设计决策记录 (ADR)。
-- **[故障排查指南](./docs/TROUBLESHOOTING.md)**：常见报错代码与连接异常秒级诊断排查。
+- **[故障排查指南](./docs/TROUBLESHOOTING.zh-CN.md)**：常见报错代码与连接异常秒级诊断排查。
 
 ---
 
@@ -277,4 +279,3 @@ BrowserClaw 在设计与实现中汲取了开源社区的卓越智慧：
 ---
 
 _说明与消歧义：BrowserClaw MCP 是一个面向 AI Agent 自动化操控日常真实浏览器的独立 Chrome 扩展与 Model Context Protocol 生态，与 npm 上的同名 Playwright 库互不关联。_
-**`chrome_act_toward_goal`**：自主语义微闭环执行器，在 Native Server 本地以 200~400ms/步 极速闭环感知、决策与执行。由 TypeSafe Jev System One 驱动，无 Key 或遇额度网络降级时无缝切换内置启发式引擎；遭遇歧义、破坏性动作（14 个敏感词拦截）或卡滞时结构化反抛交回宏规划大模型。

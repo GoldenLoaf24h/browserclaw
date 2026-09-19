@@ -73,18 +73,18 @@ mcp-chrome-master/
 
 ## 📖 3. Complete Documentation Matrix (全量文档矩阵)
 
-| 文档名称                                              | 语言 |    主要读者     | 核心定位与价值                                                  | 维护机制                      |
-| :---------------------------------------------------- | :--: | :-------------: | :-------------------------------------------------------------- | :---------------------------- |
-| **[README.md](../README.md)**                         | 英文 |  所有人 / 社区  | 项目主页、痛点背景、1 分钟快速开始、6 大核心功能全览            | 手动维护                      |
-| **[README.zh-CN.md](../README.zh-CN.md)**             | 中文 |   中文开发者    | 详尽中文主页，完整覆盖 Windows 排他锁困境与极速上手指南         | 与主 README 同步              |
-| **[docs/MAP.md](./MAP.md)**                           | 中英 |   所有人 / AI   | **项目地图导览中心**：全工程拓扑、阅读路线、文档矩阵与工具雷达  | 本文档                        |
-| **[docs/TOOLS.md](./TOOLS.md)**                       | 英文 | Agent / 开发者  | 全量 47 个规范工具的完整参数输入/输出字典（按分类展示）         | `npm run docs:tools` 自动生成 |
-| **[docs/ARCHITECTURE.md](./ARCHITECTURE.md)**         | 英文 | 架构师 / 审核者 | 三层架构拓扑、Native Messaging 通信协议、CDP 状态流转时序图     | 架构变更时更新                |
-| **[docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md)**   | 中英 |  运维 / 排障者  | 常见报错代码速查（12306 连不上、401、CDP 超时、域校验失败等）   | 排障沉淀更新                  |
-| **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)** | 中文 | Agent / 开发者  | Claude Desktop、Cursor、Windsurf 客户端配置 JSON 与六大交互准则 | 客户端适配更新                |
-| **[skill/SKILL.md](../skill/SKILL.md)**               | 英文 |    AI Agent     | 供大模型直接吸纳的技能定义：双轨引擎、梯次升级协议、微模式      | 与 Schema 同步                |
-| **[PROJECT.md](../PROJECT.md)**                       | 中英 |     维护者      | 项目工程化摘要、质量门基线、设计原则速览                        | 版本演进更新                  |
-| **[TEST_INFRA.md](../TEST_INFRA.md)**                 | 英文 |  测试 / 审计者  | 4 层 E2E 自动化测试架构、测试 Harness 规范与 153 项用例矩阵     | 测试演进更新                  |
+| 文档名称                                                                                 | 语言 |    主要读者     | 核心定位与价值                                                  | 维护机制                      |
+| :--------------------------------------------------------------------------------------- | :--: | :-------------: | :-------------------------------------------------------------- | :---------------------------- |
+| **[README.md](../README.md)**                                                            | 英文 |  所有人 / 社区  | 项目主页、痛点背景、1 分钟快速开始、6 大核心功能全览            | 手动维护                      |
+| **[README.zh-CN.md](../README.zh-CN.md)**                                                | 中文 |   中文开发者    | 详尽中文主页，完整覆盖 Windows 排他锁困境与极速上手指南         | 与主 README 同步              |
+| **[docs/MAP.md](./MAP.md)**                                                              | 中英 |   所有人 / AI   | **项目地图导览中心**：全工程拓扑、阅读路线、文档矩阵与工具雷达  | 本文档                        |
+| **[docs/TOOLS.md](./TOOLS.md)**                                                          | 英文 | Agent / 开发者  | 全量 47 个规范工具的完整参数输入/输出字典（按分类展示）         | `npm run docs:tools` 自动生成 |
+| **[docs/ARCHITECTURE.md](./ARCHITECTURE.md)**                                            | 英文 | 架构师 / 审核者 | 三层架构拓扑、Native Messaging 通信协议、CDP 状态流转时序图     | 架构变更时更新                |
+| **[docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** ([中文](./TROUBLESHOOTING.zh-CN.md)) | 中英 |  运维 / 排障者  | 常见报错代码速查（12306 连不上、401、CDP 超时、域校验失败等）   | 排障沉淀更新                  |
+| **[AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md)**                                    | 中文 | Agent / 开发者  | Claude Desktop、Cursor、Windsurf 客户端配置 JSON 与六大交互准则 | 客户端适配更新                |
+| **[skill/SKILL.md](../skill/SKILL.md)**                                                  | 英文 |    AI Agent     | 供大模型直接吸纳的技能定义：双轨引擎、梯次升级协议、微模式      | 与 Schema 同步                |
+| **[PROJECT.md](../PROJECT.md)**                                                          | 中英 |     维护者      | 项目工程化摘要、质量门基线、设计原则速览                        | 版本演进更新                  |
+| **[TEST_INFRA.md](../TEST_INFRA.md)**                                                    | 英文 |  测试 / 审计者  | 4 层 E2E 自动化测试架构、测试 Harness 规范与 153 项用例矩阵     | 测试演进更新                  |
 
 ---
 
