@@ -51,7 +51,7 @@ CORE_TOOL_NAMES.add('chrome_tool_docs');
  * pass process.env.CHROME_MCP_TOOL_PROFILE directly.
  *
  * Default is now "core" to drastically reduce token overhead and avoid decision paralysis.
- * Set CHROME_MCP_TOOL_PROFILE=full to expose all 52 tools, or crawl for crawl workflows.
+ * Set CHROME_MCP_TOOL_PROFILE=full to expose all 47 tools, or crawl for crawl workflows.
  */
 export function resolveToolProfile(raw?: string | null): ToolProfile {
   const v = String(raw ?? '')

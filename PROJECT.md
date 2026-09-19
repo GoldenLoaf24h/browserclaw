@@ -6,7 +6,7 @@ BrowserClaw 是一个面向 AI agent 的 Chrome 浏览器自动化 MCP 服务器
 
 ## 包结构（pnpm monorepo）
 
-1. `packages/shared`（npm 名 chrome-mcp-shared）——唯一事实源：52 个工具 schema（TOOL_SCHEMAS）、tool-profiles（core: 24 / crawl: 15 / full: 52）、UnifiedLocatorOptions 坐标契约、错误格式化。
+1. `packages/shared`（npm 名 chrome-mcp-shared）——唯一事实源：47 个工具 schema（TOOL_SCHEMAS）、tool-profiles（core: 14 / crawl: 12 / full: 47）、UnifiedLocatorOptions 坐标契约、错误格式化。
 2. `app/native-server`（npm 名 mcp-chrome-bridge）——Fastify 原生宿主：MCP stdio/HTTP 双传输、McpSessionManager（每会话隔离 Server 实例，10 分钟空闲回收）、bridge-token 认证、性能 trace 分析。
 3. `app/chrome-extension`（npm 名 chrome-mcp-server）——WXT + Vue 3 MV3 扩展：后台 SW 承载工具执行器与 CDP 会话管理；包含 1:1 复刻的官方 Agent 虚拟鼠标、TabGroup 自动分组与无痕销毁、微光 Favicon；dom-indexer 提供 DOM 剪枝索引、inpage-engine 以隔离世界注入；popup 提供连接与控制开关。
 
