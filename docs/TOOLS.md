@@ -368,7 +368,7 @@ Autonomously fill and advance multi-step forms / wizards (e.g. Typeform, onboard
 - `region` — Lossless high-density ROI crop: capture only a specific sub-region { x0, y0, x1, y1 } in CSS pixels or polymorphic [ymin, xmin, ymax, xmax]. Completely avoids downscaling and preserves full pixel clarity for fine details like small text or dice dots.
 - `crop` — Alias for region: { x, y, width, height } or { x0, y0, x1, y1 }.
 - `grid` — Overlay semi-transparent coordinate reference grid with perimeter tape measure rulers (20/50/100px ticks) and interior reticle crosshairs (+) to eliminate visual estimation hallucination (default: false)
-- `enableGrid` — Alias for grid: overlay semi-transparent coordinate reference grid with perimeter tape measure rulers and crosshairs
+- `enableGrid` — (Deprecated alias for grid — prefer grid): overlay semi-transparent coordinate reference grid with perimeter tape measure rulers and crosshairs
 - `expandSearchArea` — For small elements (< 100x100), adaptively expand the crop bounding box to preserve surrounding headers and text context (default: true)
 - `format:png|jpeg|webp` — Image output format: webp (default, high compression for LLM), jpeg, or png
 - `quality` — Image compression quality from 0 to 100 for webp/jpeg formats (default: 80)

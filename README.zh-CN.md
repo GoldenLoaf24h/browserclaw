@@ -267,7 +267,7 @@ AI 智能体 (Cursor / Claude / Codex)
          ▼
 本地原生网桥 (Fastify + Stdio 宿主)
          ├── 极速决策引擎 (Jev 客户端 + 零依赖启发式降级 + 语义微循环)
-         └── 46 个确定性原子工具纯透传通道
+         ├── 46 个确定性原子工具 + 1 个自主微循环（共 47 项工具穿透直通）
          │  Chrome Native Messaging 本地双向管道 (1MB 物理截断保护)
          ▼
 Chrome MV3 扩展 (Service Worker + WXT + Vue 3)

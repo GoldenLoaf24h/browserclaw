@@ -3,7 +3,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 /**
  * Tool exposure profiles.
  *
- * The full tool list is ~44 schemas / ~58KB / ~16k tokens of fixed cost in every
+ * The full tool list is 47 schemas / ~58KB / ~16k tokens of fixed cost in every
  * session, and the agent pays it whether or not it ever touches tab groups or
  * performance traces. Profiles let a deployment expose only the tools a
  * browsing workflow actually needs.
