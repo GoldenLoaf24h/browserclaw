@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json.schemastore.org/mcp-config.json",
+  "description": "BrowserClaw (mcp-chrome) Client Configuration Templates for All Major Agent Platforms",
+  "configurations": {
+    "claude_desktop": {
+      "filePath": {
+        "windows": "%APPDATA%\\Claude\\claude_desktop_config.json",
+        "macos": "~/Library/Application Support/Claude/claude_desktop_config.json",
+        "linux": "~/.config/Claude/claude_desktop_config.json"
+      },
+      "config_http": {
+        "mcpServers": {
+          "browserclaw": {
+            "url": "http://127.0.0.1:12306/mcp",
+            "headers": {
+              "x-mcp-token": "PASTE_TOKEN_FROM_~/.chrome-mcp/bridge-token"
+            }
+          }
+        }
+      },
+      "config_stdio": {
+        "mcpServers": {
+          "browserclaw": {
+            "command": "node",
+            "args": [
+              "D:\\workspace\\mcp-chrome-master\\mcp-chrome-master\\app\\native-server\\dist\\mcp\\mcp-server-stdio.js"
+            ],
+            "env": {
+              "CHROME_MCP_HOST": "127.0.0.1",
+              "_comment_profile": "CHROME_MCP_TOOL_PROFILE: core (14 tools, ~7.5k tokens) | crawl (12 tools, ~5.8k tokens) | full (46 tools, ~16.8k tokens). Omit for full.",
+              "CHROME_MCP_TOOL_PROFILE": "full"
+            }
+          }
+        }
+      }
+    },
+    "cursor": {
+      "filePath": ".cursor/mcp.json or ~/.cursor/mcp.json",
+      "config": {
+        "mcpServers": {
+          "browserclaw": {
+            "url": "http://127.0.0.1:12306/mcp",
+            "headers": {
+              "x-mcp-token": "PASTE_TOKEN_FROM_~/.chrome-mcp/bridge-token"
+            }
+          }
+        }
+      }
+    },
+    "windsurf": {
+      "filePath": "~/.codeium/windsurf/mcp_config.json",
+      "config": {
+        "mcpServers": {
+          "browserclaw": {
+            "serverUrl": "http://127.0.0.1:12306/mcp",
+            "headers": {
+              "x-mcp-token": "PASTE_TOKEN_FROM_~/.chrome-mcp/bridge-token"
+            }
+          }
+        }
+      }
+    },
+    "cline_and_roo_code": {
+      "filePath": "%APPDATA%\\Code\\User\\globalStorage\\rooveterinaryinc.roo-cline\\settings\\cline_mcp_settings.json",
+      "config": {
+        "mcpServers": {
+          "browserclaw": {
+            "url": "http://127.0.0.1:12306/mcp",
+            "headers": {
+              "x-mcp-token": "PASTE_TOKEN_FROM_~/.chrome-mcp/bridge-token"
+            },
+            "disabled": false,
+            "autoApprove": [
+              "chrome_read_dom",
+              "chrome_interact_index",
+              "chrome_fill_index",
+              "chrome_batch_actions",
+              "chrome_screenshot",
+              "chrome_smart_scroll"
+            ]
+          }
+        }
+      }
+    },
+    "antigravity": {
+      "filePath": "~/.gemini/antigravity/mcp_config.json",
+      "config": {
+        "mcpServers": {
+          "browserclaw": {
+            "url": "http://127.0.0.1:12306/mcp",
+            "headers": {
+              "x-mcp-token": "PASTE_TOKEN_FROM_~/.chrome-mcp/bridge-token"
+            }
+          }
+        }
+      }
+    },
+    "generic_sse": {
+      "url": "http://127.0.0.1:12306/sse",
+      "headers": {
+        "Authorization": "Bearer PASTE_TOKEN_FROM_~/.chrome-mcp/bridge-token"
+      }
+    }
+  }
+}
