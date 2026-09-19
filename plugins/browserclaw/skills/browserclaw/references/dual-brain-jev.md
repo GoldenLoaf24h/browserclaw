@@ -40,9 +40,12 @@ This reference documents BrowserClaw's Fast/System 1 local autonomous loop power
 }
 ```
 
+- `goal`: Natural language goal or objective on the active page (required).
+- `tabId`: Target tab ID (optional, defaults to active tab).
 - `maxSteps`: Default 10. Maximum 60 in Jev mode; forced $\le 5$ in Heuristic mode.
 - `timeoutMs`: Default 90,000ms (90s); hard cap 300,000ms (5 minutes).
 - `confidenceThreshold`: Default 0.55. Actions below this threshold trigger instant escalation.
+- `textHint`: Explicit text to enter when typing if not clearly quoted in the goal string.
 
 ---
 
@@ -55,7 +58,7 @@ This reference documents BrowserClaw's Fast/System 1 local autonomous loop power
    - Zero-dependency string tokenization, role weighting, and bigram matching.
    - Activates automatically when no API key is provided, or on 401 unauthenticated (session latched), 429 quota exhaustion, or network disconnect.
 3. **Tier 3 (Macro Escalation to Caller LLM)**:
-   - Immediately returns control to the primary LLM with structured diagnostic context.
+   - Immediately returns control to the primary LLM with structured diagnostic context and indexed candidate elements.
 
 ---
 
@@ -67,6 +70,7 @@ This reference documents BrowserClaw's Fast/System 1 local autonomous loop power
   "engine": "jev",
   "engineSwitched": false,
   "fallbackReason": null,
+  "summary": "Clicked 'Electronics' and selected 'Smartphones'",
   "steps": [
     {
       "action": "click",
@@ -76,7 +80,7 @@ This reference documents BrowserClaw's Fast/System 1 local autonomous loop power
     }
   ],
   "finalPage": { "url": "https://example.com/shop", "title": "Shop" },
-  "currentElements": [...],
+  "currentElements": ["[1] input: Search", "[2] button: Cart (0)", "[4] button: Electronics"],
   "jevUsage": { "calls": 2, "inputTokens": 840, "estCostUsd": 0.000035 }
 }
 ```
@@ -100,3 +104,24 @@ The micro-loop immediately aborts and escalates back to System 2 when:
 2. **Destructive Guard**: Detects actions matching protected keywords (`pay`, `delete`, `purchase`, `buy`, `submit`, `confirm`) or Jev `destructive >= 0.50`.
 3. **Stuck Circuit-Breaker**: 3 consecutive unchanged steps ($mutated=false$, $urlChanged=false$, $visualDiff \le 0.01$).
 4. **Ambiguous Input**: Typing required but text payload cannot be determined.
+
+---
+
+## 6. Macro Supervisor Recovery Protocol
+
+When `chrome_act_toward_goal` yields with `status === "escalate"`, `"stuck"`, or `"max_steps"`, the Macro Planner (System 2) resumes control using the following protocol:
+
+1. **Zero-Read Element Re-Use**:
+   - The escalation response includes `currentElements`, an array of 1-based indexed element strings (e.g. `"[4] button: 'Confirm Purchase'"`).
+   - The Macro Planner can select the target index directly from this array without executing an extra `chrome_read_dom` call.
+
+2. **Handling Sensitive / Destructive Actions**:
+   - If escalated due to `destructive >= 0.50` or protected keywords (`pay`, `delete`, `purchase`, `buy`, `submit`, `confirm`), the Macro Planner evaluates user intent and authorization before dispatching `chrome_interact_index { index: N }`.
+
+3. **Fallback to Tier 0 Primitives**:
+   - For single clicks or selections: `chrome_interact_index { index: N, includeDelta: true }`.
+   - For single text entries: `chrome_fill_index { index: N, text: "...", pressEnter: true }`.
+   - For multi-step sequences: `chrome_batch_actions { actions: [...] }` (_see `batch-pipeline.md`_).
+
+4. **Handling CAPTCHA / Bot Blocks**:
+   - When `status === "blocked"`, immediately invoke `chrome_request_human_intervention { reason: "..." }` to yield control to the human user.

@@ -71,6 +71,7 @@
             },
             "disabled": false,
             "autoApprove": [
+              "chrome_act_toward_goal",
               "chrome_read_dom",
               "chrome_interact_index",
               "chrome_fill_index",
