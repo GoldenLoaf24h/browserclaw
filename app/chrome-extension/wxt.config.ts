@@ -50,6 +50,7 @@ export default defineConfig({
       'bookmarks',
       'history',
       'cookies',
+      'dom',
     ],
     host_permissions: ['<all_urls>'],
     action: {

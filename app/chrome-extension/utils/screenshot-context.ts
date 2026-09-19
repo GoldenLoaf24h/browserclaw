@@ -18,6 +18,14 @@ export interface ScreenshotContext {
   devicePixelRatio?: number;
   // Hostname of the page when the screenshot was taken (used for domain safety checks)
   hostname?: string;
+  // Scroll offsets at the exact moment of screenshot capture
+  scrollX?: number;
+  scrollY?: number;
+  // Mode of capture to differentiate viewport vs fullpage vs element crops
+  captureMode?: 'viewport' | 'fullpage' | 'element';
+  // Full document dimensions when captureMode is fullpage
+  docWidth?: number;
+  docHeight?: number;
   // Timestamp
   timestamp: number;
 }
@@ -58,26 +66,39 @@ export const screenshotContextManager = {
   },
 };
 
-// Scale screenshot-space coordinates (x,y) to viewport CSS pixels
+export interface ScaledCoordinateResult {
+  x: number;
+  y: number;
+  isDocumentSpace?: boolean;
+}
+
+// Scale screenshot-space coordinates (x,y) to viewport or document CSS pixels
 export function scaleCoordinates(
   x: number,
   y: number,
   ctx: ScreenshotContext,
-): { x: number; y: number } {
+): ScaledCoordinateResult {
   if (!ctx.screenshotWidth || !ctx.screenshotHeight) {
     return { x, y };
+  }
+  if (ctx.captureMode === 'fullpage') {
+    const docW = ctx.docWidth ?? ctx.screenshotWidth;
+    const docH = ctx.docHeight ?? ctx.screenshotHeight;
+    const sx = (x / ctx.screenshotWidth) * docW;
+    const sy = (y / ctx.screenshotHeight) * docH;
+    return { x: Math.round(sx), y: Math.round(sy), isDocumentSpace: true };
   }
   const ox = ctx.originX || 0;
   const oy = ctx.originY || 0;
   const isCropped = Boolean(ctx.originX || ctx.originY || ctx.cropWidth || ctx.cropHeight);
   const targetW =
     ctx.cropWidth ??
-    (isCropped ? (ctx.cropWidth ?? ctx.screenshotWidth) : (ctx.viewportWidth || ctx.screenshotWidth));
+    (isCropped ? (ctx.cropWidth ?? ctx.screenshotWidth) : ctx.viewportWidth || ctx.screenshotWidth);
   const targetH =
     ctx.cropHeight ??
     (isCropped
       ? (ctx.cropHeight ?? ctx.screenshotHeight)
-      : (ctx.viewportHeight || ctx.screenshotHeight));
+      : ctx.viewportHeight || ctx.screenshotHeight);
   const sx = ox + (x / ctx.screenshotWidth) * targetW;
   const sy = oy + (y / ctx.screenshotHeight) * targetH;
   return { x: Math.round(sx), y: Math.round(sy) };

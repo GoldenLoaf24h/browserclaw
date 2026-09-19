@@ -76,8 +76,32 @@ interface ScreenshotToolParams {
   /** View a single visual asset listed by chrome_read_dom (1-based asset index). Bytes first, viewport-crop fallback */
   assetIndex?: number;
   /** Sub-region ROI crop (lossless zoom into specified bounding box [ymin, xmin, ymax, xmax] or { x0, y0, x1, y1 }) */
-  region?: { x0?: number; y0?: number; x1?: number; y1?: number; xmin?: number; ymin?: number; xmax?: number; ymax?: number } | [number, number, number, number] | any;
-  crop?: { x0?: number; y0?: number; x1?: number; y1?: number; xmin?: number; ymin?: number; xmax?: number; ymax?: number } | [number, number, number, number] | any;
+  region?:
+    | {
+        x0?: number;
+        y0?: number;
+        x1?: number;
+        y1?: number;
+        xmin?: number;
+        ymin?: number;
+        xmax?: number;
+        ymax?: number;
+      }
+    | [number, number, number, number]
+    | any;
+  crop?:
+    | {
+        x0?: number;
+        y0?: number;
+        x1?: number;
+        y1?: number;
+        xmin?: number;
+        ymin?: number;
+        xmax?: number;
+        ymax?: number;
+      }
+    | [number, number, number, number]
+    | any;
   highClarity?: boolean; // Prioritize 100% full-resolution clarity without downsampling
   allowDimensionScaling?: boolean; // Allow downscaling image dimensions for transport budget
   sessionId?: string;
@@ -220,16 +244,16 @@ async function saveScreenshotToNativeTemp(
   fullDataUrl?: string,
 ): Promise<{ filename?: string; fullPath?: string } | undefined> {
   try {
-    const { sendFileOperationToNative, cancelFileOperation, ensureNativeConnected } = await import(
-      '../../native-host'
-    );
+    const { sendFileOperationToNative, cancelFileOperation, ensureNativeConnected } =
+      await import('../../native-host');
     if (typeof ensureNativeConnected === 'function') {
       await ensureNativeConnected('save_screenshot').catch(() => false);
     }
     let cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
     // If base64 payload exceeds 600KB, compress using smartCompressForTransport so it comfortably fits within the 1MB Native Messaging ceiling
     const sourceDataUrl =
-      fullDataUrl || (base64Data.startsWith('data:') ? base64Data : `data:image/png;base64,${cleanBase64}`);
+      fullDataUrl ||
+      (base64Data.startsWith('data:') ? base64Data : `data:image/png;base64,${cleanBase64}`);
     if (cleanBase64.length > 600 * 1024 && typeof OffscreenCanvas !== 'undefined') {
       try {
         const compressed = await smartCompressForTransport(sourceDataUrl, {
@@ -463,9 +487,12 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
           const tabId = tab.id!;
           const { cdpSessionManager } = await import('@/utils/cdp-session-manager');
           await cdpSessionManager.withSession(tabId, 'screenshot-roi', async () => {
-            const metrics: any = await cdpSessionManager.sendCommand(tabId, 'Page.getLayoutMetrics', {});
-            const viewport =
-              metrics?.cssVisualViewport ||
+            const metrics: any = await cdpSessionManager.sendCommand(
+              tabId,
+              'Page.getLayoutMetrics',
+              {},
+            );
+            const viewport = metrics?.cssVisualViewport ||
               metrics?.cssLayoutViewport ||
               metrics?.layoutViewport ||
               metrics?.visualViewport || {
@@ -479,7 +506,10 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
             const pageX = Number(viewport.pageX || 0);
             const pageY = Number(viewport.pageY || 0);
 
-            let rx0 = 0, ry0 = 0, rx1 = vw, ry1 = vh;
+            let rx0 = 0,
+              ry0 = 0,
+              rx1 = vw,
+              ry1 = vh;
             if (Array.isArray(roiInput) && roiInput.length === 4) {
               const [a, b, c, d] = roiInput.map(Number);
               let isYminFirst = true;
@@ -491,22 +521,36 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
               const xmax = isYminFirst ? Math.max(b, d) : Math.max(a, c);
               const maxVal = Math.max(a, b, c, d);
               if (maxVal <= 1.0 && maxVal > 0) {
-                rx0 = Math.round(xmin * vw); rx1 = Math.round(xmax * vw);
-                ry0 = Math.round(ymin * vh); ry1 = Math.round(ymax * vh);
+                rx0 = Math.round(xmin * vw);
+                rx1 = Math.round(xmax * vw);
+                ry0 = Math.round(ymin * vh);
+                ry1 = Math.round(ymax * vh);
               } else if (maxVal <= 1000 && (ymax > vh || xmax > vw)) {
-                rx0 = Math.round((xmin / 1000) * vw); rx1 = Math.round((xmax / 1000) * vw);
-                ry0 = Math.round((ymin / 1000) * vh); ry1 = Math.round((ymax / 1000) * vh);
+                rx0 = Math.round((xmin / 1000) * vw);
+                rx1 = Math.round((xmax / 1000) * vw);
+                ry0 = Math.round((ymin / 1000) * vh);
+                ry1 = Math.round((ymax / 1000) * vh);
               } else {
-                rx0 = Math.round(xmin); rx1 = Math.round(xmax);
-                ry0 = Math.round(ymin); ry1 = Math.round(ymax);
+                rx0 = Math.round(xmin);
+                rx1 = Math.round(xmax);
+                ry0 = Math.round(ymin);
+                ry1 = Math.round(ymax);
               }
             } else if (typeof roiInput === 'object' && roiInput !== null) {
               const rawX0 = roiInput.x0 ?? roiInput.xmin ?? roiInput.left ?? 0;
               const rawY0 = roiInput.y0 ?? roiInput.ymin ?? roiInput.top ?? 0;
-              const rawX1 = roiInput.x1 ?? roiInput.xmax ?? (typeof roiInput.width === 'number' ? rawX0 + roiInput.width : vw);
-              const rawY1 = roiInput.y1 ?? roiInput.ymax ?? (typeof roiInput.height === 'number' ? rawY0 + roiInput.height : vh);
-              rx0 = Math.round(Number(rawX0)); rx1 = Math.round(Number(rawX1));
-              ry0 = Math.round(Number(rawY0)); ry1 = Math.round(Number(rawY1));
+              const rawX1 =
+                roiInput.x1 ??
+                roiInput.xmax ??
+                (typeof roiInput.width === 'number' ? rawX0 + roiInput.width : vw);
+              const rawY1 =
+                roiInput.y1 ??
+                roiInput.ymax ??
+                (typeof roiInput.height === 'number' ? rawY0 + roiInput.height : vh);
+              rx0 = Math.round(Number(rawX0));
+              rx1 = Math.round(Number(rawX1));
+              ry0 = Math.round(Number(rawY0));
+              ry1 = Math.round(Number(rawY1));
             }
             rx0 = Math.max(0, Math.min(vw - 1, rx0));
             ry0 = Math.max(0, Math.min(vh - 1, ry0));
@@ -516,9 +560,10 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
             const h = ry1 - ry0;
 
             const cdpFormat = format === 'webp' ? 'webp' : format === 'png' ? 'png' : 'jpeg';
-            const cdpQuality = (cdpFormat === 'jpeg' || cdpFormat === 'webp') && typeof args.quality === 'number'
-              ? Math.max(0, Math.min(100, Math.round(args.quality)))
-              : 85;
+            const cdpQuality =
+              (cdpFormat === 'jpeg' || cdpFormat === 'webp') && typeof args.quality === 'number'
+                ? Math.max(0, Math.min(100, Math.round(args.quality)))
+                : 85;
 
             const shot: any = await cdpSessionManager.sendCommand(tabId, 'Page.captureScreenshot', {
               format: cdpFormat,
@@ -609,6 +654,7 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
 
             const clientWidth = Math.round(viewport.clientWidth || 800);
             const clientHeight = Math.round(viewport.clientHeight || 600);
+            originalScroll = { x: viewport.pageX || 0, y: viewport.pageY || 0 };
 
             const shot: any = await cdpSessionManager.sendCommand(tabId, 'Page.captureScreenshot', {
               format: cdpFormat,
@@ -763,7 +809,12 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
             targetMimeType,
             qualityFraction,
             {
-              style: gridStyle === 'classic' ? 'classic' : gridStyle === 'crosshair' ? 'crosshair' : 'ruler',
+              style:
+                gridStyle === 'classic'
+                  ? 'classic'
+                  : gridStyle === 'crosshair'
+                    ? 'crosshair'
+                    : 'ruler',
               originX: elementCropOrigin?.x,
               originY: elementCropOrigin?.y,
               normalized1000: gridStyle === '1000',
@@ -790,6 +841,17 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
           const cropH = isRoiOrElement ? finalImageHeightCss : undefined;
           const viewportWidth = pageDetails?.viewportWidth ?? finalImageWidthCss;
           const viewportHeight = pageDetails?.viewportHeight ?? finalImageHeightCss;
+          const captureMode: 'viewport' | 'fullpage' | 'element' = fullPage
+            ? 'fullpage'
+            : isRoiOrElement
+              ? 'element'
+              : 'viewport';
+          const scrollX = originalScroll?.x ?? pageDetails?.currentScrollX ?? 0;
+          const scrollY = originalScroll?.y ?? pageDetails?.currentScrollY ?? 0;
+          const docWidth = fullPage ? (pageDetails?.totalWidth ?? finalImageWidthCss) : undefined;
+          const docHeight = fullPage
+            ? (pageDetails?.totalHeight ?? finalImageHeightCss)
+            : undefined;
           screenshotContextManager.setContext(tab.id!, {
             screenshotWidth: finalImageWidthCss,
             screenshotHeight: finalImageHeightCss,
@@ -801,6 +863,11 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
             originY: elementCropOrigin?.y,
             devicePixelRatio: pageDetails?.devicePixelRatio,
             hostname,
+            scrollX,
+            scrollY,
+            captureMode,
+            docWidth,
+            docHeight,
           });
         }
       } catch (e) {
@@ -821,7 +888,9 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
           const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
           const safeName = (name || 'screenshot').replace(/[^a-z0-9_-]/gi, '_');
           const filename = `${safeName}_${timestamp}.${ext}`;
-          const rawBase64 = finalImageDataUrl ? finalImageDataUrl.replace(/^data:[^;]+;base64,/, '') : '';
+          const rawBase64 = finalImageDataUrl
+            ? finalImageDataUrl.replace(/^data:[^;]+;base64,/, '')
+            : '';
 
           // Primary: save to system temporary directory via native messaging host (zero Downloads pollution)
           const tempSaved = await saveScreenshotToNativeTemp(
@@ -915,8 +984,12 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
       try {
         const isHighClarity = args.highClarity === true || fullPage === true;
         const maxBudget = fullPage
-          ? (args.highClarity ? 2000 * 1024 : 1500 * 1024)
-          : (args.highClarity ? 800 * 1024 : 450 * 1024);
+          ? args.highClarity
+            ? 2000 * 1024
+            : 1500 * 1024
+          : args.highClarity
+            ? 800 * 1024
+            : 450 * 1024;
         const compressed = await smartCompressForTransport(finalImageDataUrl, {
           maxBytes: maxBudget,
           preferredFormat: finalMime,
@@ -984,7 +1057,10 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
           viewportHeight: pageDetails?.viewportHeight ?? finalImageHeightCss,
           originX: elementCropOrigin?.x ?? 0,
           originY: elementCropOrigin?.y ?? 0,
-          scaleFactor: isThumbnailFinal && pageDetails?.viewportWidth ? (finalImageWidthCss! / pageDetails.viewportWidth) : 1.0,
+          scaleFactor:
+            isThumbnailFinal && pageDetails?.viewportWidth
+              ? finalImageWidthCss! / pageDetails.viewportWidth
+              : 1.0,
           targetIndex: args.targetIndex,
           padding: args.padding,
           selector: args.selector,
@@ -1254,14 +1330,14 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
     }
 
     const dpr = initialPageDetails.devicePixelRatio || 1;
-    let totalWidthCss = options.width || initialPageDetails.totalWidth;
+    const totalWidthCss = options.width || initialPageDetails.totalWidth;
     let totalHeightCss = initialPageDetails.totalHeight;
 
     // Apply maximum height limit for infinite scroll pages
     const maxHeightPx = options.maxHeight || SCREENSHOT_CONSTANTS.MAX_CAPTURE_HEIGHT_PX;
     let limitedHeightCss = Math.min(totalHeightCss, maxHeightPx / dpr);
 
-    let totalWidthPx = totalWidthCss * dpr;
+    const totalWidthPx = totalWidthCss * dpr;
     let totalHeightPx = limitedHeightCss * dpr;
 
     this.logInfo(
@@ -1288,7 +1364,8 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
 
     while (capturedHeightPx < totalHeightPx && partIndex < SCREENSHOT_CONSTANTS.MAX_CAPTURE_PARTS) {
       const isLastStep =
-        currentScrollYCss + viewportHeightCss >= limitedHeightCss - SCREENSHOT_CONSTANTS.PIXEL_TOLERANCE;
+        currentScrollYCss + viewportHeightCss >=
+        limitedHeightCss - SCREENSHOT_CONSTANTS.PIXEL_TOLERANCE;
 
       this.logInfo(
         `Capturing part ${partIndex + 1}... (${Math.round((capturedHeightPx / totalHeightPx) * 100)}%) [lastStep: ${isLastStep}]`,

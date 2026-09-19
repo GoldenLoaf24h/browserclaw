@@ -4,7 +4,7 @@
 
 ## Positioning & Core Philosophy
 
-BrowserClaw is a high-performance Model Context Protocol (MCP) server engineered for AI agents to control the user's real Chrome browser. Unlike headless automation runtimes (Playwright, Puppeteer, Selenium), BrowserClaw operates directly within the user's everyday Google Chrome instance—preserving existing login sessions, cookies, and extension ecosystems. It exposes browser capabilities as 47 schema-validated canonical MCP tools via Chrome Native Messaging and the Chrome DevTools Protocol (CDP).
+BrowserClaw is a high-performance Model Context Protocol (MCP) server engineered for AI agents to control the user's real Chrome browser. Unlike headless automation runtimes (Playwright, Puppeteer, Selenium), BrowserClaw operates directly within the user's everyday Google Chrome instance—preserving existing login sessions, cookies, and extension ecosystems. It exposes browser capabilities as 48 schema-validated canonical MCP tools via Chrome Native Messaging and the Chrome DevTools Protocol (CDP).
 
 ## Monorepo Architecture (pnpm)
 
@@ -31,8 +31,8 @@ BrowserClaw is a high-performance Model Context Protocol (MCP) server engineered
 
 ## Quality Gates & Verification Matrix
 
-- **Chrome Extension Vitest**: 306 unit tests passing 100% across 42 suites (including tab closing, javascript execution, grep, delta diffs, batch assertions, media extraction, and undo).
-- **Native Server Jest**: 86 unit and integration tests passing 100% (including Jev fast-decision engine, heuristic scoring, client resilience, and session managers).
+- **Chrome Extension Vitest**: 336 unit tests passing 100% across 44 suites (including tab closing, javascript execution, grep, delta diffs, batch assertions, media extraction, deep shadow DOM piercing, visual drift compensation, and undo).
+- **Native Server Jest**: 89 unit and integration tests passing 100% (including Jev fast-decision engine, heuristic scoring, client resilience, and session managers).
 - **End-to-End Suite**: 153 four-tier E2E tests passing 100% (`node --experimental-strip-types test/e2e/runner.ts`).
 - **Plugin Integration**: 8 Pytest cases passing 100% (`plugins/browserclaw/tests/test_bridge_token.py`).
 - **Type Checking**: 0 errors across all monorepo packages (`pnpm typecheck`).

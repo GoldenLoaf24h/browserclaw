@@ -50,7 +50,7 @@ mcp-chrome-master/
 ├── app/
 │   ├── chrome-extension/        # 🧩 Chrome MV3 Extension (WXT + Vue 3)
 │   │   ├── entrypoints/
-│   │   │   ├── background/      # Main Service Worker (47 Canonical Tool Executors)
+│   │   │   ├── background/      # Main Service Worker (48 Canonical Tool Executors)
 │   │   │   │   └── tools/browser/tab-group-manager.ts # Tab grouping & orphan cleanup
 │   │   │   ├── agent-cursor.content.ts # Closed Shadow DOM virtual mouse overlay
 │   │   │   ├── inpage-engine.ts # Isolated-world DOM indexing & pruning engine
@@ -88,13 +88,13 @@ mcp-chrome-master/
 
 ---
 
-## 🛠️ 4. 47 Canonical Tools Capability Radar
+## 🛠️ 4. 48 Canonical Tools Capability Radar
 
 BrowserClaw supports **Dynamic Profile Layering**, balancing prompt token consumption for smaller models while providing full low-level control for advanced agents:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│                              47 MCP TOOLS                              │
+│                              48 MCP TOOLS                              │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 🟢 CORE (14 Tools) - High-Frequency Semantic & Visual Interaction     │
 │   • Navigate (4): navigate, switch_tab, close_tabs, get_windows_and_tabs
@@ -108,7 +108,7 @@ BrowserClaw supports **Dynamic Profile Layering**, balancing prompt token consum
 │   • Navigation & Storage: navigate, smart_scroll, storage...           │
 │   • Network & Low-level: cdp_execute, network_request, screenshot...   │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 🟣 FULL (47 Tools) - Comprehensive Low-Level & Enterprise Control      │
+│ 🟣 FULL (48 Tools) - Comprehensive Low-Level & Enterprise Control      │
 │   • Advanced CDP: cdp_execute (Target polymorphic routing + Anti-Hang) │
 │   • Human-in-the-Loop: request_human_intervention, undo_last_action   │
 │   • Network & Console: network_capture, get_console_logs, storage...   │

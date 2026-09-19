@@ -9,10 +9,10 @@ This package contains the Google Chrome Manifest V3 extension for **BrowserClaw*
 ```
 app/chrome-extension/
 ├── entrypoints/
-│   ├── background/             # MV3 Service Worker & 47 Tool Executors
+│   ├── background/             # MV3 Service Worker & 48 Tool Executors
 │   │   ├── native-host.ts      # Native Messaging pipe listener & sender authentication guard
 │   │   ├── index.ts            # Extension initialization, keepalive, and error reporting
-│   │   └── tools/browser/      # Executors for all 47 BrowserClaw tools
+│   │   └── tools/browser/      # Executors for all 48 BrowserClaw tools
 │   ├── agent-cursor.content.ts # Closed Shadow DOM virtual mouse overlay with spring physics
 │   ├── inpage-engine.ts        # Isolated-world DOM indexing, 1-based indexing, WeakRef mapping
 │   └── popup/                  # Extension popup UI (agent toggle and connection monitor)
@@ -23,7 +23,7 @@ app/chrome-extension/
 │   ├── tab-favicon.ts          # Agent glowing favicon state backed by storage.session
 │   ├── screenshot-ring-buffer.ts # In-memory bounded ring buffer (cap: 1) for zero-disk screenshots
 │   └── action-watchdog.ts      # MutationObserver & network in-flight settle detectors
-└── tests/                      # 26 Vitest test suites (139 tests, 100% pass)
+└── tests/                      # 44 Vitest test suites (336 tests, 100% pass)
 ```
 
 ---

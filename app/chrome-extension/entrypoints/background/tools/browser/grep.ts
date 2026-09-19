@@ -53,7 +53,29 @@ export class GrepTool extends BaseBrowserToolExecutor {
         const scriptRes = await this.safeExecuteScript(tabId, {
           target: { tabId },
           func: () => {
-            return document.body?.innerText || '';
+            function collectText(root: Node): string {
+              let out = '';
+              if (!root) return out;
+              if (root.nodeType === 3) {
+                return root.textContent || '';
+              }
+              const el = root as Element;
+              const tag = (el.tagName || '').toLowerCase();
+              if (['script', 'style', 'noscript', 'template'].includes(tag)) {
+                return '';
+              }
+              const sr = (el as any).shadowRoot;
+              if (sr) {
+                out += ' ' + collectText(sr);
+              }
+              for (const child of Array.from(root.childNodes)) {
+                out += ' ' + collectText(child);
+              }
+              return out;
+            }
+            const bodyText = document.body?.innerText || '';
+            const deepText = collectText(document.body);
+            return bodyText.length >= deepText.length ? bodyText : deepText;
           },
         });
         const fullText = String(scriptRes?.[0]?.result || '');
@@ -159,8 +181,21 @@ export class GrepTool extends BaseBrowserToolExecutor {
           (el as any).placeholder || el.attributes?.['placeholder'] || el.attributes?.placeholder;
         const ariaLabel =
           (el as any).ariaLabel || el.attributes?.['aria-label'] || el.attributes?.ariaLabel;
+        const title = (el as any).title || el.attributes?.['title'] || el.attributes?.title;
+        const id = el.attributes?.id;
+        const name = el.attributes?.name;
         const value = (el as any).value || el.attributes?.['value'] || el.attributes?.value;
-        const searchableParts = [elText, el.role, el.tagName, placeholder, ariaLabel, value]
+        const searchableParts = [
+          elText,
+          el.role,
+          el.tagName,
+          placeholder,
+          ariaLabel,
+          title,
+          id,
+          name,
+          value,
+        ]
           .filter(Boolean)
           .join(' ');
 

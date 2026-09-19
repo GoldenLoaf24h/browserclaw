@@ -336,121 +336,787 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         const previousUrl = tab.url || '';
         tabFaviconManager.markTabActive(tabId);
 
-        const preSignature = await executeInPage(
-          { tabId },
-          'inPageDetectPerceptiveSignature',
-          [],
-        )
+        const preSignature = await executeInPage({ tabId }, 'inPageDetectPerceptiveSignature', [])
           .then((r) => r?.[0]?.result)
           .catch(() => null);
 
-      // D3 (TESTING-NOTES #19): when no explicit tabId/session bound the
-      // target, resolveAffinityTab fell through to the user's ACTIVE tab -
-      // input silently landed on whatever page the user was viewing. Surface
-      // that fallback in the response so the agent can correct with an
-      // explicit tabId. Non-blocking for backward compatibility.
-      const explicitOrBound = typeof args.tabId === 'number' || interactHadPreexistingBinding;
-      const affinityWarning = explicitOrBound
-        ? undefined
-        : `input routed to active tab (tabId=${tabId}); pass explicit tabId to target another tab`;
+        // D3 (TESTING-NOTES #19): when no explicit tabId/session bound the
+        // target, resolveAffinityTab fell through to the user's ACTIVE tab -
+        // input silently landed on whatever page the user was viewing. Surface
+        // that fallback in the response so the agent can correct with an
+        // explicit tabId. Non-blocking for backward compatibility.
+        const explicitOrBound = typeof args.tabId === 'number' || interactHadPreexistingBinding;
+        const affinityWarning = explicitOrBound
+          ? undefined
+          : `input routed to active tab (tabId=${tabId}); pass explicit tabId to target another tab`;
 
-      // Helper to project screenshot-space or polymorphic coordinates to viewport space
-      const isScreenshotSpace = args.coordinateSpace === 'screenshot';
-      const projectCoord = (c: any): { x: number; y: number } => {
-        if (
-          !isScreenshotSpace &&
-          typeof c?.x === 'number' &&
-          typeof c?.y === 'number' &&
-          !c.box_2d &&
-          !c.point
-        ) {
-          return { x: Math.round(c.x), y: Math.round(c.y) };
+        // Helper to project screenshot-space or polymorphic coordinates to viewport space
+        const isScreenshotSpace = args.coordinateSpace === 'screenshot';
+        const projectCoord = (c: any): { x: number; y: number; isDocumentSpace?: boolean } => {
+          if (
+            !isScreenshotSpace &&
+            typeof c?.x === 'number' &&
+            typeof c?.y === 'number' &&
+            !c.box_2d &&
+            !c.point
+          ) {
+            return { x: Math.round(c.x), y: Math.round(c.y) };
+          }
+          const parsed = parseUnifiedCoordinate(c, { tabId });
+          if (parsed) return parsed;
+          const ctx = screenshotContextManager.getContext(tabId);
+          if (!ctx) return { x: Math.round(c.x), y: Math.round(c.y) };
+          const scaled = scaleCoordinates(c.x, c.y, ctx);
+          return scaled;
+        };
+
+        const alignVisualCoordinate = async (coord: {
+          x: number;
+          y: number;
+          isDocumentSpace?: boolean;
+        }): Promise<{ x: number; y: number }> => {
+          let cx = coord.x;
+          let cy = coord.y;
+
+          const scrollState = (
+            await executeInPage({ tabId }, 'inPageGetScrollState', []).catch(() => null)
+          )?.[0]?.result ?? {
+            scrollX: 0,
+            scrollY: 0,
+            viewportWidth: 1280,
+            viewportHeight: 800,
+          };
+
+          const ctx = screenshotContextManager.getContext(tabId);
+
+          if (coord.isDocumentSpace || ctx?.captureMode === 'fullpage') {
+            // Document-level coordinate (e.g. from fullpage screenshot): ensure target document Y is in active viewport
+            const docX = cx;
+            const docY = cy;
+            const vh = scrollState.viewportHeight;
+            if (docY < scrollState.scrollY || docY > scrollState.scrollY + vh) {
+              const targetY = Math.max(0, Math.round(docY - vh / 2));
+              await executeInPage({ tabId }, 'inPageInstantScrollTo', [
+                scrollState.scrollX,
+                targetY,
+              ]).catch(() => null);
+              scrollState.scrollY = targetY;
+            }
+            cx = docX - scrollState.scrollX;
+            cy = docY - scrollState.scrollY;
+          } else {
+            // Viewport-level coordinate: apply real-time scroll drift compensation
+            const baseScrollX = ctx?.scrollX ?? scrollState.scrollX;
+            const baseScrollY = ctx?.scrollY ?? scrollState.scrollY;
+            const driftX = scrollState.scrollX - baseScrollX;
+            const driftY = scrollState.scrollY - baseScrollY;
+
+            cx = cx - driftX;
+            cy = cy - driftY;
+          }
+
+          // Clamp to active viewport boundary
+          cx = Math.max(0, Math.min(scrollState.viewportWidth - 1, cx));
+          cy = Math.max(0, Math.min(scrollState.viewportHeight - 1, cy));
+          return { x: cx, y: cy };
+        };
+
+        // D1: arm one-shot delivery probe BEFORE dispatch (TESTING-NOTES #27).
+        // Hidden-tab throttling acks CDP commands but drops the events; the
+        // probe records whether any trusted event actually reached the page.
+        let probeArmed = false;
+        const armProbe = async (scope?: any) => {
+          try {
+            await executeInPage(scope ?? { tabId }, 'inPageArmDeliveryProbe', [
+              action === 'click' || action === 'double_click' || action === 'right_click'
+                ? ['mousedown', 'mouseup', 'click']
+                : action === 'drag'
+                  ? ['mousedown', 'mousemove', 'mouseup']
+                  : ['mousemove', 'mouseover'],
+            ]);
+            probeArmed = true;
+          } catch {
+            // Restricted page / renderer gone: dispatch below will error anyway.
+          }
+        };
+
+        // Click sequence: CDP-dispatch a rapid burst of full clicks at the given
+        // viewport points. One MCP round-trip, page-side interval down to ~35ms —
+        // the only way to hit fast-moving canvas targets (rAF-animated hitboxes).
+        if (hasPoints) {
+          await armProbe();
+          const interval = Math.min(500, Math.max(5, args.intervalMs ?? 35));
+          const scaledPoints = (args.points || []).map(projectCoord);
+          let dispatched = 0;
+          try {
+            await cdpSessionManager.withSession(tabId, 'interact-index', async () => {
+              for (const pt of scaledPoints) {
+                await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                  type: 'mousePressed',
+                  x: pt.x,
+                  y: pt.y,
+                  button: 'left',
+                  buttons: 1,
+                  clickCount: 1,
+                });
+                await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                  type: 'mouseReleased',
+                  x: pt.x,
+                  y: pt.y,
+                  button: 'left',
+                  buttons: 0,
+                  clickCount: 1,
+                });
+                dispatched++;
+                if (dispatched < scaledPoints.length) {
+                  await new Promise((r) => setTimeout(r, interval));
+                }
+              }
+            });
+            lastMousePosMap.set(tabId, { x: scaledPoints.at(-1)!.x, y: scaledPoints.at(-1)!.y });
+          } catch (burstErr) {
+            if (burstErr instanceof DialogOpenedError) {
+              return createDialogInterruptResponse(burstErr);
+            }
+            return createErrorResponse(
+              `click_sequence failed after ${dispatched} points: ${burstErr instanceof Error ? burstErr.message : String(burstErr)}`,
+            );
+          }
+          // D1: read back the delivery probe before returning. click_sequence is
+          // a native-CDP path, so delivered=false here means throttling ate the
+          // burst (TESTING-NOTES #27).
+          let burstDelivery: Record<string, unknown> = {};
+          if (probeArmed) {
+            try {
+              const probe = (await executeInPage({ tabId }, 'inPageReadDeliveryProbe', [true]))?.[0]
+                ?.result;
+              burstDelivery = probe?.delivered
+                ? { deliveryVerified: true }
+                : { deliveryVerified: false, deliveryHits: probe?.hits ?? [] };
+            } catch {
+              burstDelivery = {};
+            }
+          }
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    action: 'click_sequence',
+                    pointsDispatched: dispatched,
+                    coordinates: scaledPoints,
+                    ...(affinityWarning ? { affinityWarning } : {}),
+                    ...burstDelivery,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+            isError: false,
+          };
         }
-        const parsed = parseUnifiedCoordinate(c, { tabId });
-        if (parsed) return parsed;
-        if (!isScreenshotSpace) return { x: Math.round(c.x), y: Math.round(c.y) };
-        const ctx = screenshotContextManager.getContext(tabId);
-        if (!ctx) return { x: Math.round(c.x), y: Math.round(c.y) };
-        const scaled = scaleCoordinates(c.x, c.y, ctx);
-        return { x: scaled.x, y: scaled.y };
-      };
 
-      // D1: arm one-shot delivery probe BEFORE dispatch (TESTING-NOTES #27).
-      // Hidden-tab throttling acks CDP commands but drops the events; the
-      // probe records whether any trusted event actually reached the page.
-      let probeArmed = false;
-      const armProbe = async (scope?: any) => {
-        try {
-          await executeInPage(scope ?? { tabId }, 'inPageArmDeliveryProbe', [
-            action === 'click' || action === 'double_click' || action === 'right_click'
-              ? ['mousedown', 'mouseup', 'click']
-              : action === 'drag'
-                ? ['mousedown', 'mousemove', 'mouseup']
-                : ['mousemove', 'mouseover'],
-          ]);
-          probeArmed = true;
-        } catch {
-          // Restricted page / renderer gone: dispatch below will error anyway.
+        // 1. Locate element coordinates inside the tab (DOM index vs pure visual coordinate)
+        let x: number;
+        let y: number;
+        let tagName: string | undefined;
+        let text: string | undefined;
+        let targetFrameId: number | undefined;
+        let coordResult: any = undefined;
+        let isFallback = false;
+
+        if (hasCoord && !hasIndex) {
+          const projected = projectCoord(args.coordinate!);
+          const aligned = await alignVisualCoordinate(projected);
+          x = aligned.x;
+          y = aligned.y;
+          tagName = 'visual_target';
+          text = undefined;
+          targetFrameId = 0;
+          if (args.autoSnap !== false) {
+            try {
+              const snap = (await executeInPage({ tabId }, 'inPageSnapCoordinate', [x, y, 24]))?.[0]
+                ?.result;
+              if (snap?.snapped) {
+                x = snap.x;
+                y = snap.y;
+                if (snap.targetTag) tagName = `visual_target_snapped_${snap.targetTag}`;
+              }
+            } catch {}
+          }
+        } else {
+          coordResult = (
+            await executeInPage({ tabId }, 'inPageGetElementCoordinates', [args.index!])
+          )?.[0]?.result;
+
+          // Check subframes if not in main frame
+          if (!coordResult || !coordResult.success) {
+            const frameResults = await executeInPage(
+              { tabId, allFrames: true },
+              'inPageGetElementCoordinates',
+              [args.index!],
+            );
+            const match = frameResults.find((r) => r.result?.success);
+            if (match?.result) {
+              coordResult = match.result;
+              targetFrameId = match.frameId;
+            }
+          }
+
+          if (!coordResult || !coordResult.success) {
+            if (hasCoord) {
+              // Hybrid Visual Fallback: DOM extraction failed, fallback to coordinate
+              const projected = projectCoord(args.coordinate!);
+              const aligned = await alignVisualCoordinate(projected);
+              x = aligned.x;
+              y = aligned.y;
+              tagName = 'visual_fallback';
+              targetFrameId = 0;
+              isFallback = true;
+              if (args.autoSnap !== false) {
+                try {
+                  const snap = (
+                    await executeInPage({ tabId }, 'inPageSnapCoordinate', [x, y, 24])
+                  )?.[0]?.result;
+                  if (snap?.snapped) {
+                    x = snap.x;
+                    y = snap.y;
+                    if (snap.targetTag) tagName = `visual_fallback_snapped_${snap.targetTag}`;
+                  }
+                } catch {}
+              }
+            } else {
+              return createErrorResponse(
+                (coordResult?.error ||
+                  `Element with index [${args.index}] not found in active DOM index map`) +
+                  `. Hint: Element may reside inside a dynamic or closed ShadowRoot. Try calling chrome_javascript to inspect or dispatch, or re-scan with chrome_read_dom.`,
+              );
+            }
+          } else {
+            x = coordResult.x!;
+            y = coordResult.y!;
+            tagName = coordResult.tagName;
+            text = coordResult.text;
+          }
         }
-      };
 
-      // Click sequence: CDP-dispatch a rapid burst of full clicks at the given
-      // viewport points. One MCP round-trip, page-side interval down to ~35ms —
-      // the only way to hit fast-moving canvas targets (rAF-animated hitboxes).
-      if (hasPoints) {
-        await armProbe();
-        const interval = Math.min(500, Math.max(5, args.intervalMs ?? 35));
-        const scaledPoints = (args.points || []).map(projectCoord);
-        let dispatched = 0;
-        try {
-          await cdpSessionManager.withSession(tabId, 'interact-index', async () => {
-            for (const pt of scaledPoints) {
+        if (typeof x !== 'number' || typeof y !== 'number') {
+          return createErrorResponse(`Failed to resolve valid pixel coordinates for interaction`);
+        }
+
+        const targetScope =
+          targetFrameId !== undefined && targetFrameId !== 0 && !isFallback
+            ? { tabId, frameIds: [targetFrameId] }
+            : { tabId };
+
+        // Animate virtual agent cursor to target position before physical interaction
+        void animateAgentCursor(tabId, x, y);
+
+        // Start inline network capture if requested
+        const netCapture = startActionNetworkCapture(tabId, args.captureNetwork);
+
+        // Shadow DOM penetrating interception check (self-healing feedback)
+        let maskPierced: { description: string; reason: string } | undefined;
+        if (args.index !== undefined && !isFallback && action === 'click') {
+          try {
+            const interceptRes = (
+              await executeInPage(targetScope, 'inPageCheckInterception', [args.index, x, y])
+            )?.[0]?.result;
+            if (interceptRes?.intercepted && interceptRes?.description) {
+              if (interceptRes.canPierce && args.pierceOverlay !== false) {
+                maskPierced = {
+                  description: interceptRes.description,
+                  reason: interceptRes.pierceReason || 'transient_mask',
+                };
+              } else {
+                netCapture.dispose();
+                return createErrorResponse(
+                  `Element [${args.index}] click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first. Hint: If this is an open modal, interact with its buttons to dismiss. If it is a captcha or human verification, call chrome_request_human_intervention.`,
+                );
+              }
+            }
+          } catch {
+            // Non-blocking on inspection failure
+          }
+        }
+
+        const modifierMask = computeModifierMask(args.modifiers);
+        let usedNativeCDP = false;
+        // 2. Compensate cumulative frame offset if target is inside a nested or cross-origin subframe
+        if (targetFrameId !== undefined && targetFrameId !== 0 && !isFallback) {
+          const offset = await getSubframeViewportOffset(tabId, targetFrameId);
+          const localX = coordResult?.frameOffsetX || 0;
+          const localY = coordResult?.frameOffsetY || 0;
+          console.warn(
+            `[FRAME_OFFSET_DEBUG] targetFrameId=${targetFrameId} offset=${JSON.stringify(offset)} local=(${localX},${localY}) final=(${x - localX + offset.offsetX},${y - localY + offset.offsetY})`,
+          );
+          x = x - localX + offset.offsetX;
+          y = y - localY + offset.offsetY;
+        }
+
+        let dragOutcome: any = undefined;
+        if (action === 'drag') {
+          dragOutcome = { dragIntercepted: false, dndDispatched: false };
+          const hasPath = Array.isArray(args.path) && args.path.length > 0;
+          let endPoint: { x: number; y: number } | null = null;
+          if (!hasPath) {
+            endPoint = await resolveDragEndPoint(tabId, args.end, args.coordinateSpace);
+            if (!endPoint) {
+              netCapture.dispose();
+              return createErrorResponse(
+                'drag requires end.index, end.coordinate, or a path array',
+              );
+            }
+          } else {
+            const lastPt = args.path![args.path!.length - 1];
+            endPoint = { x: Math.round(lastPt.x), y: Math.round(lastPt.y) };
+          }
+
+          if (!endPoint && !hasPath) {
+            netCapture.dispose();
+            return createErrorResponse(
+              'drag requires end.index or end.coordinate that resolves to a valid viewport point',
+            );
+          }
+          await cdpSessionManager.withSession(tabId, 'interact-index-drag', async () => {
+            const enableDnd = args.dnd !== false;
+            const dragSteps = Math.max(2, Math.min(120, args.steps ?? 48));
+            const holdMs = Math.max(0, Math.min(1000, args.holdMs ?? 80));
+            if (enableDnd) {
+              await cdpSessionManager.sendCommand(tabId, 'Input.setInterceptDrags', {
+                enabled: true,
+              });
+            }
+            let dragData: any = null;
+            const observer: CdpEventObserver = (tid, method, params) => {
+              if (tid === tabId && method === 'Input.dragIntercepted') {
+                dragData = (params as any)?.data ?? null;
+              }
+            };
+            cdpSessionManager.addCdpEventObserver(observer);
+            try {
+              const startX = hasPath ? Math.round(args.path![0].x) : x;
+              const startY = hasPath ? Math.round(args.path![0].y) : y;
+
+              await dispatchMouseMovement(tabId, startX, startY, modifierMask, false);
+              const prePressPauseMs = Math.max(
+                80,
+                Math.min(300, (args as any).prePressDelayMs ?? 110),
+              );
+              await new Promise((r) => setTimeout(r, prePressPauseMs));
+
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mousePressed',
-                x: pt.x,
-                y: pt.y,
+                x: startX,
+                y: startY,
                 button: 'left',
                 buttons: 1,
                 clickCount: 1,
+                modifiers: modifierMask,
               });
+              if (holdMs > 0) {
+                await new Promise((r) => setTimeout(r, holdMs));
+              }
+
+              if (hasPath) {
+                for (let pi = 1; pi < args.path!.length; pi++) {
+                  const pt = args.path![pi];
+                  await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mouseMoved',
+                    x: Math.round(pt.x),
+                    y: Math.round(pt.y),
+                    button: 'left',
+                    buttons: 1,
+                    modifiers: modifierMask,
+                  });
+                  await new Promise((r) => setTimeout(r, 16));
+                }
+              } else {
+                // D2 fix (TESTING-NOTES #43): after dragIntercepted fires, Chrome
+                // stops acking Input.dispatchMouseEvent entirely - the old loop
+                // kept blind-sending mouseMoved and hung 30s+. Bail out of the
+                // move loop the moment interception is observed; dispatchDragEvent
+                // below completes the HTML5 drag without any further input acks.
+                let dragIntercepted = false;
+                for (let i = 1; i <= dragSteps && !dragIntercepted; i++) {
+                  const curX = Math.round(startX + (endPoint.x - startX) * (i / dragSteps));
+                  const curY = Math.round(startY + (endPoint.y - startY) * (i / dragSteps));
+                  await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mouseMoved',
+                    x: curX,
+                    y: curY,
+                    button: 'left',
+                    buttons: 1,
+                    modifiers: modifierMask,
+                  }).catch((err) => {
+                    if (String(err?.message || '').startsWith('CDP_DISPATCH_TIMEOUT')) {
+                      dragIntercepted = true;
+                      return undefined;
+                    }
+                    throw err;
+                  });
+                  if (!dragIntercepted) {
+                    dragIntercepted = Boolean(dragData);
+                  }
+                  await new Promise((r) => setTimeout(r, 12));
+                }
+              }
+              if (enableDnd) {
+                const deadline = Date.now() + 300;
+                while (!dragData && Date.now() < deadline) {
+                  await new Promise((r) => setTimeout(r, 25));
+                }
+              }
+              if (dragData) {
+                await cdpSessionManager.sendCommand(tabId, 'Input.dispatchDragEvent', {
+                  type: 'dragEnter',
+                  x: endPoint.x,
+                  y: endPoint.y,
+                  data: dragData,
+                  modifiers: modifierMask,
+                });
+                await cdpSessionManager.sendCommand(tabId, 'Input.dispatchDragEvent', {
+                  type: 'dragOver',
+                  x: endPoint.x,
+                  y: endPoint.y,
+                  data: dragData,
+                  modifiers: modifierMask,
+                });
+                await cdpSessionManager.sendCommand(tabId, 'Input.dispatchDragEvent', {
+                  type: 'drop',
+                  x: endPoint.x,
+                  y: endPoint.y,
+                  data: dragData,
+                  modifiers: modifierMask,
+                });
+                dragOutcome.dndDispatched = true;
+              }
+              void animateAgentCursor(tabId, endPoint.x, endPoint.y, {
+                immediate: false,
+                waitForArrival: false,
+              });
+              dragOutcome.dragIntercepted = Boolean(dragData);
+              dragOutcome.dragSteps = dragSteps;
+              // CDP-synthetic pointer drags: deliver one final pointermove to
+              // the element under the press point, because hit-tested moves
+              // stop reaching narrow targets (resize handles, sliders) once
+              // the cursor outruns them. HTML5 drags skip this: they consume
+              // dragIntercepted data instead of pointermove.
+              if (!dragData && !hasPath) {
+                try {
+                  const pmResult = (
+                    await executeInPage({ tabId }, 'inPagePointerDragMove', [
+                      x,
+                      y,
+                      endPoint.x,
+                      endPoint.y,
+                    ])
+                  )?.[0]?.result;
+                  dragOutcome.pointerMove = pmResult ?? null;
+                } catch (pmErr) {
+                  dragOutcome.pointerMove = {
+                    error: String(pmErr instanceof Error ? pmErr.message : pmErr),
+                  };
+                }
+              }
               await raceCdp(tabId, 'Input.dispatchMouseEvent', {
                 type: 'mouseReleased',
-                x: pt.x,
-                y: pt.y,
+                x: endPoint.x,
+                y: endPoint.y,
                 button: 'left',
                 buttons: 0,
                 clickCount: 1,
+                modifiers: modifierMask,
               });
-              dispatched++;
-              if (dispatched < scaledPoints.length) {
-                await new Promise((r) => setTimeout(r, interval));
+              lastMousePosMap.set(tabId, { x: endPoint.x, y: endPoint.y });
+            } finally {
+              cdpSessionManager.removeCdpEventObserver(observer);
+              if (enableDnd) {
+                try {
+                  await cdpSessionManager.sendCommand(tabId, 'Input.setInterceptDrags', {
+                    enabled: false,
+                  });
+                } catch {}
               }
             }
           });
-          lastMousePosMap.set(tabId, { x: scaledPoints.at(-1)!.x, y: scaledPoints.at(-1)!.y });
-        } catch (burstErr) {
-          if (burstErr instanceof DialogOpenedError) {
-            return createDialogInterruptResponse(burstErr);
-          }
-          return createErrorResponse(
-            `click_sequence failed after ${dispatched} points: ${burstErr instanceof Error ? burstErr.message : String(burstErr)}`,
-          );
-        }
-        // D1: read back the delivery probe before returning. click_sequence is
-        // a native-CDP path, so delivered=false here means throttling ate the
-        // burst (TESTING-NOTES #27).
-        let burstDelivery: Record<string, unknown> = {};
-        if (probeArmed) {
+          usedNativeCDP = true;
+        } else {
+          // Primary path: Native CDP Mouse Event Dispatch (isTrusted=true)
           try {
-            const probe = (await executeInPage({ tabId }, 'inPageReadDeliveryProbe', [true]))?.[0]
-              ?.result;
-            burstDelivery = probe?.delivered
-              ? { deliveryVerified: true }
-              : { deliveryVerified: false, deliveryHits: probe?.hits ?? [] };
-          } catch {
-            burstDelivery = {};
+            await armProbe(targetScope);
+            await executeInPage({ tabId }, 'inPageLockScroll', [true]).catch(() => {});
+            try {
+              await cdpSessionManager.withSession(tabId, 'interact-index', async () => {
+                // Always dispatch mouse movement to target coordinates before pressing (ensures authentic pointer path)
+                await dispatchMouseMovement(tabId, x, y, modifierMask, args.humanize === true);
+
+                if (action === 'click') {
+                  const prePressPauseMs = Math.max(
+                    80,
+                    Math.min(300, (args as any).prePressDelayMs ?? 110),
+                  );
+                  await new Promise((r) => setTimeout(r, prePressPauseMs));
+                  void animateAgentCursorClick(tabId, x, y);
+                  await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mousePressed',
+                    x,
+                    y,
+                    button: 'left',
+                    buttons: 1,
+                    clickCount: 1,
+                    modifiers: modifierMask,
+                  });
+                  const clickHoldMs = Math.max(35, Math.min(3000, args.holdMs ?? 45));
+                  await new Promise((r) => setTimeout(r, clickHoldMs));
+                  await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mouseReleased',
+                    x,
+                    y,
+                    button: 'left',
+                    buttons: 0,
+                    clickCount: 1,
+                    modifiers: modifierMask,
+                  });
+                } else if (action === 'double_click') {
+                  void animateAgentCursorClick(tabId, x, y);
+                  // First click
+                  await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mousePressed',
+                    x,
+                    y,
+                    button: 'left',
+                    buttons: 1,
+                    clickCount: 1,
+                    modifiers: modifierMask,
+                  });
+                  await new Promise((r) => setTimeout(r, 45));
+                  await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mouseReleased',
+                    x,
+                    y,
+                    button: 'left',
+                    buttons: 0,
+                    clickCount: 1,
+                    modifiers: modifierMask,
+                  });
+                  // Inter-click pause for OS double-click recognition
+                  await new Promise((r) => setTimeout(r, 60));
+                  // Second click with clickCount: 2
+                  await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mousePressed',
+                    x,
+                    y,
+                    button: 'left',
+                    buttons: 1,
+                    clickCount: 2,
+                    modifiers: modifierMask,
+                  });
+                  await new Promise((r) => setTimeout(r, 45));
+                  await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mouseReleased',
+                    x,
+                    y,
+                    button: 'left',
+                    buttons: 0,
+                    clickCount: 2,
+                    modifiers: modifierMask,
+                  });
+                } else if (action === 'right_click') {
+                  void animateAgentCursorClick(tabId, x, y);
+                  const prePressPauseMs = Math.max(
+                    80,
+                    Math.min(300, (args as any).prePressDelayMs ?? 110),
+                  );
+                  await new Promise((r) => setTimeout(r, prePressPauseMs));
+                  await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mousePressed',
+                    x,
+                    y,
+                    button: 'right',
+                    buttons: 2,
+                    clickCount: 1,
+                    modifiers: modifierMask,
+                  });
+                  await new Promise((r) => setTimeout(r, 45));
+                  await raceCdp(tabId, 'Input.dispatchMouseEvent', {
+                    type: 'mouseReleased',
+                    x,
+                    y,
+                    button: 'right',
+                    buttons: 0,
+                    clickCount: 1,
+                    modifiers: modifierMask,
+                  });
+
+                  // Secondary guarantee for right_click: contextmenu synthetic event
+                  try {
+                    const targetSubframeScope =
+                      targetFrameId && targetFrameId !== 0
+                        ? { tabId, frameIds: [targetFrameId] }
+                        : { tabId };
+                    if (typeof args.index === 'number') {
+                      await executeInPage(targetSubframeScope, 'inPageInteractIndex', [
+                        args.index,
+                        'right_click',
+                      ]);
+                    } else {
+                      await executeInPage(targetSubframeScope, 'inPageDispatchSyntheticClick', [
+                        x,
+                        y,
+                        'right_click',
+                      ]);
+                    }
+                  } catch {}
+                } else if (action === 'hover') {
+                  // Mouse movement already dispatched above
+                }
+              });
+              usedNativeCDP = true;
+            } finally {
+              await executeInPage({ tabId }, 'inPageLockScroll', [false]).catch(() => {});
+            }
+          } catch (cdpErr) {
+            if (cdpErr instanceof DialogOpenedError) {
+              throw cdpErr;
+            }
+            if (String((cdpErr as Error)?.message || '').startsWith('CDP_DISPATCH_TIMEOUT')) {
+              let isCaptcha = false;
+              try {
+                const checkRes = (await executeInPage({ tabId }, 'inPageCheckCaptcha', []))?.[0]
+                  ?.result;
+                isCaptcha = Boolean(checkRes?.detected);
+              } catch {}
+              if (isCaptcha) {
+                return createErrorResponse(
+                  `[CAPTCHA_BLOCKED: Slider / human verification detected] The page is blocked by anti-bot verification. Call chrome_request_human_intervention to let the user solve it.`,
+                );
+              }
+              return createErrorResponse(
+                `${cdpErr instanceof Error ? cdpErr.message : String(cdpErr)}. Hint: If a native dialog is open, call chrome_handle_dialog. If this is a slider or captcha verification, call chrome_request_human_intervention.`,
+              );
+            }
+            console.warn(
+              `CDP native mouse event dispatch failed for tab ${tabId}, falling back to synthetic event:`,
+              cdpErr,
+            );
+            // Fallback to inPageInteractIndex if CDP is unavailable and index is provided
+            if (typeof args.index === 'number' && args.index > 0) {
+              const frameTarget = targetFrameId ? { tabId, frameIds: [targetFrameId] } : { tabId };
+              const fallbackResults = await executeInPage(frameTarget, 'inPageInteractIndex', [
+                args.index,
+                action,
+              ]);
+              const fallbackOutcome = fallbackResults?.[0]?.result;
+              if (!fallbackOutcome?.success) {
+                return createErrorResponse(
+                  fallbackOutcome?.error || `Failed to interact with index [${args.index}]`,
+                );
+              }
+            } else {
+              return createErrorResponse(
+                `CDP mouse event dispatch failed for visual coordinates (${x}, ${y}): ${cdpErr instanceof Error ? cdpErr.message : String(cdpErr)}`,
+              );
+            }
           }
         }
+
+        // 3. Action Settle & Auto-Wait Watchdog
+        let settleResult: any = undefined;
+        let networkSettled: boolean | undefined = undefined;
+
+        if (args.waitForNetworkQuiescence) {
+          networkSettled = await waitForNetworkQuiescence(tabId, args.quiescenceTimeoutMs || 2000);
+        }
+
+        if (args.waitForSettle) {
+          settleResult = await waitForPageSettle(tabId, { timeoutMs: args.settleTimeoutMs });
+        }
+
+        // D1: read back the delivery probe. Only meaningful when armed and the
+        // action used native CDP (synthetic fallback fires the same listeners
+        // synchronously, so a false there would be a probe artifact).
+        let deliveryVerified: boolean | undefined;
+        let deliveryHits: any[] | undefined;
+        let fallbackTriggered: string | undefined;
+        if (probeArmed && usedNativeCDP) {
+          try {
+            const probe = (await executeInPage(targetScope, 'inPageReadDeliveryProbe', [true]))?.[0]
+              ?.result;
+            deliveryVerified = Boolean(probe?.delivered);
+            if (!deliveryVerified || maskPierced) {
+              deliveryHits = probe?.hits ?? [];
+              // Click Probe / Mask Piercing Fallback: if native CDP events were dropped (e.g. background tab throttling)
+              // or if a transparent/transient mask intercepted the click, fall back to synthetic DOM event dispatch
+              // directly on the underlying target element to ensure 100% execution.
+              if (action === 'click') {
+                try {
+                  const synRes = (
+                    await executeInPage(targetScope, 'inPageDispatchSyntheticClick', [
+                      args.index ?? null,
+                      x,
+                      y,
+                    ])
+                  )?.[0]?.result;
+                  if (synRes) {
+                    deliveryVerified = true;
+                    fallbackTriggered = maskPierced
+                      ? 'synthetic_click_pierce'
+                      : 'synthetic_click_probe';
+                    usedNativeCDP = false;
+                  }
+                } catch {
+                  // Ignore fallback error
+                }
+              }
+            }
+          } catch {
+            deliveryVerified = undefined;
+          }
+        } else if (maskPierced && action === 'click') {
+          try {
+            const synRes = (
+              await executeInPage(targetScope, 'inPageDispatchSyntheticClick', [
+                args.index ?? null,
+                x,
+                y,
+              ])
+            )?.[0]?.result;
+            if (synRes) {
+              deliveryVerified = true;
+              fallbackTriggered = 'synthetic_click_pierce';
+              usedNativeCDP = false;
+            }
+          } catch {}
+        }
+
+        // Visibility: screenshot-context TTL silently expires after 5 minutes;
+        // surface the remaining budget so stale coordinate projection is detected
+        const ctxTtlMs = screenshotContextManager.getTtlRemaining(tabId);
+        const screenshotCtxWarning =
+          ctxTtlMs >= 0 && ctxTtlMs < 30_000
+            ? `screenshot coordinate context expires in ${Math.round(ctxTtlMs / 1000)}s; re-capture to refresh`
+            : undefined;
+
+        const delta = await captureDeltaIfRequested(tabId, args.includeDelta);
+
+        let currentUrl = previousUrl;
+        try {
+          const updatedTab = await chrome.tabs.get(tabId);
+          currentUrl = updatedTab.url || previousUrl;
+        } catch {}
+        const urlChanged = Boolean(previousUrl && currentUrl && previousUrl !== currentUrl);
+
+        const networkResult = await netCapture.waitForResult();
+
+        const postSignature = await executeInPage({ tabId }, 'inPageDetectPerceptiveSignature', [])
+          .then((r) => r?.[0]?.result)
+          .catch(() => null);
+        const perceptiveDelta = computePerceptiveDelta(preSignature, postSignature);
+
         return {
           content: [
             {
@@ -458,11 +1124,37 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
               text: JSON.stringify(
                 {
                   success: true,
-                  action: 'click_sequence',
-                  pointsDispatched: dispatched,
-                  coordinates: scaledPoints,
+                  urlChanged,
+                  previousUrl,
+                  currentUrl,
+                  index: args.index ?? null,
+                  action,
+                  tagName,
+                  text,
+                  ...(networkResult ? { networkResult } : {}),
+                  isTrusted: usedNativeCDP,
+                  coordinates: { x, y },
+                  fallbackTriggered,
+                  ...(maskPierced ? { piercedOverlay: maskPierced } : {}),
+                  mode: isFallback
+                    ? 'hybrid_visual_fallback'
+                    : hasCoord && !hasIndex
+                      ? 'visual_coordinate'
+                      : 'dom_index',
+                  modifiers: args.modifiers || [],
+                  humanized: Boolean(args.humanize),
+                  drag: action === 'drag' ? dragOutcome : undefined,
+                  settle: settleResult,
+                  ...(typeof networkSettled === 'boolean' ? { networkSettled } : {}),
+                  screenshotCtxWarning,
                   ...(affinityWarning ? { affinityWarning } : {}),
-                  ...burstDelivery,
+                  ...(delta ? { delta } : {}),
+                  ...(perceptiveDelta ? { perceptiveDelta } : {}),
+                  ...(deliveryVerified === undefined
+                    ? {}
+                    : deliveryVerified
+                      ? { deliveryVerified: true }
+                      : { deliveryVerified: false, deliveryHits }),
                 },
                 null,
                 2,
@@ -471,628 +1163,6 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           ],
           isError: false,
         };
-      }
-
-      // 1. Locate element coordinates inside the tab (DOM index vs pure visual coordinate)
-      let x: number;
-      let y: number;
-      let tagName: string | undefined;
-      let text: string | undefined;
-      let targetFrameId: number | undefined;
-      let coordResult: any = undefined;
-      let isFallback = false;
-
-      if (hasCoord && !hasIndex) {
-        const projected = projectCoord(args.coordinate!);
-        x = projected.x;
-        y = projected.y;
-        tagName = 'visual_target';
-        text = undefined;
-        targetFrameId = 0;
-        if (args.autoSnap !== false) {
-          try {
-            const snap = (
-              await executeInPage({ tabId }, 'inPageSnapCoordinate', [x, y, 24])
-            )?.[0]?.result;
-            if (snap?.snapped) {
-              x = snap.x;
-              y = snap.y;
-              if (snap.targetTag) tagName = `visual_target_snapped_${snap.targetTag}`;
-            }
-          } catch {}
-        }
-      } else {
-        coordResult = (
-          await executeInPage({ tabId }, 'inPageGetElementCoordinates', [args.index!])
-        )?.[0]?.result;
-
-        // Check subframes if not in main frame
-        if (!coordResult || !coordResult.success) {
-          const frameResults = await executeInPage(
-            { tabId, allFrames: true },
-            'inPageGetElementCoordinates',
-            [args.index!],
-          );
-          const match = frameResults.find((r) => r.result?.success);
-          if (match?.result) {
-            coordResult = match.result;
-            targetFrameId = match.frameId;
-          }
-        }
-
-        if (!coordResult || !coordResult.success) {
-          if (hasCoord) {
-            // Hybrid Visual Fallback: DOM extraction failed, fallback to coordinate
-            const projected = projectCoord(args.coordinate!);
-            x = projected.x;
-            y = projected.y;
-            tagName = 'visual_fallback';
-            targetFrameId = 0;
-            isFallback = true;
-            if (args.autoSnap !== false) {
-              try {
-                const snap = (
-                  await executeInPage({ tabId }, 'inPageSnapCoordinate', [x, y, 24])
-                )?.[0]?.result;
-                if (snap?.snapped) {
-                  x = snap.x;
-                  y = snap.y;
-                  if (snap.targetTag) tagName = `visual_fallback_snapped_${snap.targetTag}`;
-                }
-              } catch {}
-            }
-          } else {
-            return createErrorResponse(
-              (coordResult?.error ||
-                `Element with index [${args.index}] not found in active DOM index map`) +
-                `. Hint: Element may reside inside a dynamic or closed ShadowRoot. Try calling chrome_javascript to inspect or dispatch, or re-scan with chrome_read_dom.`,
-            );
-          }
-        } else {
-          x = coordResult.x!;
-          y = coordResult.y!;
-          tagName = coordResult.tagName;
-          text = coordResult.text;
-        }
-      }
-
-      if (typeof x !== 'number' || typeof y !== 'number') {
-        return createErrorResponse(`Failed to resolve valid pixel coordinates for interaction`);
-      }
-
-      const targetScope =
-        targetFrameId !== undefined && targetFrameId !== 0 && !isFallback
-          ? { tabId, frameIds: [targetFrameId] }
-          : { tabId };
-
-      // Animate virtual agent cursor to target position before physical interaction
-      void animateAgentCursor(tabId, x, y);
-
-      // Start inline network capture if requested
-      const netCapture = startActionNetworkCapture(tabId, args.captureNetwork);
-
-      // Shadow DOM penetrating interception check (self-healing feedback)
-      let maskPierced: { description: string; reason: string } | undefined;
-      if (args.index !== undefined && !isFallback && action === 'click') {
-        try {
-          const interceptRes = (
-            await executeInPage(targetScope, 'inPageCheckInterception', [args.index, x, y])
-          )?.[0]?.result;
-          if (interceptRes?.intercepted && interceptRes?.description) {
-            if (interceptRes.canPierce && args.pierceOverlay !== false) {
-              maskPierced = {
-                description: interceptRes.description,
-                reason: interceptRes.pierceReason || 'transient_mask',
-              };
-            } else {
-              netCapture.dispose();
-              return createErrorResponse(
-                `Element [${args.index}] click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first. Hint: If this is an open modal, interact with its buttons to dismiss. If it is a captcha or human verification, call chrome_request_human_intervention.`,
-              );
-            }
-          }
-        } catch {
-          // Non-blocking on inspection failure
-        }
-      }
-
-      const modifierMask = computeModifierMask(args.modifiers);
-      let usedNativeCDP = false;
-      // 2. Compensate cumulative frame offset if target is inside a nested or cross-origin subframe
-      if (targetFrameId !== undefined && targetFrameId !== 0 && !isFallback) {
-        const offset = await getSubframeViewportOffset(tabId, targetFrameId);
-        const localX = coordResult?.frameOffsetX || 0;
-        const localY = coordResult?.frameOffsetY || 0;
-        console.warn(
-          `[FRAME_OFFSET_DEBUG] targetFrameId=${targetFrameId} offset=${JSON.stringify(offset)} local=(${localX},${localY}) final=(${x - localX + offset.offsetX},${y - localY + offset.offsetY})`,
-        );
-        x = x - localX + offset.offsetX;
-        y = y - localY + offset.offsetY;
-      }
-
-      let dragOutcome: any = undefined;
-      if (action === 'drag') {
-        dragOutcome = { dragIntercepted: false, dndDispatched: false };
-        const hasPath = Array.isArray(args.path) && args.path.length > 0;
-        let endPoint: { x: number; y: number } | null = null;
-        if (!hasPath) {
-          endPoint = await resolveDragEndPoint(tabId, args.end, args.coordinateSpace);
-          if (!endPoint) {
-            netCapture.dispose();
-            return createErrorResponse('drag requires end.index, end.coordinate, or a path array');
-          }
-        } else {
-          const lastPt = args.path![args.path!.length - 1];
-          endPoint = { x: Math.round(lastPt.x), y: Math.round(lastPt.y) };
-        }
-
-        if (!endPoint && !hasPath) {
-          netCapture.dispose();
-          return createErrorResponse(
-            'drag requires end.index or end.coordinate that resolves to a valid viewport point',
-          );
-        }
-        await cdpSessionManager.withSession(tabId, 'interact-index-drag', async () => {
-          const enableDnd = args.dnd !== false;
-          const dragSteps = Math.max(2, Math.min(120, args.steps ?? 48));
-          const holdMs = Math.max(0, Math.min(1000, args.holdMs ?? 80));
-          if (enableDnd) {
-            await cdpSessionManager.sendCommand(tabId, 'Input.setInterceptDrags', {
-              enabled: true,
-            });
-          }
-          let dragData: any = null;
-          const observer: CdpEventObserver = (tid, method, params) => {
-            if (tid === tabId && method === 'Input.dragIntercepted') {
-              dragData = (params as any)?.data ?? null;
-            }
-          };
-          cdpSessionManager.addCdpEventObserver(observer);
-          try {
-            const startX = hasPath ? Math.round(args.path![0].x) : x;
-            const startY = hasPath ? Math.round(args.path![0].y) : y;
-
-            await dispatchMouseMovement(tabId, startX, startY, modifierMask, false);
-            const prePressPauseMs = Math.max(
-              80,
-              Math.min(300, (args as any).prePressDelayMs ?? 110),
-            );
-            await new Promise((r) => setTimeout(r, prePressPauseMs));
-
-            await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-              type: 'mousePressed',
-              x: startX,
-              y: startY,
-              button: 'left',
-              buttons: 1,
-              clickCount: 1,
-              modifiers: modifierMask,
-            });
-            if (holdMs > 0) {
-              await new Promise((r) => setTimeout(r, holdMs));
-            }
-
-            if (hasPath) {
-              for (let pi = 1; pi < args.path!.length; pi++) {
-                const pt = args.path![pi];
-                await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-                  type: 'mouseMoved',
-                  x: Math.round(pt.x),
-                  y: Math.round(pt.y),
-                  button: 'left',
-                  buttons: 1,
-                  modifiers: modifierMask,
-                });
-                await new Promise((r) => setTimeout(r, 16));
-              }
-            } else {
-              // D2 fix (TESTING-NOTES #43): after dragIntercepted fires, Chrome
-              // stops acking Input.dispatchMouseEvent entirely - the old loop
-              // kept blind-sending mouseMoved and hung 30s+. Bail out of the
-              // move loop the moment interception is observed; dispatchDragEvent
-              // below completes the HTML5 drag without any further input acks.
-              let dragIntercepted = false;
-              for (let i = 1; i <= dragSteps && !dragIntercepted; i++) {
-                const curX = Math.round(startX + (endPoint.x - startX) * (i / dragSteps));
-                const curY = Math.round(startY + (endPoint.y - startY) * (i / dragSteps));
-                await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-                  type: 'mouseMoved',
-                  x: curX,
-                  y: curY,
-                  button: 'left',
-                  buttons: 1,
-                  modifiers: modifierMask,
-                }).catch((err) => {
-                  if (String(err?.message || '').startsWith('CDP_DISPATCH_TIMEOUT')) {
-                    dragIntercepted = true;
-                    return undefined;
-                  }
-                  throw err;
-                });
-                if (!dragIntercepted) {
-                  dragIntercepted = Boolean(dragData);
-                }
-                await new Promise((r) => setTimeout(r, 12));
-              }
-            }
-            if (enableDnd) {
-              const deadline = Date.now() + 300;
-              while (!dragData && Date.now() < deadline) {
-                await new Promise((r) => setTimeout(r, 25));
-              }
-            }
-            if (dragData) {
-              await cdpSessionManager.sendCommand(tabId, 'Input.dispatchDragEvent', {
-                type: 'dragEnter',
-                x: endPoint.x,
-                y: endPoint.y,
-                data: dragData,
-                modifiers: modifierMask,
-              });
-              await cdpSessionManager.sendCommand(tabId, 'Input.dispatchDragEvent', {
-                type: 'dragOver',
-                x: endPoint.x,
-                y: endPoint.y,
-                data: dragData,
-                modifiers: modifierMask,
-              });
-              await cdpSessionManager.sendCommand(tabId, 'Input.dispatchDragEvent', {
-                type: 'drop',
-                x: endPoint.x,
-                y: endPoint.y,
-                data: dragData,
-                modifiers: modifierMask,
-              });
-              dragOutcome.dndDispatched = true;
-            }
-            void animateAgentCursor(tabId, endPoint.x, endPoint.y, {
-              immediate: false,
-              waitForArrival: false,
-            });
-            dragOutcome.dragIntercepted = Boolean(dragData);
-            dragOutcome.dragSteps = dragSteps;
-            // CDP-synthetic pointer drags: deliver one final pointermove to
-            // the element under the press point, because hit-tested moves
-            // stop reaching narrow targets (resize handles, sliders) once
-            // the cursor outruns them. HTML5 drags skip this: they consume
-            // dragIntercepted data instead of pointermove.
-            if (!dragData && !hasPath) {
-              try {
-                const pmResult = (
-                  await executeInPage({ tabId }, 'inPagePointerDragMove', [
-                    x,
-                    y,
-                    endPoint.x,
-                    endPoint.y,
-                  ])
-                )?.[0]?.result;
-                dragOutcome.pointerMove = pmResult ?? null;
-              } catch (pmErr) {
-                dragOutcome.pointerMove = {
-                  error: String(pmErr instanceof Error ? pmErr.message : pmErr),
-                };
-              }
-            }
-            await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-              type: 'mouseReleased',
-              x: endPoint.x,
-              y: endPoint.y,
-              button: 'left',
-              buttons: 0,
-              clickCount: 1,
-              modifiers: modifierMask,
-            });
-            lastMousePosMap.set(tabId, { x: endPoint.x, y: endPoint.y });
-          } finally {
-            cdpSessionManager.removeCdpEventObserver(observer);
-            if (enableDnd) {
-              try {
-                await cdpSessionManager.sendCommand(tabId, 'Input.setInterceptDrags', {
-                  enabled: false,
-                });
-              } catch {}
-            }
-          }
-        });
-        usedNativeCDP = true;
-      } else {
-        // Primary path: Native CDP Mouse Event Dispatch (isTrusted=true)
-        try {
-          await armProbe(targetScope);
-          await cdpSessionManager.withSession(tabId, 'interact-index', async () => {
-            // Always dispatch mouse movement to target coordinates before pressing (ensures authentic pointer path)
-            await dispatchMouseMovement(tabId, x, y, modifierMask, args.humanize === true);
-
-            if (action === 'click') {
-              const prePressPauseMs = Math.max(
-                80,
-                Math.min(300, (args as any).prePressDelayMs ?? 110),
-              );
-              await new Promise((r) => setTimeout(r, prePressPauseMs));
-              void animateAgentCursorClick(tabId, x, y);
-              await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-                type: 'mousePressed',
-                x,
-                y,
-                button: 'left',
-                buttons: 1,
-                clickCount: 1,
-                modifiers: modifierMask,
-              });
-              const clickHoldMs = Math.max(35, Math.min(3000, args.holdMs ?? 45));
-              await new Promise((r) => setTimeout(r, clickHoldMs));
-              await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-                type: 'mouseReleased',
-                x,
-                y,
-                button: 'left',
-                buttons: 0,
-                clickCount: 1,
-                modifiers: modifierMask,
-              });
-            } else if (action === 'double_click') {
-              void animateAgentCursorClick(tabId, x, y);
-              // First click
-              await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-                type: 'mousePressed',
-                x,
-                y,
-                button: 'left',
-                buttons: 1,
-                clickCount: 1,
-                modifiers: modifierMask,
-              });
-              await new Promise((r) => setTimeout(r, 45));
-              await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-                type: 'mouseReleased',
-                x,
-                y,
-                button: 'left',
-                buttons: 0,
-                clickCount: 1,
-                modifiers: modifierMask,
-              });
-              // Inter-click pause for OS double-click recognition
-              await new Promise((r) => setTimeout(r, 60));
-              // Second click with clickCount: 2
-              await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-                type: 'mousePressed',
-                x,
-                y,
-                button: 'left',
-                buttons: 1,
-                clickCount: 2,
-                modifiers: modifierMask,
-              });
-              await new Promise((r) => setTimeout(r, 45));
-              await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-                type: 'mouseReleased',
-                x,
-                y,
-                button: 'left',
-                buttons: 0,
-                clickCount: 2,
-                modifiers: modifierMask,
-              });
-            } else if (action === 'right_click') {
-              void animateAgentCursorClick(tabId, x, y);
-              await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-                type: 'mouseMoved',
-                x,
-                y,
-                modifiers: modifierMask,
-              });
-              // Dispatch contextmenu directly in page to trigger web app onContextMenu handlers
-              // without popping up OS-level native context menus that freeze the Chromium renderer
-              try {
-                if (typeof args.index === 'number' && args.index > 0) {
-                  await executeInPage(targetScope, 'inPageInteractIndex', [
-                    args.index,
-                    'right_click',
-                  ]);
-                } else {
-                  await executeInPage(targetScope, 'inPageDispatchSyntheticClick', [
-                    null,
-                    x,
-                    y,
-                    'right_click',
-                  ]);
-                }
-              } catch {}
-            } else if (action === 'hover') {
-              // Mouse movement already dispatched above
-            }
-          });
-          usedNativeCDP = true;
-        } catch (cdpErr) {
-          if (cdpErr instanceof DialogOpenedError) {
-            throw cdpErr;
-          }
-          if (String((cdpErr as Error)?.message || '').startsWith('CDP_DISPATCH_TIMEOUT')) {
-            let isCaptcha = false;
-            try {
-              const checkRes = (await executeInPage({ tabId }, 'inPageCheckCaptcha', []))?.[0]
-                ?.result;
-              isCaptcha = Boolean(checkRes?.detected);
-            } catch {}
-            if (isCaptcha) {
-              return createErrorResponse(
-                `[CAPTCHA_BLOCKED: Slider / human verification detected] The page is blocked by anti-bot verification. Call chrome_request_human_intervention to let the user solve it.`,
-              );
-            }
-            return createErrorResponse(
-              `${cdpErr instanceof Error ? cdpErr.message : String(cdpErr)}. Hint: If a native dialog is open, call chrome_handle_dialog. If this is a slider or captcha verification, call chrome_request_human_intervention.`,
-            );
-          }
-          console.warn(
-            `CDP native mouse event dispatch failed for tab ${tabId}, falling back to synthetic event:`,
-            cdpErr,
-          );
-          // Fallback to inPageInteractIndex if CDP is unavailable and index is provided
-          if (typeof args.index === 'number' && args.index > 0) {
-            const frameTarget = targetFrameId ? { tabId, frameIds: [targetFrameId] } : { tabId };
-            const fallbackResults = await executeInPage(frameTarget, 'inPageInteractIndex', [
-              args.index,
-              action,
-            ]);
-            const fallbackOutcome = fallbackResults?.[0]?.result;
-            if (!fallbackOutcome?.success) {
-              return createErrorResponse(
-                fallbackOutcome?.error || `Failed to interact with index [${args.index}]`,
-              );
-            }
-          } else {
-            return createErrorResponse(
-              `CDP mouse event dispatch failed for visual coordinates (${x}, ${y}): ${cdpErr instanceof Error ? cdpErr.message : String(cdpErr)}`,
-            );
-          }
-        }
-      }
-
-      // 3. Action Settle & Auto-Wait Watchdog
-      let settleResult: any = undefined;
-      let networkSettled: boolean | undefined = undefined;
-
-      if (args.waitForNetworkQuiescence) {
-        networkSettled = await waitForNetworkQuiescence(
-          tabId,
-          args.quiescenceTimeoutMs || 2000,
-        );
-      }
-
-      if (args.waitForSettle) {
-        settleResult = await waitForPageSettle(tabId, { timeoutMs: args.settleTimeoutMs });
-      }
-
-      // D1: read back the delivery probe. Only meaningful when armed and the
-      // action used native CDP (synthetic fallback fires the same listeners
-      // synchronously, so a false there would be a probe artifact).
-      let deliveryVerified: boolean | undefined;
-      let deliveryHits: any[] | undefined;
-      let fallbackTriggered: string | undefined;
-      if (probeArmed && usedNativeCDP) {
-        try {
-          const probe = (await executeInPage(targetScope, 'inPageReadDeliveryProbe', [true]))?.[0]
-            ?.result;
-          deliveryVerified = Boolean(probe?.delivered);
-          if (!deliveryVerified || maskPierced) {
-            deliveryHits = probe?.hits ?? [];
-            // Click Probe / Mask Piercing Fallback: if native CDP events were dropped (e.g. background tab throttling)
-            // or if a transparent/transient mask intercepted the click, fall back to synthetic DOM event dispatch
-            // directly on the underlying target element to ensure 100% execution.
-            if (action === 'click') {
-              try {
-                const synRes = (
-                  await executeInPage(targetScope, 'inPageDispatchSyntheticClick', [
-                    args.index ?? null,
-                    x,
-                    y,
-                  ])
-                )?.[0]?.result;
-                if (synRes) {
-                  deliveryVerified = true;
-                  fallbackTriggered = maskPierced ? 'synthetic_click_pierce' : 'synthetic_click_probe';
-                  usedNativeCDP = false;
-                }
-              } catch {
-                // Ignore fallback error
-              }
-            }
-          }
-        } catch {
-          deliveryVerified = undefined;
-        }
-      } else if (maskPierced && action === 'click') {
-        try {
-          const synRes = (
-            await executeInPage(targetScope, 'inPageDispatchSyntheticClick', [
-              args.index ?? null,
-              x,
-              y,
-            ])
-          )?.[0]?.result;
-          if (synRes) {
-            deliveryVerified = true;
-            fallbackTriggered = 'synthetic_click_pierce';
-            usedNativeCDP = false;
-          }
-        } catch {}
-      }
-
-      // Visibility: screenshot-context TTL silently expires after 5 minutes;
-      // surface the remaining budget so stale coordinate projection is detected
-      const ctxTtlMs = screenshotContextManager.getTtlRemaining(tabId);
-      const screenshotCtxWarning =
-        ctxTtlMs >= 0 && ctxTtlMs < 30_000
-          ? `screenshot coordinate context expires in ${Math.round(ctxTtlMs / 1000)}s; re-capture to refresh`
-          : undefined;
-
-      const delta = await captureDeltaIfRequested(tabId, args.includeDelta);
-
-      let currentUrl = previousUrl;
-      try {
-        const updatedTab = await chrome.tabs.get(tabId);
-        currentUrl = updatedTab.url || previousUrl;
-      } catch {}
-      const urlChanged = Boolean(previousUrl && currentUrl && previousUrl !== currentUrl);
-
-      const networkResult = await netCapture.waitForResult();
-
-      const postSignature = await executeInPage(
-        { tabId },
-        'inPageDetectPerceptiveSignature',
-        [],
-      )
-        .then((r) => r?.[0]?.result)
-        .catch(() => null);
-      const perceptiveDelta = computePerceptiveDelta(preSignature, postSignature);
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                success: true,
-                urlChanged,
-                previousUrl,
-                currentUrl,
-                index: args.index ?? null,
-                action,
-                tagName,
-                text,
-                ...(networkResult ? { networkResult } : {}),
-                isTrusted: usedNativeCDP,
-                coordinates: { x, y },
-                fallbackTriggered,
-                ...(maskPierced ? { piercedOverlay: maskPierced } : {}),
-                mode: isFallback
-                  ? 'hybrid_visual_fallback'
-                  : hasCoord && !hasIndex
-                    ? 'visual_coordinate'
-                    : 'dom_index',
-                modifiers: args.modifiers || [],
-                humanized: Boolean(args.humanize),
-                drag: action === 'drag' ? dragOutcome : undefined,
-                settle: settleResult,
-                ...(typeof networkSettled === 'boolean' ? { networkSettled } : {}),
-                screenshotCtxWarning,
-                ...(affinityWarning ? { affinityWarning } : {}),
-                ...(delta ? { delta } : {}),
-                ...(perceptiveDelta ? { perceptiveDelta } : {}),
-                ...(deliveryVerified === undefined
-                  ? {}
-                  : deliveryVerified
-                    ? { deliveryVerified: true }
-                    : { deliveryVerified: false, deliveryHits }),
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-        isError: false,
-      };
       });
     } catch (error) {
       if (error instanceof DialogOpenedError) {

@@ -4,7 +4,7 @@
   <p><b>控制你自己的浏览器的一切。</b></p>
   <p>
     <a href="./docs/MAP.md">🗺️ 项目地图</a> ·
-    <a href="./docs/TOOLS.md">工具参考 (47)</a> ·
+    <a href="./docs/TOOLS.md">工具参考 (48)</a> ·
     <a href="./AGENT_CONFIG_GUIDE.md">客户端配置</a> ·
     <a href="./README.md">📖 English</a> ·
     <a href="https://github.com/GoldenLoaf24h/browserclaw/releases">Releases</a>
@@ -32,10 +32,11 @@
 - 🔑 **日常会话与登录态无缝复用**：直接运行在日常 Chrome 浏览器中，完整继承 Google、GitHub、企业 SSO 登录凭证，杜绝文件锁冲突与登录丢失。
 - 🌲 **1-based 剪枝 DOM 与紧凑 AX 树**：剔除装饰性 DOM 噪点与多余闭合标签，输出高结构化紧凑可交互节点树，相较原生 HTML 缩减 85%+ Token 消耗。
 - ⚡ **代码驱动流水线与原子批处理**：通过 `chrome_batch_actions` 或页内 `mcp.*` 脚本，在单次往返中串联表单填写、点击、断言与数据提取闭环。
-- 🛡️ **工业级 DOM 穿透与物理事件保真**：Composed 树深度穿透 Shadow DOM，提供遮挡弹窗自愈引导、最优可见点加权以及后台标签页 Click Probe 物理/合成双保险。
-- 🔄 **自驱增量 Diff 与定向 Grep 检索**：`includeDelta: true` 在操作完成后直接携带页面局部变动；`chrome_grep` 实现大文档下亚毫秒级低 Token 正则检索。
+- 🛡️ **Deep Shadow DOM 深度穿透**：Composed 树多层穿透 Web Components（如 Reddit Shreddit 架构），语义提取纯图标按钮的 `aria-label`/`title`/内嵌 SVG 标题，并支持闭合 Shadow Host 的 Composed 事件捕获与冒泡。
+- 🎯 **视觉回退漂移实时补偿**：整页截图真实文档空间坐标映射（`isDocumentSpace`），动态计算滚动位移差（`alignVisualCoordinate`），自动平滑居中并于点击派发期间锁定滚动，消除视口竞态漂移。
+- 🔄 **自驱增量 Diff 与定向 Grep 检索**：`includeDelta: true` 在操作完成后直接携带页面局部变动；`chrome_grep` 实现多层 Shadow 树下毫秒级低 Token 正则检索。
 - 🖱️ **真人级防打扰交互共存**：具备 1:1 弹簧动力学虚拟光标悬浮层、专属彩色标签组生命周期管理、可选独立窗口隔离，以及在 2FA/滑块验证时柔和礼让用户的毛玻璃介入横幅。
-- 🧭 **本地浏览器全维能力治理**：超越常规网页爬取，通过 47 项规范 MCP 工具全面管理标签页、窗口、Cookie、存储、浏览历史及书签。
+- 🧭 **本地浏览器全维能力治理**：超越常规网页爬取，通过 48 项规范 MCP 工具全面管理标签页、窗口、Cookie、存储、浏览历史及书签。
 
 ---
 
@@ -54,10 +55,10 @@
 └───────────────────────────┬────────────────────────────┘
                             │ Native Messaging 内部管道
                             ▼
-┌─ Tier 0 · 确定性原子工具群 (47 个规范 MCP 工具) ───────┐
-│  batch_actions / form_pipeline / interact_index / ...  │
-│  Chrome MV3 扩展底层驱动 · 硬件级 CDP 物理事件         │
-└────────────────────────────────────────────────────────┘
+┌─ Tier 0 · 确定性原子工具群 (47 个确定性工具 + 1 循环 = 48 项) ─┐
+│  batch_actions / form_pipeline / interact_index / ...    │
+│  Chrome MV3 扩展底层驱动 · 硬件级 CDP 物理事件           │
+└──────────────────────────────────────────────────────────┘
 ```
 
 **调度最佳实践天梯：**
@@ -123,9 +124,9 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 ---
 
-## 🛠️ 全量工具分类全览 (47 个核心规范 MCP 工具)
+## 🛠️ 全量工具分类全览 (48 个核心规范 MCP 工具)
 
-全量 47 个核心规范 Schema 校验的工具按功能归纳为以下 7 个大类别。**点击对应分类即可展开查看工具清单。**
+全量 48 个核心规范 Schema 校验的工具按功能归纳为以下 7 个大类别。**点击对应分类即可展开查看工具清单。**
 完整 JSON Schema 与入参定义请参阅 **[docs/TOOLS.md](./docs/TOOLS.md)**。
 
 <details>
@@ -157,8 +158,8 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 <br/>
 
-- **`chrome_read_dom`**：极简剪枝 DOM 交互树，带 1-based 纯数字索引，Token 消耗压缩 85%+。
-- **`chrome_grep`**：毫秒级正则/文本定向检索，返回匹配项与索引，超大页面免除 Dump 全量 DOM。
+- **`chrome_read_dom`**：极简剪枝 DOM 交互树，带 1-based 纯数字索引，Token 消耗压缩 85%+。深度穿透多层 open/closed Shadow DOM，提取纯图标按钮的 accessible 名称。
+- **`chrome_grep`**：毫秒级正则/文本定向检索，穿透 Shadow DOM 边界提取文本，超大页面免除 Dump 全量 DOM。
 - **`chrome_get_markdown`**：提取页面排版优美、纯净结构化的 Markdown 文本（支持 `includeLinks: true` 提取链接图谱），阅读长文与资料总结首选。
 - **`chrome_inspect_media`**：内存无损提取 `<img>` 与 `<canvas>` 原始图像 Data URL，支持 200%+ 超采样局部特写裁切。
 - **`chrome_get_dropdown_options`**：直接读取原生或自定义 `<select>` 下拉选择器的全部可用候选项。
@@ -166,12 +167,13 @@ cd app/native-server && node dist/scripts/register-dev.js
 </details>
 
 <details>
-<summary><b>🖱️ 3. 页面交互、输入与流水线 (12 个工具)</b></summary>
+<summary><b>🖱️ 3. 页面交互、输入与流水线 (13 个工具)</b></summary>
 
 <br/>
 
-- **`chrome_interact_index`**：核心物理级点击/悬停/双击/连击序列（`points` 数组），原生支持 `includeDelta: true` 自动回传局部变动。
+- **`chrome_interact_index`**：核心物理级点击/悬停/双击/连击序列（`points` 数组），原生支持 `includeDelta: true` 自动回传局部变动，并具备视觉回退动态滚动补偿（`alignVisualCoordinate`）。
 - **`chrome_fill_index`**：纯原生物理输入，支持清空重填、Enter 提交与 `includeDelta: true` 变动核验。
+- **`chrome_insert_media`**：针对现代 Web 富文本与聊天编辑器（如 ChatGPT、Claude、Twitter/X、Discord）的直接零拷贝媒体拖放注入，绕过原生文件选择框。
 - **`chrome_batch_actions`**：闭环批处理流水线，单次网络调用按序执行点击、填充、等待，内置 `assert` 断言与 `extract` 提取。
 - **`chrome_form_pipeline`**：确定性复杂表单/向导流水线，零模型调用，标准复杂表单填表最稳最快。
 - **`chrome_smart_scroll`**：智能自适应滚屏，具备视口溢出检测、像素精确滚动与剩余滚动页数（`pages_down`）感知反馈。
@@ -237,7 +239,7 @@ AI 智能体 (Cursor / Claude / Codex)
          ▼
 本地原生网桥 (Fastify + Stdio 宿主)
          ├── 极速决策引擎 (Jev 客户端 + 零依赖启发式降级 + 语义微循环)
-         ├── 46 个确定性原子工具 + 1 个自主微循环（共 47 项工具穿透直通）
+         ├── 47 个确定性原子工具 + 1 个自主微循环（共 48 项工具穿透直通）
          │  Chrome Native Messaging 本地双向管道 (1MB 物理截断保护)
          ▼
 Chrome MV3 扩展 (Service Worker + WXT + Vue 3)
@@ -253,7 +255,7 @@ Chrome MV3 扩展 (Service Worker + WXT + Vue 3)
 ## 📚 项目全景文档库
 
 - **[项目地图导览](./docs/MAP.md)**：🗺️ 快速按角色导航、全工程 Monorepo 代码拓扑树与文档矩阵。
-- **[全量工具字典](./docs/TOOLS.md)**：自动化生成的 47 个工具完整参数输入输出参考手册。
+- **[全量工具字典](./docs/TOOLS.md)**：自动化生成的 48 个工具完整参数输入输出参考手册。
 - **[Agent 交互实操心法](./AGENT_CONFIG_GUIDE.md)**：面向大模型的六大高能交互准则与主流客户端配置样例。
 - **[深度系统架构](./docs/ARCHITECTURE.md)**：多进程拓扑、IPC 安全边界与设计决策记录 (ADR)。
 - **[故障排查指南](./docs/TROUBLESHOOTING.zh-CN.md)**：常见报错代码与连接异常秒级诊断排查。

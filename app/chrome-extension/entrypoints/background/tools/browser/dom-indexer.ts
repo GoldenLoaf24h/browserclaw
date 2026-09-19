@@ -86,6 +86,20 @@ export function composedChildren(element: Element): Element[] {
   return Array.from(container.children || []) as Element[];
 }
 
+/**
+ * Checks whether an ancestor node contains a descendant across open and composed shadow boundaries.
+ */
+export function composedContains(ancestor: Node | null, descendant: Node | null): boolean {
+  if (!ancestor || !descendant) return false;
+  let cur: Element | null =
+    descendant instanceof Element ? descendant : (descendant.parentElement as Element | null);
+  while (cur) {
+    if (cur === ancestor) return true;
+    cur = composedParent(cur);
+  }
+  return false;
+}
+
 export function hitElementAtPoint(target: Element, x: number, y: number): Element | null {
   const roots: (Document | ShadowRoot)[] = [];
   let parent: Element | null = target;
@@ -221,6 +235,70 @@ export function getShadowRoot(node: Node | null | undefined): ShadowRoot | null 
     }
   } catch {}
   return (node as Element).shadowRoot || null;
+}
+
+/**
+ * Check if a node is an autonomous or customized Web Component custom element.
+ */
+export function isCustomElement(node: Node | null | undefined): boolean {
+  if (!node || (typeof Element !== 'undefined' && !(node instanceof Element))) return false;
+  const tag = ((node as Element).tagName || '').toLowerCase();
+  return tag.includes('-') || Boolean((node as Element).getAttribute?.('is'));
+}
+
+/**
+ * Deep query selector that penetrates all open (and closed when supported) ShadowRoot boundaries.
+ * Traverses recursively through both standard light DOM and encapsulated component shadow roots.
+ */
+export function querySelectorAllDeep(
+  selector: string,
+  root: ParentNode = typeof document !== 'undefined' ? document : (null as any),
+): Element[] {
+  if (!root) return [];
+  const results: Element[] = [];
+  const visitedRoots = new Set<Node>();
+
+  function search(currentRoot: ParentNode) {
+    if (!currentRoot || visitedRoots.has(currentRoot)) return;
+    visitedRoots.add(currentRoot);
+
+    try {
+      const matches = currentRoot.querySelectorAll(selector);
+      for (let i = 0; i < matches.length; i++) {
+        results.push(matches[i]);
+      }
+    } catch {}
+
+    // Find all elements within currentRoot to inspect for attached shadow roots
+    let allEls: NodeListOf<Element>;
+    try {
+      allEls = currentRoot.querySelectorAll('*');
+    } catch {
+      return;
+    }
+
+    for (let i = 0; i < allEls.length; i++) {
+      const el = allEls[i];
+      const shadow = getShadowRoot(el);
+      if (shadow) {
+        search(shadow);
+      }
+    }
+  }
+
+  search(root);
+  return results;
+}
+
+/**
+ * Deep query selector returning the first matching element across all shadow boundaries.
+ */
+export function querySelectorDeep(
+  selector: string,
+  root: ParentNode = typeof document !== 'undefined' ? document : (null as any),
+): Element | null {
+  const all = querySelectorAllDeep(selector, root);
+  return all.length > 0 ? all[0] : null;
 }
 
 /**
@@ -418,13 +496,68 @@ export function extractCleanElementText(el: Element, maxLen = 120): string {
           });
           return str.trim();
         };
-        const beforeContent = win.getComputedStyle(el, '::before')?.getPropertyValue('content');
-        const afterContent = win.getComputedStyle(el, '::after')?.getPropertyValue('content');
+        let beforeContent: string | undefined;
+        let afterContent: string | undefined;
+        try {
+          beforeContent = win.getComputedStyle(el, '::before')?.getPropertyValue('content');
+          afterContent = win.getComputedStyle(el, '::after')?.getPropertyValue('content');
+        } catch {}
         const bText = cleanContent(beforeContent);
         const aText = cleanContent(afterContent);
         const pseudoText = [bText, aText].filter(Boolean).join(' ').trim();
         if (pseudoText) {
           text = pseudoText;
+        }
+      }
+    } catch {}
+  }
+
+  if (!text) {
+    // Semantic accessibility label extraction: critical for modern Web Components & icon buttons (Reddit/X/YouTube)
+    const ariaLabel = el.getAttribute?.('aria-label')?.trim();
+    if (ariaLabel) {
+      text = ariaLabel;
+    } else {
+      const title = el.getAttribute?.('title')?.trim();
+      if (title) {
+        text = title;
+      } else {
+        const ariaDesc = el.getAttribute?.('aria-description')?.trim();
+        if (ariaDesc) {
+          text = ariaDesc;
+        } else {
+          // Check inner SVG accessible names
+          try {
+            const svgAria = el
+              .querySelector?.('svg[aria-label]')
+              ?.getAttribute('aria-label')
+              ?.trim();
+            const svgTitle = el.querySelector?.('svg title')?.textContent?.trim();
+            if (svgAria) text = svgAria;
+            else if (svgTitle) text = svgTitle;
+          } catch {}
+        }
+      }
+    }
+  }
+
+  // If still empty and element has slotted children (Web Component container), extract slotted text
+  if (!text && typeof el.querySelectorAll === 'function') {
+    try {
+      const slots = el.querySelectorAll('slot');
+      if (slots.length > 0) {
+        const slotTexts: string[] = [];
+        for (let i = 0; i < slots.length; i++) {
+          const slot = slots[i];
+          const assigned =
+            typeof slot.assignedNodes === 'function' ? slot.assignedNodes({ flatten: true }) : [];
+          for (const n of assigned) {
+            const t = n.textContent?.trim();
+            if (t) slotTexts.push(t);
+          }
+        }
+        if (slotTexts.length > 0) {
+          text = slotTexts.join(' ');
         }
       }
     } catch {}
@@ -1440,6 +1573,31 @@ export function inPageDOMPruner(options?: {
     if (isInteractiveSvgNode(el, style)) {
       return true;
     }
+    // Web Component icon buttons and action triggers (e.g. Reddit faceplate-tracker, faceplate-button, shreddit action rows)
+    if (
+      (el.hasAttribute('aria-label') || el.hasAttribute('title')) &&
+      (isCustomElement(el) ||
+        style.cursor === 'pointer' ||
+        tag.includes('button') ||
+        tag.includes('item') ||
+        tag.includes('action') ||
+        cls.includes('button') ||
+        cls.includes('btn') ||
+        cls.includes('action'))
+    ) {
+      return true;
+    }
+    // Closed shadow host check: custom elements with zero exposed shadowRoot but with interactive layout
+    if (isCustomElement(el) && getShadowRoot(el) === null) {
+      if (
+        style.cursor === 'pointer' ||
+        el.hasAttribute('aria-label') ||
+        el.hasAttribute('role') ||
+        (el as HTMLElement).tabIndex >= 0
+      ) {
+        return true;
+      }
+    }
     if (style.cursor && /grab|grabbing|resize|^move$|all-scroll/i.test(style.cursor)) {
       // Drag/resize targets carry grab/resize cursors instead of pointer.
       return true;
@@ -1505,6 +1663,29 @@ export function inPageDOMPruner(options?: {
             topEl = document.elementFromPoint(px, py);
           }
         } catch {}
+
+        // Composed / Shadow-aware deep hit check
+        let deepHit: Element | null = null;
+        if (el.getRootNode && el.getRootNode() !== document) {
+          try {
+            deepHit = hitElementAtPoint(el, px, py);
+          } catch {}
+        }
+
+        if (
+          deepHit &&
+          (deepHit === el || composedContains(el, deepHit) || composedContains(deepHit, el))
+        ) {
+          const pt = {
+            x: Math.round(px),
+            y: Math.round(py),
+            offsetX: rect.width * rx,
+            offsetY: rect.height * ry,
+          };
+          clearPoints.push(pt);
+          if (rx === 0.5 && ry === 0.5) centerClearPoint = pt;
+          continue;
+        }
 
         if (!topEl) {
           const pt = {
@@ -1626,21 +1807,6 @@ export function inPageDOMPruner(options?: {
 
   function checkOcclusion(el: Element, rect: DOMRect): boolean {
     return checkOcclusionGrid(el, rect).isFullyOccluded;
-  }
-
-  // elementFromPoint does not pierce shadow boundaries: a shadow child would
-  // be hit-tested against its own host and wrongly reported as occluded.
-  function composedContains(ancestor: Node, descendant: Node): boolean {
-    let n: Node | null = descendant;
-    while (n) {
-      if (n === ancestor) return true;
-      const root: Node | null = typeof n.getRootNode === 'function' ? n.getRootNode() : null;
-      n =
-        typeof ShadowRoot !== 'undefined' && root instanceof ShadowRoot
-          ? root.host
-          : n.parentNode || null;
-    }
-    return false;
   }
 
   function isAdOrTrackingElement(el: Element): boolean {
@@ -1840,14 +2006,24 @@ export function inPageDOMPruner(options?: {
 
     const hasInfoText =
       informational && Boolean(((node as HTMLElement).innerText || node.textContent || '').trim());
-    if (!isZeroSize && (interactive || isFile || (informational && hasInfoText))) {
+    const isClosedHost =
+      isCustomElement(node) &&
+      getShadowRoot(node) === null &&
+      (interactive ||
+        style.cursor === 'pointer' ||
+        node.hasAttribute('aria-label') ||
+        node.hasAttribute('role') ||
+        (node as HTMLElement).tabIndex >= 0);
+
+    if (!isZeroSize && (interactive || isFile || (informational && hasInfoText) || isClosedHost)) {
       candidates.push({
         node,
         tag,
         rect,
         isFile,
-        isInteractive: interactive || isFile,
-        inShadowDom: insideShadow || undefined,
+        isInteractive: interactive || isFile || isClosedHost,
+        inShadowDom: insideShadow || (isClosedHost ? true : undefined),
+        isClosedShadowHost: isClosedHost ? true : undefined,
       });
     }
 
@@ -1860,6 +2036,16 @@ export function inPageDOMPruner(options?: {
     // Traverse standard children
     for (const child of Array.from(node.children)) {
       traverse(child, nextPropagatingRect, nextPointer, insideShadow);
+    }
+
+    // Traverse slotted elements if node is a slot
+    if (tag === 'slot' && typeof (node as HTMLSlotElement).assignedElements === 'function') {
+      try {
+        const assigned = (node as HTMLSlotElement).assignedElements({ flatten: true });
+        for (const assignedEl of assigned) {
+          traverse(assignedEl, nextPropagatingRect, nextPointer, insideShadow);
+        }
+      } catch {}
     }
 
     // Traverse Shadow DOM children (penetration for open and closed shadow roots)
@@ -1878,6 +2064,7 @@ export function inPageDOMPruner(options?: {
     isFile: boolean;
     isInteractive: boolean;
     inShadowDom?: boolean;
+    isClosedShadowHost?: boolean;
   }> = [];
 
   let roots: Element[] = [];
@@ -1889,7 +2076,7 @@ export function inPageDOMPruner(options?: {
     try {
       const allRoots = targetSelector.includes(':has-text(')
         ? queryWithHasText(document, targetSelector, false)
-        : Array.from(document.querySelectorAll(targetSelector));
+        : querySelectorAllDeep(targetSelector, document);
       selectorMatched = allRoots.length > 0;
       // Filter out nested roots so child elements are not traversed or indexed twice
       roots = allRoots.filter((r) => !allRoots.some((other) => other !== r && other.contains(r)));
@@ -2929,10 +3116,16 @@ export function inPageSnapCoordinate(
   const vh = window.innerHeight || document.documentElement?.clientHeight || 800;
   if (origX < 0 || origY < 0 || origX > vw || origY > vh) return defaultRes;
 
-  // 1. Direct hit test at (origX, origY)
+  // 1. Direct hit test at (origX, origY) with deep Shadow DOM penetration
   let hitEl: Element | null = null;
   try {
-    hitEl = document.elementFromPoint(origX, origY);
+    if (typeof document.elementFromPoint === 'function') {
+      hitEl = document.elementFromPoint(origX, origY);
+      if (hitEl && getShadowRoot(hitEl)) {
+        const deep = hitElementAtPoint(hitEl, origX, origY);
+        if (deep) hitEl = deep;
+      }
+    }
   } catch {}
 
   const isInteractiveNode = (el: Element | null): boolean => {
@@ -2964,6 +3157,9 @@ export function inPageSnapCoordinate(
       const style = window.getComputedStyle(el);
       if (style.cursor === 'pointer' || /grab|grabbing/i.test(style.cursor)) return true;
     } catch {}
+    if (isCustomElement(el) && (el.hasAttribute('aria-label') || el.hasAttribute('title'))) {
+      return true;
+    }
     return false;
   };
 
@@ -2973,7 +3169,7 @@ export function inPageSnapCoordinate(
     if (isInteractiveNode(cur)) {
       return defaultRes;
     }
-    cur = cur.parentElement;
+    cur = composedParent(cur);
   }
 
   // 2. Search candidate elements in isolatedIndexMap within snapRadius
@@ -3002,7 +3198,7 @@ export function inPageSnapCoordinate(
     } catch {}
   }
 
-  // 3. Fallback: Radial search if isolatedIndexMap had no candidates
+  // 3. Fallback: Radial search if isolatedIndexMap had no candidates (penetrates Shadow DOM)
   if (!bestEl) {
     const searchDistances = [8, 16, snapRadius];
     const angles = [0, 45, 90, 135, 180, 225, 270, 315];
@@ -3014,7 +3210,11 @@ export function inPageSnapCoordinate(
         const py = Math.round(origY + r * Math.sin(rad));
         if (px < 0 || py < 0 || px > vw || py > vh) continue;
         try {
-          const sampleEl = document.elementFromPoint(px, py);
+          let sampleEl = document.elementFromPoint(px, py);
+          if (sampleEl && getShadowRoot(sampleEl)) {
+            const deep = hitElementAtPoint(sampleEl, px, py);
+            if (deep) sampleEl = deep;
+          }
           let candidate: Element | null = sampleEl;
           while (
             candidate &&
@@ -3033,11 +3233,34 @@ export function inPageSnapCoordinate(
                 break;
               }
             }
-            candidate = candidate.parentElement;
+            candidate = composedParent(candidate);
           }
         } catch {}
       }
     }
+  }
+
+  // 4. Final deep query search for closest interactive Shadow DOM elements if still unhit
+  if (!bestEl && typeof document !== 'undefined') {
+    try {
+      const candidates = querySelectorAllDeep(
+        'button, a, input, select, textarea, [role="button"], [role="link"], [role="tab"], [aria-label], [data-action]',
+        document,
+      );
+      for (const candEl of candidates) {
+        if (!candEl || !(candEl instanceof Element)) continue;
+        const b = candEl.getBoundingClientRect();
+        if (b.width <= 0 || b.height <= 0) continue;
+        const cx = Math.max(b.left, Math.min(b.right, origX));
+        const cy = Math.max(b.top, Math.min(b.bottom, origY));
+        const d = Math.hypot(origX - cx, origY - cy);
+        if (d < bestDist && d <= snapRadius) {
+          bestDist = d;
+          bestEl = candEl;
+          bestRect = b;
+        }
+      }
+    } catch {}
   }
 
   if (bestEl && bestRect) {
@@ -3178,6 +3401,9 @@ export function inPageLocateBySelector(
       }
     } else if (typeof document !== 'undefined' && typeof document.querySelector === 'function') {
       targetEl = document.querySelector(selector);
+      if (!targetEl) {
+        targetEl = querySelectorDeep(selector, document);
+      }
     }
 
     if (!targetEl) {
@@ -3247,11 +3473,11 @@ export function inPageLocateByText(
         ? '[role="textbox"], textarea, [contenteditable], [data-testid*="tweetTextarea" i], .DraftEditor-root, .ProseMirror, .ql-editor, div, span, [role]'
         : `[role="${role}"], ${role}`
       : 'button, a, input, textarea, select, span, p, div, h1, h2, h3, h4, [role]';
-    let elements: NodeListOf<Element>;
+    let elements: Element[];
     try {
-      elements = document.querySelectorAll(selector);
+      elements = querySelectorAllDeep(selector, document);
     } catch {
-      elements = document.querySelectorAll('*');
+      elements = querySelectorAllDeep('*', document);
     }
 
     let bestMatch: Element | null = null;
@@ -6414,4 +6640,95 @@ export function inPageInsertMedia(options: {
       error: err?.message || String(err),
     };
   }
+}
+
+/**
+ * Retrieve current scroll and viewport geometry in the page.
+ * Used for real-time drift compensation between screenshot capture and click execution.
+ */
+export function inPageGetScrollState(): {
+  scrollX: number;
+  scrollY: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  docWidth: number;
+  docHeight: number;
+} {
+  const win = typeof window !== 'undefined' ? window : (globalThis as any).window;
+  const doc = win?.document;
+  const docEl = doc?.documentElement;
+  const body = doc?.body;
+  const scrollX = win?.scrollX || win?.pageXOffset || docEl?.scrollLeft || body?.scrollLeft || 0;
+  const scrollY = win?.scrollY || win?.pageYOffset || docEl?.scrollTop || body?.scrollTop || 0;
+  const viewportWidth = win?.innerWidth || docEl?.clientWidth || 1280;
+  const viewportHeight = win?.innerHeight || docEl?.clientHeight || 800;
+  const docWidth = Math.max(
+    body?.scrollWidth || 0,
+    docEl?.scrollWidth || 0,
+    body?.offsetWidth || 0,
+    docEl?.offsetWidth || 0,
+    viewportWidth,
+  );
+  const docHeight = Math.max(
+    body?.scrollHeight || 0,
+    docEl?.scrollHeight || 0,
+    body?.offsetHeight || 0,
+    docEl?.offsetHeight || 0,
+    viewportHeight,
+  );
+  return {
+    scrollX: Math.round(scrollX),
+    scrollY: Math.round(scrollY),
+    viewportWidth: Math.round(viewportWidth),
+    viewportHeight: Math.round(viewportHeight),
+    docWidth: Math.round(docWidth),
+    docHeight: Math.round(docHeight),
+  };
+}
+
+/**
+ * Instantaneously scrolls page to the specified coordinates without animation delay.
+ */
+export function inPageInstantScrollTo(
+  x: number,
+  y: number,
+): { success: boolean; scrollX: number; scrollY: number } {
+  const win = typeof window !== 'undefined' ? window : (globalThis as any).window;
+  if (!win) return { success: false, scrollX: 0, scrollY: 0 };
+  const prevBehavior = win.document?.documentElement?.style?.scrollBehavior || '';
+  try {
+    if (win.document?.documentElement) {
+      win.document.documentElement.style.scrollBehavior = 'auto';
+    }
+    win.scrollTo({ left: x, top: y, behavior: 'instant' as any });
+  } finally {
+    if (win.document?.documentElement) {
+      win.document.documentElement.style.scrollBehavior = prevBehavior;
+    }
+  }
+  const curX = win.scrollX || win.pageXOffset || 0;
+  const curY = win.scrollY || win.pageYOffset || 0;
+  return { success: true, scrollX: Math.round(curX), scrollY: Math.round(curY) };
+}
+
+/**
+ * Temporarily locks smooth scroll behavior to prevent inertia/smooth-scroll racing during click dispatch.
+ */
+let originalScrollBehavior: string | null = null;
+export function inPageLockScroll(lock: boolean): boolean {
+  const win = typeof window !== 'undefined' ? window : (globalThis as any).window;
+  const docEl = win?.document?.documentElement;
+  if (!docEl) return false;
+  if (lock) {
+    if (originalScrollBehavior === null) {
+      originalScrollBehavior = docEl.style.scrollBehavior || '';
+    }
+    docEl.style.scrollBehavior = 'auto';
+  } else {
+    if (originalScrollBehavior !== null) {
+      docEl.style.scrollBehavior = originalScrollBehavior;
+      originalScrollBehavior = null;
+    }
+  }
+  return true;
 }

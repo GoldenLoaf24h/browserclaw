@@ -269,7 +269,7 @@ chrome_tool_docs({ "category": "manage", "activateForSession": true })
 | `CDP_DISPATCH_TIMEOUT`                                     | 目标 Tab 处于后台深度节流状态。                         | 重试调用，或临时将 Tab 切换至前台执行。                                             |
 | `Security check failed: Domain changed`                    | 截图后页面发生跨域跳转，坐标失效。                      | 重新调用 `chrome_read_dom` 或 `chrome_take_screenshot` 重新对齐。                   |
 | `Tool X is not exposed under the ... profile`              | 当前 profile 隐藏了该工具。                             | 调用 `chrome_tool_docs({ category: "<cat>", activateForSession: true })` 动态激活。 |
-| `Tool X is not a BrowserClaw tool`                         | 请求了不存在的工具名。                                  | 查阅 `tools/list`（全量包含 47 个规范工具）。                                       |
+| `Tool X is not a BrowserClaw tool`                         | 请求了不存在的工具名。                                  | 查阅 `tools/list`（全量包含 48 个规范工具）。                                       |
 | `captureScreenshot returned empty data for background tab` | 后台 Tab 已被关闭或被系统内存冻结 (Discarded)。         | 重新打开或导航至目标页面。                                                          |
 | `Failed to ... index [X] in cross-origin frame`            | 跨域子 iframe 已被卸载或受到严格沙箱 sandbox 属性限制。 | 使用 `chrome_read_dom({ filter: "interactive" })` 检查 frame 活性。                 |
 | `Message sender rejected / unauthenticated content script` | 扩展安全加固：拦截了非受信渠道的未授权调用。            | 确保请求源自 Native Bridge 合法管道。                                               |
@@ -317,5 +317,5 @@ pnpm build
 | :--------------------- | :----------------------------- | :------------------------------------------------------ |
 | **Chrome MV3 扩展**    | `app/chrome-extension/`        | `app/chrome-extension/.output/chrome-mv3`               |
 | **Native Bridge 服务** | `app/native-server/`           | `127.0.0.1:12306` (Token: `~/.chrome-mcp/bridge-token`) |
-| **MCP 工具契约定义**   | `packages/shared/src/tools.ts` | 47 个规范 MCP 工具 Schema                               |
+| **MCP 工具契约定义**   | `packages/shared/src/tools.ts` | 48 个规范 MCP 工具 Schema                               |
 | **诊断与自愈配置**     | `skill/config/`                | `doctor.mjs`, `mcp-config.json`, `repair.bat`           |

@@ -4,7 +4,7 @@
   <p><b>Take full control of everything in your own browser.</b></p>
   <p>
     <a href="./docs/MAP.md">🗺️ Project Map</a> ·
-    <a href="./docs/TOOLS.md">Tool Reference (47)</a> ·
+    <a href="./docs/TOOLS.md">Tool Reference (48)</a> ·
     <a href="./AGENT_CONFIG_GUIDE.md">Client Config</a> ·
     <a href="./README.zh-CN.md">Chinese (zh-CN)</a> ·
     <a href="https://github.com/GoldenLoaf24h/browserclaw/releases">Releases</a>
@@ -36,8 +36,9 @@ The result: agent browser control that is **3–5× faster and 70–80%+ cheaper
 - 🔑 **Everyday Session & Auth Continuity**: Runs inside your everyday Google Chrome browser, seamlessly inheriting active Google, GitHub, and enterprise SSO logins without file sharing locks or re-authentication friction.
 - 🌲 **Pruned 1-Based DOM & Compact AX Tree**: Strips decorative DOM noise and redundant closing tags, delivering clean numbered accessibility trees that cut prompt token consumption by 85%+ vs raw HTML.
 - ⚡ **Code-Driven & Pipelined Execution**: Chain complex multi-step interactions, form fills, assertions, and data extractions in a single round-trip via `chrome_batch_actions` or in-page `mcp.*` script evaluation.
-- 🛡️ **Industrial DOM & Event Fidelity**: Composed-tree traversal penetrates closed Shadow DOM boundaries with actionable modal interception diagnostics, optimal visible action-point weighting, and synthetic Click Probe fallback for background tabs.
-- 🔄 **Adaptive Diffing & Targeted Grep**: `includeDelta: true` piggybacks local DOM mutations directly onto click/fill responses, while `chrome_grep` provides instant sub-100 token regex and text queries across large documents.
+- 🛡️ **Industrial DOM & Deep Shadow Piercing**: Recursive composed-tree traversal penetrates multi-layered Web Components (e.g. Reddit Shreddit `<shreddit-comment>` / `<faceplate-tracker>`), extracts accessible semantics (`aria-label`, `title`, inner SVG titles) from icon-only buttons, and supports closed shadow host composed event fallback.
+- 🎯 **Visual Fallback Drift Compensation**: Real-time dynamic scroll delta compensation (`alignVisualCoordinate`), document-space coordinate scaling for fullpage captures, automatic scroll centering, and scroll-lock guards during click dispatch.
+- 🔄 **Adaptive Diffing & Targeted Grep**: `includeDelta: true` piggybacks local DOM mutations directly onto click/fill responses, while `chrome_grep` provides instant sub-100 token regex and text queries across large documents and shadow trees.
 - 🖱️ **Human-First Coexistence**: Smooth 1:1 spring-kinematics virtual cursor, dedicated colored Chrome Tab Groups, optional Window Isolation Mode, and a frosted-glass takeover banner that yields cleanly to humans on 2FA or captchas.
 - 🧭 **Comprehensive Local Browser Management**: Beyond standard page automation, exposes 48 canonical MCP tools to manage active tabs, windows, cookies, storage, browsing history, and bookmarks under your existing credentials.
 
@@ -59,10 +60,10 @@ The result: agent browser control that is **3–5× faster and 70–80%+ cheaper
 └───────────────────────────┬────────────────────────────┘
                             │ Native Messaging
                             ▼
-┌─ Tier 0 · Deterministic Primitives (47 MCP tools) ─────┐
-│  batch_actions / form_pipeline / interact_index / ...  │
-│  Chrome MV3 Extension · CDP physical events            │
-└────────────────────────────────────────────────────────┘
+┌─ Tier 0 · Deterministic Primitives (47 tools + 1 loop = 48 tools) ─┐
+│  batch_actions / form_pipeline / interact_index / insert_media ... │
+│  Chrome MV3 Extension · CDP physical events                        │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 **Routing rule of thumb:**
@@ -128,9 +129,9 @@ Then load `app/chrome-extension/.output/chrome-mv3` into `chrome://extensions`.
 
 ---
 
-## 🛠️ Complete Tool Catalog (47 MCP Tools)
+## 🛠️ Complete Tool Catalog (48 MCP Tools)
 
-All 47 schema-validated tools are grouped into 7 logical categories below. **Click any category to expand its tool listing.**
+All 48 schema-validated tools are grouped into 7 logical categories below. **Click any category to expand its tool listing.**
 For machine-readable JSON schemas and detailed option flags, consult **[docs/TOOLS.md](./docs/TOOLS.md)**.
 
 <details>
@@ -162,8 +163,8 @@ For machine-readable JSON schemas and detailed option flags, consult **[docs/TOO
 
 <br/>
 
-- **`chrome_read_dom`**: Pruned interactive DOM tree with 1-based numeric indices. Reduces prompt token consumption by >85%.
-- **`chrome_grep`**: Sub-100 token instant regex or text search across elements and text lines without full DOM dumping.
+- **`chrome_read_dom`**: Pruned interactive DOM tree with 1-based numeric indices. Traverses deep open and closed Shadow DOM boundaries, extracting accessible names from Web Components and icon buttons. Reduces prompt token consumption by >85%.
+- **`chrome_grep`**: Sub-100 token instant regex or text search across elements and text lines with deep Shadow DOM penetration without full DOM dumping.
 - **`chrome_get_markdown`**: Clean, structured Markdown content extraction (supports `includeLinks: true` for link graph extraction) optimized for long-form reading and article summarization.
 - **`chrome_inspect_media`**: Lossless in-memory extraction of raw `<img>` and `<canvas>` data, with 200%+ super-sampling crop fallback for noisy captchas.
 - **`chrome_get_dropdown_options`**: Inspect all selectable options within native or custom `<select>` dropdown elements.
@@ -171,12 +172,13 @@ For machine-readable JSON schemas and detailed option flags, consult **[docs/TOO
 </details>
 
 <details>
-<summary><b>🖱️ 3. Action Execution & Pipeline (12 Tools)</b></summary>
+<summary><b>🖱️ 3. Action Execution & Pipeline (13 Tools)</b></summary>
 
 <br/>
 
-- **`chrome_interact_index`**: Native trusted click, hover, dblclick, or click sequence (`points` array) by 1-based index; supports `includeDelta: true` for autonomous DOM diff feedback.
+- **`chrome_interact_index`**: Native trusted click, hover, dblclick, or click sequence (`points` array) by 1-based index; supports `includeDelta: true` for autonomous DOM diff feedback and visual coordinate drift compensation (`alignVisualCoordinate`).
 - **`chrome_fill_index`**: Native trusted text input with automatic value clearing, Enter key submission, and `includeDelta: true` mutation checking.
+- **`chrome_insert_media`**: Direct zero-copy injection of images/media into rich-text editors and composers (e.g. ChatGPT, Claude, Twitter/X, Discord) via clipboard/DataTransfer emulation without native file picker dialogs.
 - **`chrome_batch_actions`**: High-performance multi-step pipeline combining click, fill, press, and wait in a single roundtrip, with built-in `assert` and `extract` rules.
 - **`chrome_form_pipeline`**: Deterministic multi-step wizard/questionnaire form pipeline — zero model calls, fastest and most reliable for standard form flows.
 - **`chrome_smart_scroll`**: Viewport overflow-aware scrolling with pixel precision and accurate remaining page counts (`pages_down` / `pages_up`).
