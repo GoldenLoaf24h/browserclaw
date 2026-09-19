@@ -12,49 +12,49 @@ BrowserClaw connects AI Agents (Claude Desktop, Cursor, Cline, OpenManus, AutoGP
 ```mermaid
 graph TB
     subgraph "AI Agent & Client Layer"
-        Agent1[Claude Desktop]
-        Agent2[Cursor / Cline / Windsurf]
-        Agent3[Autonomous AI Agent]
+        Agent1["Claude Desktop"]
+        Agent2["Cursor / Cline / Windsurf"]
+        Agent3["Autonomous AI Agent"]
     end
 
     subgraph "MCP Bridge Layer (Node.js Process)"
-        SSE[Fastify HTTP / SSE Server :12306]
-        TokenAuth[High-Entropy Token Authenticator]
-        StdioMCP[MCP Stdio Server Wrapper]
-        NativeHost[Chrome Native Messaging Host]
-        AffinityBridge[Session-Tab Affinity Engine]
+        SSE["Fastify HTTP / SSE Server :12306"]
+        TokenAuth["High-Entropy Token Authenticator"]
+        StdioMCP["MCP Stdio Server Wrapper"]
+        NativeHost["Chrome Native Messaging Host"]
+        AffinityBridge["Session-Tab Affinity Engine"]
     end
 
     subgraph "Chrome Extension MV3 Layer (Blink / V8)"
-        SW[Background Service Worker (chrome.storage.session)]
-        CDPMgr[CDP Session Manager (Domain RefCount & Anti-Hang Guard)]
-        Locator[Unified Locator & Degradation Engine]
-        RingBuf[Screenshot Ring Buffer (Cap: 1)]
-        SnapCache[DOM Snapshot Cache Manager]
-        Guard[Popup, Sender Auth & Security Guard]
+        SW["Background Service Worker (chrome.storage.session)"]
+        CDPMgr["CDP Session Manager (Domain RefCount & Anti-Hang Guard)"]
+        Locator["Unified Locator & Degradation Engine"]
+        RingBuf["Screenshot Ring Buffer (Cap: 1)"]
+        SnapCache["DOM Snapshot Cache Manager"]
+        Guard["Popup, Sender Auth & Security Guard"]
     end
 
     subgraph "Browser Runtime & Target Page"
-        ActiveTab[User Active Tab (Protected)]
-        AgentTab[Background Agent Tab (active: false)]
-        InPage[Isolated Inpage Engine & WeakRef Map]
-        CDPEngine[CDP Target Agent (DOM, Page, Input)]
+        ActiveTab["User Active Tab (Protected)"]
+        AgentTab["Background Agent Tab (active: false)"]
+        InPage["Isolated Inpage Engine & WeakRef Map"]
+        CDPEngine["CDP Target Agent (DOM, Page, Input)"]
     end
 
-    Agent1 -->|JSON-RPC via SSE / HTTP| SSE
-    Agent2 -->|JSON-RPC via Stdio| StdioMCP
-    Agent3 -->|JSON-RPC via SSE / HTTP| SSE
-    StdioMCP -->|Native Stdio Pipe| NativeHost
-    SSE -->|Token Verification| TokenAuth
+    Agent1 -->|"JSON-RPC via SSE / HTTP"| SSE
+    Agent2 -->|"JSON-RPC via Stdio"| StdioMCP
+    Agent3 -->|"JSON-RPC via SSE / HTTP"| SSE
+    StdioMCP -->|"Native Stdio Pipe"| NativeHost
+    SSE -->|"Token Verification"| TokenAuth
     TokenAuth --> NativeHost
-    NativeHost -->|Native Messaging Pipe (<=1MB ceiling)| SW
+    NativeHost -->|"Native Messaging Pipe (<=1MB ceiling)"| SW
     SW --> CDPMgr
     SW --> Locator
     SW --> RingBuf
     SW --> SnapCache
     SW --> Guard
-    CDPMgr -->|chrome.debugger CDP 1.3| CDPEngine
-    Locator -->|chrome.scripting executeScript| InPage
+    CDPMgr -->|"chrome.debugger CDP 1.3"| CDPEngine
+    Locator -->|"chrome.scripting executeScript"| InPage
     CDPEngine --> AgentTab
     InPage --> AgentTab
 ```
@@ -84,12 +84,12 @@ mcp-chrome-master/
 
 ```mermaid
 graph LR
-    Shared[packages/shared] --> NativeServer[app/native-server]
-    Shared --> ChromeExtension[app/chrome-extension]
-    ChromeExtension --> WXT[WXT MV3 Engine]
-    ChromeExtension --> Blink[Blink DOM / DevTools Protocol]
-NativeServer --> Fastify[Fastify 5.x]
-    NativeServer --> MCPCore[@modelcontextprotocol/sdk]
+    Shared["packages/shared"] --> NativeServer["app/native-server"]
+    Shared --> ChromeExtension["app/chrome-extension"]
+    ChromeExtension --> WXT["WXT MV3 Engine"]
+    ChromeExtension --> Blink["Blink DOM / DevTools Protocol"]
+    NativeServer --> Fastify["Fastify 5.x"]
+    NativeServer --> MCPCore["@modelcontextprotocol/sdk"]
 ```
 
 ---
@@ -101,12 +101,12 @@ NativeServer --> Fastify[Fastify 5.x]
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Agent as AI Agent (Client)
-    participant Fastify as Native Fastify (:12306)
-    participant Host as Native Messaging Host
-    participant SW as Extension Service Worker
-    participant CDP as CDP Session Manager
-    participant InPage as Target Tab (Inpage Engine)
+    participant Agent as "AI Agent (Client)"
+    participant Fastify as "Native Fastify (:12306)"
+    participant Host as "Native Messaging Host"
+    participant SW as "Extension Service Worker"
+    participant CDP as "CDP Session Manager"
+    participant InPage as "Target Tab (Inpage Engine)"
 
     Agent->>Fastify: POST /mcp (tools/call: chrome_interact_index)
     Note over Fastify: Validates CHROME_MCP_TOKEN Bearer
@@ -129,10 +129,10 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Agent as AI Agent
-    participant SW as Service Worker
-    participant CDP as CDP Page Domain
-    participant RingBuf as ScreenshotRingBuffer (Cap: 1)
+    participant Agent as "AI Agent"
+    participant SW as "Service Worker"
+    participant CDP as "CDP Page Domain"
+    participant RingBuf as "ScreenshotRingBuffer (Cap: 1)"
 
     Agent->>SW: chrome_screenshot { format: 'jpeg', quality: 80, tabId: 101 }
     Note over SW: Checks tab.active state

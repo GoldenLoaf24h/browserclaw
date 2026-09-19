@@ -18,16 +18,20 @@ const groups = [
   ['network', 'Network Interception & Capture'],
 ];
 
+const sanitizeDesc = (str) => {
+  return (str || '').split('\n')[0].replace(/(?<!`)<([a-zA-Z][a-zA-Z0-9_-]*)>(?!`)/g, '`<$1>`');
+};
+
 const toolDoc = (t) => {
   const props = t.inputSchema?.properties || {};
   const req = t.inputSchema?.required || [];
   const params = Object.entries(props).map(([k, v]) => {
     const en = v.enum ? ':' + v.enum.join('|') : '';
     const rq = req.includes(k) ? ' (required)' : '';
-    const desc = (v.description || '').split('\n')[0];
+    const desc = sanitizeDesc(v.description);
     return '- `' + k + en + '`' + rq + ' — ' + desc;
   });
-  const desc = (t.description || '').split('\n')[0];
+  const desc = sanitizeDesc(t.description);
   return '### `' + t.name + '`\n\n' + desc + '\n\n' + params.join('\n') + '\n';
 };
 

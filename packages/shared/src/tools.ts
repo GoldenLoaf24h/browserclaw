@@ -2216,7 +2216,7 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
       openWorldHint: true,
     },
     description:
-      'Get all options from a native <select> dropdown, ARIA combobox, or custom menu list.',
+      'Get all options from a native `<select>` dropdown, ARIA combobox, or custom menu list.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -2920,7 +2920,7 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
       openWorldHint: true,
     },
     description:
-      'Inspect and extract high-fidelity media assets (images, canvas, captchas, icons) directly by element index or selector. Uses in-memory lossless extraction for <img>/<canvas>, with super-sampled 200%+ crop fallback for complex DOM containers.',
+      'Inspect and extract high-fidelity media assets (images, canvas, captchas, icons) directly by element index or selector. Uses in-memory lossless extraction for `<img>`/`<canvas>`, with super-sampled 200%+ crop fallback for complex DOM containers.',
     inputSchema: {
       type: 'object',
       properties: {

@@ -109,7 +109,7 @@ Extract clean, structured hierarchical markdown from the active tab DOM stripped
 
 ### `chrome_inspect_media`
 
-Inspect and extract high-fidelity media assets (images, canvas, captchas, icons) directly by element index or selector. Uses in-memory lossless extraction for <img>/<canvas>, with super-sampled 200%+ crop fallback for complex DOM containers.
+Inspect and extract high-fidelity media assets (images, canvas, captchas, icons) directly by element index or selector. Uses in-memory lossless extraction for `<img>`/`<canvas>`, with super-sampled 200%+ crop fallback for complex DOM containers.
 
 - `index` — 1-based element index from chrome_read_dom
 - `selector` — CSS selector fallback
@@ -129,7 +129,7 @@ Search the page without dumping full DOM tree. Supports searching interactive el
 
 ### `chrome_get_dropdown_options`
 
-Get all options from a native <select> dropdown, ARIA combobox, or custom menu list.
+Get all options from a native `<select>` dropdown, ARIA combobox, or custom menu list.
 
 - `index` — Element numeric index from chrome_read_dom
 - `selector` — CSS selector of the dropdown or combobox
