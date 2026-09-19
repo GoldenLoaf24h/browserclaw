@@ -14,6 +14,22 @@ export interface GrepParams {
   sessionContext?: string;
 }
 
+export function extractContextualSnippet(line: string, pattern: RegExp): string {
+  if (line.length <= 120) return line;
+  try {
+    const nonGlobal = new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, ''));
+    const m = nonGlobal.exec(line);
+    if (m && typeof m.index === 'number') {
+      const start = Math.max(0, m.index - 40);
+      const end = Math.min(line.length, m.index + m[0].length + 40);
+      return (
+        (start > 0 ? '...' : '') + line.slice(start, end).trim() + (end < line.length ? '...' : '')
+      );
+    }
+  } catch {}
+  return line.slice(0, 117) + '...';
+}
+
 export class GrepTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.GREP;
 
@@ -50,36 +66,71 @@ export class GrepTool extends BaseBrowserToolExecutor {
       }
 
       if (searchType === 'page_text') {
-        const scriptRes = await this.safeExecuteScript(tabId, {
-          target: { tabId },
-          func: () => {
-            function collectText(root: Node): string {
-              let out = '';
-              if (!root) return out;
-              if (root.nodeType === 3) {
-                return root.textContent || '';
+        let fullText = '';
+        try {
+          const inPageRes = await executeInPage<string>(
+            { tabId, allFrames: true },
+            'inPageExtractDeepPageText',
+            [],
+          );
+          fullText = inPageRes
+            .map((r) => r.result || '')
+            .filter(Boolean)
+            .join('\n');
+        } catch {}
+
+        if (!fullText) {
+          const scriptRes = await this.safeExecuteScript(tabId, {
+            target: { tabId },
+            func: () => {
+              function getSr(el: Element): ShadowRoot | null {
+                try {
+                  if (typeof chrome !== 'undefined' && chrome?.dom?.openOrClosedShadowRoot) {
+                    const sr = chrome.dom.openOrClosedShadowRoot(el as HTMLElement);
+                    if (sr) return sr;
+                  }
+                } catch {}
+                return el.shadowRoot || null;
               }
-              const el = root as Element;
-              const tag = (el.tagName || '').toLowerCase();
-              if (['script', 'style', 'noscript', 'template'].includes(tag)) {
-                return '';
+              function collect(node: Node): string[] {
+                const out: string[] = [];
+                if (!node) return out;
+                if (node.nodeType === 3) {
+                  const t = node.textContent?.trim();
+                  if (t) out.push(t);
+                  return out;
+                }
+                if (node.nodeType !== 1 && node.nodeType !== 11) return out;
+                const el = node as Element;
+                const tag = (el.tagName || '').toLowerCase();
+                if (['script', 'style', 'noscript', 'template', 'svg'].includes(tag)) return out;
+                const aria = el.getAttribute?.('aria-label')?.trim();
+                if (aria && !el.textContent?.includes(aria)) out.push(`[${aria}]`);
+                const sr = getSr(el);
+                if (sr) out.push(...collect(sr));
+                for (const c of Array.from(node.childNodes)) {
+                  out.push(...collect(c));
+                }
+                if (
+                  /^(div|p|h[1-6]|li|section|article|header|footer|nav|blockquote|tr|table|shreddit-|faceplate-)/i.test(
+                    tag,
+                  )
+                ) {
+                  out.push('\n');
+                }
+                return out;
               }
-              const sr = (el as any).shadowRoot;
-              if (sr) {
-                out += ' ' + collectText(sr);
-              }
-              for (const child of Array.from(root.childNodes)) {
-                out += ' ' + collectText(child);
-              }
-              return out;
-            }
-            const bodyText = document.body?.innerText || '';
-            const deepText = collectText(document.body);
-            return bodyText.length >= deepText.length ? bodyText : deepText;
-          },
-        });
-        const fullText = String(scriptRes?.[0]?.result || '');
-        const lines = fullText.split('\n');
+              return collect(document.body || document.documentElement).join(' ');
+            },
+          });
+          fullText = String(scriptRes?.[0]?.result || '');
+        }
+
+        const lines = fullText
+          .replace(/[ \t]+\n/g, '\n')
+          .replace(/\n[ \t]+/g, '\n')
+          .replace(/\n{3,}/g, '\n\n')
+          .split('\n');
         const matches: Array<{ line: number; text: string }> = [];
 
         for (let idx = 0; idx < lines.length; idx++) {
@@ -87,7 +138,7 @@ export class GrepTool extends BaseBrowserToolExecutor {
           if (line && pattern.test(line)) {
             matches.push({
               line: idx + 1,
-              text: line.length > 120 ? line.slice(0, 117) + '...' : line,
+              text: extractContextualSnippet(line, pattern),
             });
             if (matches.length >= limit) break;
           }
@@ -185,6 +236,11 @@ export class GrepTool extends BaseBrowserToolExecutor {
         const id = el.attributes?.id;
         const name = el.attributes?.name;
         const value = (el as any).value || el.attributes?.['value'] || el.attributes?.value;
+        const testId = el.attributes?.['data-testid'];
+        const action = el.attributes?.['data-action'];
+        const desc = el.attributes?.['aria-description'];
+        const clickId = el.attributes?.['data-click-id'];
+
         const searchableParts = [
           elText,
           el.role,
@@ -195,6 +251,10 @@ export class GrepTool extends BaseBrowserToolExecutor {
           id,
           name,
           value,
+          testId,
+          action,
+          desc,
+          clickId,
         ]
           .filter(Boolean)
           .join(' ');
@@ -212,6 +272,39 @@ export class GrepTool extends BaseBrowserToolExecutor {
         }
       }
 
+      // If interactive search yielded 0 matches, perform automatic deep page text fallback
+      let textFallbackMatches: Array<{ line: number; text: string }> | undefined;
+      if (matches.length === 0 && searchType === 'interactive_only') {
+        try {
+          const inPageRes = await executeInPage<string>(
+            { tabId, allFrames: true },
+            'inPageExtractDeepPageText',
+            [],
+          );
+          const deepText = inPageRes
+            .map((r) => r.result || '')
+            .filter(Boolean)
+            .join('\n');
+          if (deepText) {
+            const lines = deepText.split('\n');
+            const found: Array<{ line: number; text: string }> = [];
+            for (let idx = 0; idx < lines.length; idx++) {
+              const line = lines[idx].trim();
+              if (line && pattern.test(line)) {
+                found.push({
+                  line: idx + 1,
+                  text: extractContextualSnippet(line, pattern),
+                });
+                if (found.length >= limit) break;
+              }
+            }
+            if (found.length > 0) {
+              textFallbackMatches = found;
+            }
+          }
+        } catch {}
+      }
+
       return {
         content: [
           {
@@ -220,9 +313,15 @@ export class GrepTool extends BaseBrowserToolExecutor {
               {
                 query: args.query,
                 searchType,
-                totalMatches: matches.length,
+                totalMatches:
+                  matches.length > 0 ? matches.length : (textFallbackMatches?.length ?? 0),
                 limit,
-                matches,
+                matches: matches.length > 0 ? matches : (textFallbackMatches ?? []),
+                ...(textFallbackMatches
+                  ? {
+                      note: `No interactive elements matched query "${args.query}". Displaying matches found in deep page text. Use chrome_interact_index with coordinate, or chrome_click with text/role.`,
+                    }
+                  : {}),
               },
               null,
               2,

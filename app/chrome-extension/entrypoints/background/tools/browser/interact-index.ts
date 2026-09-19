@@ -351,23 +351,16 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           : `input routed to active tab (tabId=${tabId}); pass explicit tabId to target another tab`;
 
         // Helper to project screenshot-space or polymorphic coordinates to viewport space
-        const isScreenshotSpace = args.coordinateSpace === 'screenshot';
         const projectCoord = (c: any): { x: number; y: number; isDocumentSpace?: boolean } => {
-          if (
-            !isScreenshotSpace &&
-            typeof c?.x === 'number' &&
-            typeof c?.y === 'number' &&
-            !c.box_2d &&
-            !c.point
-          ) {
-            return { x: Math.round(c.x), y: Math.round(c.y) };
-          }
           const parsed = parseUnifiedCoordinate(c, { tabId });
-          if (parsed) return parsed;
+          if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+            return parsed;
+          }
           const ctx = screenshotContextManager.getContext(tabId);
-          if (!ctx) return { x: Math.round(c.x), y: Math.round(c.y) };
-          const scaled = scaleCoordinates(c.x, c.y, ctx);
-          return scaled;
+          if (ctx && typeof c?.x === 'number' && typeof c?.y === 'number') {
+            return scaleCoordinates(c.x, c.y, ctx);
+          }
+          return { x: Math.round(c?.x ?? 0), y: Math.round(c?.y ?? 0) };
         };
 
         const alignVisualCoordinate = async (coord: {
@@ -388,32 +381,38 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           };
 
           const ctx = screenshotContextManager.getContext(tabId);
+          const isDoc = Boolean(coord.isDocumentSpace || ctx?.captureMode === 'fullpage');
 
-          if (coord.isDocumentSpace || ctx?.captureMode === 'fullpage') {
-            // Document-level coordinate (e.g. from fullpage screenshot): ensure target document Y is in active viewport
-            const docX = cx;
-            const docY = cy;
-            const vh = scrollState.viewportHeight;
-            if (docY < scrollState.scrollY || docY > scrollState.scrollY + vh) {
-              const targetY = Math.max(0, Math.round(docY - vh / 2));
-              await executeInPage({ tabId }, 'inPageInstantScrollTo', [
-                scrollState.scrollX,
-                targetY,
-              ]).catch(() => null);
-              scrollState.scrollY = targetY;
-            }
-            cx = docX - scrollState.scrollX;
-            cy = docY - scrollState.scrollY;
-          } else {
-            // Viewport-level coordinate: apply real-time scroll drift compensation
-            const baseScrollX = ctx?.scrollX ?? scrollState.scrollX;
-            const baseScrollY = ctx?.scrollY ?? scrollState.scrollY;
-            const driftX = scrollState.scrollX - baseScrollX;
-            const driftY = scrollState.scrollY - baseScrollY;
+          const baseScrollX = ctx?.scrollX ?? scrollState.scrollX;
+          const baseScrollY = ctx?.scrollY ?? scrollState.scrollY;
 
-            cx = cx - driftX;
-            cy = cy - driftY;
+          // Convert target to document-space coordinates
+          const docX = isDoc ? cx : baseScrollX + cx;
+          const docY = isDoc ? cy : baseScrollY + cy;
+
+          const vh = scrollState.viewportHeight;
+          const vw = scrollState.viewportWidth;
+
+          // If target document point has scrolled out of view or is outside the current viewport,
+          // instantly scroll to center it in the viewport rather than clamping to viewport edge (0,0)
+          const isOutsideVp =
+            docY < scrollState.scrollY ||
+            docY > scrollState.scrollY + vh ||
+            docX < scrollState.scrollX ||
+            docX > scrollState.scrollX + vw;
+
+          if (isOutsideVp) {
+            const targetY = Math.max(0, Math.round(docY - vh / 2));
+            const targetX = Math.max(0, Math.round(docX - vw / 2));
+            await executeInPage({ tabId }, 'inPageInstantScrollTo', [targetX, targetY]).catch(
+              () => null,
+            );
+            scrollState.scrollX = targetX;
+            scrollState.scrollY = targetY;
           }
+
+          cx = docX - scrollState.scrollX;
+          cy = docY - scrollState.scrollY;
 
           // Clamp to active viewport boundary
           cx = Math.max(0, Math.min(scrollState.viewportWidth - 1, cx));
@@ -446,8 +445,14 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         if (hasPoints) {
           await armProbe();
           const interval = Math.min(500, Math.max(5, args.intervalMs ?? 35));
-          const scaledPoints = (args.points || []).map(projectCoord);
+          const scaledPoints: Array<{ x: number; y: number }> = [];
+          for (const rawPt of args.points || []) {
+            const proj = projectCoord(rawPt);
+            const aligned = await alignVisualCoordinate(proj);
+            scaledPoints.push(aligned);
+          }
           let dispatched = 0;
+          await executeInPage({ tabId }, 'inPageLockScroll', [true]).catch(() => {});
           try {
             await cdpSessionManager.withSession(tabId, 'interact-index', async () => {
               for (const pt of scaledPoints) {
@@ -481,6 +486,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             return createErrorResponse(
               `click_sequence failed after ${dispatched} points: ${burstErr instanceof Error ? burstErr.message : String(burstErr)}`,
             );
+          } finally {
+            await executeInPage({ tabId }, 'inPageLockScroll', [false]).catch(() => {});
           }
           // D1: read back the delivery probe before returning. click_sequence is
           // a native-CDP path, so delivered=false here means throttling ate the

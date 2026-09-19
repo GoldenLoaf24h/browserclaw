@@ -52,6 +52,8 @@ export interface IndexedElement {
   isEditor?: boolean;
   /** True when element is a search input or searchbox */
   isSearch?: boolean;
+  /** True when element is a Web Component host with closed/encapsulated shadow root */
+  isClosedShadowHost?: boolean;
 }
 
 export interface ScrollInfo {

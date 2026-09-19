@@ -11,9 +11,11 @@ import {
   inPageGetScrollState,
   inPageInstantScrollTo,
   inPageLockScroll,
+  deepElementFromPoint,
+  inPageExtractDeepPageText,
 } from '../entrypoints/background/tools/browser/dom-indexer';
 import { screenshotContextManager, scaleCoordinates } from '../utils/screenshot-context';
-import { GrepTool } from '../entrypoints/background/tools/browser/grep';
+import { grepTool, extractContextualSnippet } from '../entrypoints/background/tools/browser/grep';
 
 describe('Deep Shadow DOM Piercing & Visual Drift Compensation', () => {
   beforeEach(() => {
@@ -118,6 +120,59 @@ describe('Deep Shadow DOM Piercing & Visual Drift Compensation', () => {
       expect(composedParent(leaf)).toBe(inner);
       expect(composedParent(inner)).toBe(outer);
     });
+
+    it('penetrates multi-level nested shadow roots using deepElementFromPoint', () => {
+      const outerHost = document.createElement('outer-widget');
+      document.body.appendChild(outerHost);
+      const outerShadow = outerHost.attachShadow({ mode: 'open' });
+
+      const innerHost = document.createElement('inner-widget');
+      outerShadow.appendChild(innerHost);
+      const innerShadow = innerHost.attachShadow({ mode: 'open' });
+
+      const targetBtn = document.createElement('button');
+      targetBtn.id = 'deep-target-btn';
+      innerShadow.appendChild(targetBtn);
+
+      document.elementFromPoint = vi.fn().mockReturnValue(outerHost);
+      (outerShadow as any).elementFromPoint = vi.fn().mockReturnValue(innerHost);
+      (innerShadow as any).elementFromPoint = vi.fn().mockReturnValue(targetBtn);
+
+      const resolved = deepElementFromPoint(150, 250, document);
+      expect(resolved).toBe(targetBtn);
+    });
+
+    it('traverses and indexes interactive elements inside pointer-events: none containers', () => {
+      const container = document.createElement('div');
+      container.style.pointerEvents = 'none';
+      document.body.appendChild(container);
+
+      const button = document.createElement('button');
+      button.id = 'active-inside-none-container';
+      button.textContent = 'Active Action';
+      button.style.pointerEvents = 'auto';
+      container.appendChild(button);
+
+      Object.defineProperty(button, 'getBoundingClientRect', {
+        value: () => ({
+          left: 50,
+          top: 50,
+          right: 150,
+          bottom: 80,
+          width: 100,
+          height: 30,
+          x: 50,
+          y: 50,
+        }),
+      });
+
+      const res = inPageDOMPruner();
+      const indexed = res.indexedElements.find(
+        (el) => el.attributes?.id === 'active-inside-none-container',
+      );
+      expect(indexed).toBeDefined();
+      expect(indexed?.text).toBe('Active Action');
+    });
   });
 
   describe('2. Closed Shadow Host Detection', () => {
@@ -144,6 +199,38 @@ describe('Deep Shadow DOM Piercing & Visual Drift Compensation', () => {
       const hostElem = res.indexedElements.find((el) => el.tagName === 'closed-widget');
       expect(hostElem).toBeDefined();
       expect(hostElem?.inShadowDom).toBe(true);
+      expect(hostElem?.isClosedShadowHost).toBe(true);
+
+      const compactLine = renderCompactElementLine(hostElem!);
+      expect(compactLine).toContain('[closed-shadow-host]');
+    });
+
+    it('marks closed shadow host on interactive custom element with data-action', () => {
+      const formHost = document.createElement('faceplate-form');
+      formHost.setAttribute('data-action', 'submit');
+      formHost.tabIndex = 0;
+      document.body.appendChild(formHost);
+
+      Object.defineProperty(formHost, 'getBoundingClientRect', {
+        value: () => ({
+          left: 10,
+          top: 10,
+          right: 110,
+          bottom: 50,
+          width: 100,
+          height: 40,
+          x: 10,
+          y: 10,
+        }),
+      });
+
+      const res = inPageDOMPruner();
+      const hostElem = res.indexedElements.find((el) => el.tagName === 'faceplate-form');
+      expect(hostElem).toBeDefined();
+      expect(hostElem?.isClosedShadowHost).toBe(true);
+
+      const line = renderCompactElementLine(hostElem!);
+      expect(line).toContain('[closed-shadow-host]');
     });
   });
 
@@ -174,6 +261,166 @@ describe('Deep Shadow DOM Piercing & Visual Drift Compensation', () => {
       expect(
         prunerRes.indexedElements.some((e) => e.attributes?.['aria-label'] === 'Upvote 42'),
       ).toBe(true);
+    });
+
+    it('extracts deep page text with slots, shadow roots, and accessible names using inPageExtractDeepPageText', () => {
+      const host = document.createElement('shreddit-post');
+      document.body.appendChild(host);
+
+      const title = document.createElement('h1');
+      title.textContent = 'Main Post Title';
+      host.appendChild(title);
+
+      const shadow = host.attachShadow({ mode: 'open' });
+      const shadowPara = document.createElement('p');
+      shadowPara.textContent = 'Shadow comment text';
+      shadow.appendChild(shadowPara);
+
+      const upvote = document.createElement('button');
+      upvote.setAttribute('aria-label', 'Upvote Post');
+      shadow.appendChild(upvote);
+
+      const deepText = inPageExtractDeepPageText(host);
+      expect(deepText).toContain('Main Post Title');
+      expect(deepText).toContain('Shadow comment text');
+      expect(deepText).toContain('[Upvote Post]');
+    });
+
+    it('formats centered contextual snippets with extractContextualSnippet', () => {
+      const shortLine = 'This is a short line with target query';
+      const pat = /target query/i;
+      expect(extractContextualSnippet(shortLine, pat)).toBe(shortLine);
+
+      const prefix = 'A'.repeat(80);
+      const suffix = 'B'.repeat(80);
+      const longLine = `${prefix} KEYWORD ${suffix}`;
+      const pat2 = /KEYWORD/i;
+      const snippet = extractContextualSnippet(longLine, pat2);
+      expect(snippet).toContain('KEYWORD');
+      expect(snippet.startsWith('...')).toBe(true);
+      expect(snippet.endsWith('...')).toBe(true);
+      expect(snippet.length).toBeLessThan(120);
+    });
+
+    it('performs automatic deep page text fallback in chrome_grep when interactive matches is 0', async () => {
+      const engine = await import('../entrypoints/background/tools/browser/in-page-engine');
+      const spy = vi.spyOn(engine, 'executeInPage');
+      vi.spyOn(grepTool as any, 'resolveAffinityTab').mockResolvedValue({
+        id: 42,
+        url: 'https://reddit.com',
+      });
+
+      spy.mockImplementation(async (target: any, fnName: string, args: any) => {
+        if (fnName === 'inPageDOMPruner') {
+          return [
+            {
+              frameId: 0,
+              result: {
+                elementCount: 0,
+                interactiveCount: 0,
+                indexedElements: [],
+                indexMap: {},
+              },
+            },
+          ] as any;
+        }
+        if (fnName === 'inPageExtractDeepPageText') {
+          return [
+            {
+              frameId: 0,
+              result:
+                'First paragraph\nDeep shadow article content mentioning ShredditArchitecture\nThird paragraph',
+            },
+          ] as any;
+        }
+        return [] as any;
+      });
+
+      const res = await grepTool.execute({
+        query: 'ShredditArchitecture',
+        searchType: 'interactive_only',
+      });
+      expect(res.isError).toBe(false);
+      const parsed = JSON.parse(res.content[0].text);
+      expect(parsed.totalMatches).toBe(1);
+      expect(parsed.matches[0].text).toContain('ShredditArchitecture');
+      expect(parsed.note).toContain('No interactive elements matched');
+
+      spy.mockRestore();
+    });
+
+    it('greps interactive elements by data-testid, data-action, aria-description, and data-click-id', async () => {
+      const engine = await import('../entrypoints/background/tools/browser/in-page-engine');
+      const spy = vi.spyOn(engine, 'executeInPage');
+      vi.spyOn(grepTool as any, 'resolveAffinityTab').mockResolvedValue({
+        id: 42,
+        url: 'https://reddit.com',
+      });
+
+      spy.mockImplementation(async (target: any, fnName: string, args: any) => {
+        if (fnName === 'inPageDOMPruner') {
+          return [
+            {
+              frameId: 0,
+              result: {
+                elementCount: 4,
+                interactiveCount: 4,
+                indexedElements: [
+                  {
+                    index: 1,
+                    tagName: 'button',
+                    role: 'button',
+                    isInteractive: true,
+                    attributes: { 'data-testid': 'comment-reply-button' },
+                  },
+                  {
+                    index: 2,
+                    tagName: 'button',
+                    role: 'button',
+                    isInteractive: true,
+                    attributes: { 'data-action': 'upvote' },
+                  },
+                  {
+                    index: 3,
+                    tagName: 'div',
+                    role: 'button',
+                    isInteractive: true,
+                    attributes: { 'aria-description': 'award-gold-star' },
+                  },
+                  {
+                    index: 4,
+                    tagName: 'a',
+                    role: 'link',
+                    isInteractive: true,
+                    attributes: { 'data-click-id': 'timestamp-link' },
+                  },
+                ],
+                indexMap: {
+                  1: { selector: '#btn1', tagName: 'button' },
+                  2: { selector: '#btn2', tagName: 'button' },
+                  3: { selector: '#div3', tagName: 'div' },
+                  4: { selector: '#a4', tagName: 'a' },
+                },
+              },
+            },
+          ] as any;
+        }
+        return [] as any;
+      });
+
+      const resTestId = await grepTool.execute({ query: 'comment-reply-button' });
+      expect(JSON.parse(resTestId.content[0].text).totalMatches).toBe(1);
+
+      const resAction = await grepTool.execute({ query: 'upvote' });
+      expect(JSON.parse(resAction.content[0].text).totalMatches).toBe(1);
+
+      const resDesc = await grepTool.execute({ query: 'award-gold-star' });
+      expect(JSON.parse(resDesc.content[0].text).totalMatches).toBe(1);
+
+      const resClickId = await grepTool.execute({ query: 'timestamp-link' });
+      expect(JSON.parse(resClickId.content[0].text).totalMatches).toBe(1);
+
+      spy.mockRestore();
     });
   });
 
@@ -243,6 +490,39 @@ describe('Deep Shadow DOM Piercing & Visual Drift Compensation', () => {
       expect(snap.snapped).toBe(true);
       expect(snap.x).toBe(125); // Midpoint between 100 and 150
       expect(snap.y).toBe(215); // Midpoint between 200 and 230
+    });
+
+    it('snaps coordinates and centers element if snapped target is offscreen', () => {
+      const host = document.createElement('reddit-comment');
+      document.body.appendChild(host);
+      const shadow = host.attachShadow({ mode: 'open' });
+
+      const replyBtn = document.createElement('button');
+      replyBtn.setAttribute('aria-label', 'Reply');
+      shadow.appendChild(replyBtn);
+
+      let scrolledIntoView = false;
+      replyBtn.scrollIntoView = vi.fn().mockImplementation(() => {
+        scrolledIntoView = true;
+      });
+
+      // Target is clipped at viewport bottom (bottom > innerHeight of 768)
+      Object.defineProperty(replyBtn, 'getBoundingClientRect', {
+        value: () => ({
+          left: 100,
+          top: 740,
+          right: 180,
+          bottom: 790,
+          width: 80,
+          height: 50,
+          x: 100,
+          y: 740,
+        }),
+      });
+
+      const snap = inPageSnapCoordinate(110, 750, 24);
+      expect(snap.snapped).toBe(true);
+      expect(scrolledIntoView).toBe(true);
     });
   });
 });

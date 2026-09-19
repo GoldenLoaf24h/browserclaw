@@ -101,26 +101,12 @@ export function composedContains(ancestor: Node | null, descendant: Node | null)
 }
 
 export function hitElementAtPoint(target: Element, x: number, y: number): Element | null {
-  const roots: (Document | ShadowRoot)[] = [];
-  let parent: Element | null = target;
-  while (parent) {
-    const root = parent.getRootNode ? parent.getRootNode() : null;
-    if (!root || typeof (root as any).elementsFromPoint !== 'function') break;
-    roots.push(root as Document | ShadowRoot);
-    if (root.nodeType === 9) break;
-    parent = (root as ShadowRoot).host as Element;
+  const deep = deepElementFromPoint(x, y);
+  if (!deep) return null;
+  if (deep === target || composedContains(target, deep) || composedContains(deep, target)) {
+    return deep;
   }
-
-  let hitElement: Element | null = null;
-  for (let index = roots.length - 1; index >= 0; index--) {
-    const root = roots[index];
-    const elements = (root as any).elementsFromPoint(x, y) as Element[];
-    const innerElement = elements[0] || (root as any).elementFromPoint(x, y);
-    if (!innerElement) break;
-    hitElement = innerElement;
-    if (index > 0 && innerElement !== (roots[index - 1] as ShadowRoot).host) break;
-  }
-  return hitElement;
+  return deep;
 }
 
 export function interceptingElementAtPoint(target: Element, x: number, y: number): Element | null {
@@ -247,6 +233,53 @@ export function isCustomElement(node: Node | null | undefined): boolean {
 }
 
 /**
+ * Resolves the true visual element at (x, y) by descending through all open and closed ShadowRoot boundaries.
+ */
+export function deepElementFromPoint(
+  x: number,
+  y: number,
+  startRoot?: Document | ShadowRoot | Element,
+): Element | null {
+  const doc = typeof document !== 'undefined' ? document : null;
+  if (!doc) return null;
+
+  let current: Element | null = null;
+  try {
+    if (startRoot instanceof Document || (startRoot && (startRoot as any).nodeType === 11)) {
+      current = (startRoot as Document | ShadowRoot).elementFromPoint(x, y);
+    } else if (startRoot instanceof Element) {
+      const sr = getShadowRoot(startRoot);
+      if (sr && typeof (sr as any).elementFromPoint === 'function') {
+        current = (sr as any).elementFromPoint(x, y);
+      } else {
+        current = startRoot;
+      }
+    } else if (typeof doc.elementFromPoint === 'function') {
+      current = doc.elementFromPoint(x, y);
+    }
+  } catch {}
+
+  if (!current) return null;
+
+  const visited = new Set<Element>();
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    try {
+      const shadow = getShadowRoot(current);
+      if (shadow && typeof (shadow as any).elementFromPoint === 'function') {
+        const inner = (shadow as any).elementFromPoint(x, y);
+        if (inner && inner !== current) {
+          current = inner;
+          continue;
+        }
+      }
+    } catch {}
+    break;
+  }
+  return current;
+}
+
+/**
  * Deep query selector that penetrates all open (and closed when supported) ShadowRoot boundaries.
  * Traverses recursively through both standard light DOM and encapsulated component shadow roots.
  */
@@ -283,6 +316,14 @@ export function querySelectorAllDeep(
       if (shadow) {
         search(shadow);
       }
+    }
+  }
+
+  // If root itself is an Element with a shadowRoot, search that shadowRoot too
+  if (typeof Element !== 'undefined' && root instanceof Element) {
+    const rootShadow = getShadowRoot(root);
+    if (rootShadow) {
+      search(rootShadow);
     }
   }
 
@@ -498,10 +539,14 @@ export function extractCleanElementText(el: Element, maxLen = 120): string {
         };
         let beforeContent: string | undefined;
         let afterContent: string | undefined;
-        try {
-          beforeContent = win.getComputedStyle(el, '::before')?.getPropertyValue('content');
-          afterContent = win.getComputedStyle(el, '::after')?.getPropertyValue('content');
-        } catch {}
+        const isJsdom =
+          typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '');
+        if (!isJsdom) {
+          try {
+            beforeContent = win.getComputedStyle(el, '::before')?.getPropertyValue('content');
+            afterContent = win.getComputedStyle(el, '::after')?.getPropertyValue('content');
+          } catch {}
+        }
         const bText = cleanContent(beforeContent);
         const aText = cleanContent(afterContent);
         const pseudoText = [bText, aText].filter(Boolean).join(' ').trim();
@@ -513,7 +558,28 @@ export function extractCleanElementText(el: Element, maxLen = 120): string {
   }
 
   if (!text) {
-    // Semantic accessibility label extraction: critical for modern Web Components & icon buttons (Reddit/X/YouTube)
+    // 1. ARIA labelledby (highest priority in W3C accessible name specification)
+    const ariaLabelledBy = el.getAttribute?.('aria-labelledby')?.trim();
+    if (ariaLabelledBy) {
+      try {
+        const doc = el.ownerDocument || (typeof document !== 'undefined' ? document : null);
+        if (doc) {
+          const ids = ariaLabelledBy.split(/\s+/);
+          const parts: string[] = [];
+          for (const id of ids) {
+            let labelEl: Element | null = doc.getElementById(id);
+            if (!labelEl) labelEl = querySelectorDeep(`#${id}`, doc);
+            const lt = (labelEl?.textContent || '').trim();
+            if (lt) parts.push(lt);
+          }
+          if (parts.length > 0) text = parts.join(' ');
+        }
+      } catch {}
+    }
+  }
+
+  if (!text) {
+    // 2. Semantic accessibility label extraction (aria-label, title, aria-description)
     const ariaLabel = el.getAttribute?.('aria-label')?.trim();
     if (ariaLabel) {
       text = ariaLabel;
@@ -526,18 +592,53 @@ export function extractCleanElementText(el: Element, maxLen = 120): string {
         if (ariaDesc) {
           text = ariaDesc;
         } else {
-          // Check inner SVG accessible names
+          // 3. Inner accessible children ([role="img"][aria-label], [aria-label], SVG titles)
           try {
+            const innerRoleImg = el
+              .querySelector?.('[role="img"][aria-label]')
+              ?.getAttribute('aria-label')
+              ?.trim();
             const svgAria = el
               .querySelector?.('svg[aria-label]')
               ?.getAttribute('aria-label')
               ?.trim();
-            const svgTitle = el.querySelector?.('svg title')?.textContent?.trim();
-            if (svgAria) text = svgAria;
+            const svgTitle = el.querySelector?.('svg title, svg desc')?.textContent?.trim();
+            const anyInnerAria = el
+              .querySelector?.('[aria-label]')
+              ?.getAttribute('aria-label')
+              ?.trim();
+            if (innerRoleImg) text = innerRoleImg;
+            else if (svgAria) text = svgAria;
             else if (svgTitle) text = svgTitle;
+            else if (anyInnerAria) text = anyInnerAria;
           } catch {}
         }
       }
+    }
+  }
+
+  // 4. Parent custom element wrapper semantics (e.g. Reddit <faceplate-tracker action="reply"> wrapping button)
+  if (!text && el.parentElement && isCustomElement(el.parentElement)) {
+    const parent = el.parentElement;
+    const parentLabel =
+      parent.getAttribute('aria-label') ||
+      parent.getAttribute('action') ||
+      parent.getAttribute('data-action') ||
+      parent.getAttribute('data-testid');
+    if (parentLabel && typeof parentLabel === 'string') {
+      text = parentLabel.replace(/[-_]/g, ' ').trim();
+    }
+  }
+
+  // 5. Element's own action/test attributes
+  if (!text) {
+    const actionAttr =
+      el.getAttribute?.('data-action') ||
+      el.getAttribute?.('data-testid') ||
+      el.getAttribute?.('data-tooltip') ||
+      el.getAttribute?.('data-click-id');
+    if (actionAttr && typeof actionAttr === 'string') {
+      text = actionAttr.replace(/[-_]/g, ' ').trim();
     }
   }
 
@@ -1933,7 +2034,7 @@ export function inPageDOMPruner(options?: {
     try {
       style = window.getComputedStyle(node);
     } catch {}
-    if (!style || style.pointerEvents === 'none') {
+    if (!style) {
       return;
     }
     const rect = node.getBoundingClientRect();
@@ -2412,6 +2513,7 @@ export function inPageDOMPruner(options?: {
       isComposer: editorSemantics.isComposer || undefined,
       isEditor: editorSemantics.isEditor || undefined,
       isSearch: editorSemantics.isSearch || undefined,
+      isClosedShadowHost: cand.isClosedShadowHost || undefined,
     };
 
     indexedElements.push(indexedElem);
@@ -2462,7 +2564,11 @@ export function inPageDOMPruner(options?: {
       const occludedPart = el.isOccluded
         ? ` [occluded: partially by ${el.occludedBy || 'overlay'}]`
         : '';
-      const shadowPart = el.inShadowDom ? ' [shadow]' : '';
+      const shadowPart = el.isClosedShadowHost
+        ? ' [closed-shadow-host]'
+        : el.inShadowDom
+          ? ' [shadow]'
+          : '';
       return `[${el.index}]${shadowPart} <${el.tagName}${attrStr ? ' ' + attrStr : ''}${valPart}>${textPart}</${el.tagName}>${occludedPart}`;
     }
     return renderCompactElementLine(el);
@@ -3119,13 +3225,7 @@ export function inPageSnapCoordinate(
   // 1. Direct hit test at (origX, origY) with deep Shadow DOM penetration
   let hitEl: Element | null = null;
   try {
-    if (typeof document.elementFromPoint === 'function') {
-      hitEl = document.elementFromPoint(origX, origY);
-      if (hitEl && getShadowRoot(hitEl)) {
-        const deep = hitElementAtPoint(hitEl, origX, origY);
-        if (deep) hitEl = deep;
-      }
-    }
+    hitEl = deepElementFromPoint(origX, origY);
   } catch {}
 
   const isInteractiveNode = (el: Element | null): boolean => {
@@ -3210,11 +3310,7 @@ export function inPageSnapCoordinate(
         const py = Math.round(origY + r * Math.sin(rad));
         if (px < 0 || py < 0 || px > vw || py > vh) continue;
         try {
-          let sampleEl = document.elementFromPoint(px, py);
-          if (sampleEl && getShadowRoot(sampleEl)) {
-            const deep = hitElementAtPoint(sampleEl, px, py);
-            if (deep) sampleEl = deep;
-          }
+          const sampleEl = deepElementFromPoint(px, py);
           let candidate: Element | null = sampleEl;
           while (
             candidate &&
@@ -3264,6 +3360,27 @@ export function inPageSnapCoordinate(
   }
 
   if (bestEl && bestRect) {
+    // Bring element into comfortable viewport view if scrolled outside or clipped
+    try {
+      const curVh = window.innerHeight || 800;
+      const curVw = window.innerWidth || 1280;
+      if (
+        bestRect.top < 0 ||
+        bestRect.bottom > curVh ||
+        bestRect.left < 0 ||
+        bestRect.right > curVw
+      ) {
+        if (typeof (bestEl as any).scrollIntoView === 'function') {
+          (bestEl as any).scrollIntoView({
+            block: 'center',
+            inline: 'center',
+            behavior: 'instant',
+          });
+          bestRect = bestEl.getBoundingClientRect();
+        }
+      }
+    } catch {}
+
     // For small/medium elements (<= 120px in width/height), snap to geometric center.
     // For large elements (> 120px), clamp within the element with a safe margin to avoid jumping hundreds of pixels.
     const isSmallOrMedium = bestRect.width <= 120 && bestRect.height <= 120;
@@ -6199,7 +6316,9 @@ export function renderCompactElementLine(el: IndexedElement, frameId?: string | 
   }
 
   const parts: string[] = [`[${el.index}]`];
-  if (el.inShadowDom) {
+  if (el.isClosedShadowHost) {
+    parts.push('[closed-shadow-host]');
+  } else if (el.inShadowDom) {
     parts.push('[shadow]');
   }
   if (el.isComposer) {
@@ -6700,7 +6819,10 @@ export function inPageInstantScrollTo(
     if (win.document?.documentElement) {
       win.document.documentElement.style.scrollBehavior = 'auto';
     }
-    win.scrollTo({ left: x, top: y, behavior: 'instant' as any });
+    const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '');
+    if (!isJsdom && typeof win.scrollTo === 'function') {
+      win.scrollTo({ left: x, top: y, behavior: 'instant' as any });
+    }
   } finally {
     if (win.document?.documentElement) {
       win.document.documentElement.style.scrollBehavior = prevBehavior;
@@ -6731,4 +6853,89 @@ export function inPageLockScroll(lock: boolean): boolean {
     }
   }
   return true;
+}
+
+/**
+ * Deep page text extraction that pierces all open and closed ShadowRoot boundaries,
+ * flattens <slot> projections, and structures text into clean readable lines.
+ */
+export function inPageExtractDeepPageText(rootNode?: Node): string {
+  const win = typeof window !== 'undefined' ? window : (globalThis as any).window;
+  const doc = win?.document;
+  const start = rootNode || doc?.body || doc;
+  if (!start) return '';
+
+  const chunks: string[] = [];
+
+  function walk(node: Node) {
+    if (!node) return;
+
+    if (node.nodeType === 3) {
+      // Text node
+      const val = node.textContent?.trim();
+      if (val) {
+        chunks.push(val);
+      }
+      return;
+    }
+
+    if (node.nodeType !== 1 && node.nodeType !== 11) {
+      // Not Element or DocumentFragment / ShadowRoot
+      return;
+    }
+
+    const el = node as Element;
+    const tag = (el.tagName || '').toLowerCase();
+    if (['script', 'style', 'noscript', 'template', 'svg'].includes(tag)) {
+      return;
+    }
+
+    // Accessible name for buttons/links/custom elements without visible text
+    const ariaLabel = el.getAttribute?.('aria-label')?.trim();
+    if (ariaLabel && !el.textContent?.includes(ariaLabel)) {
+      chunks.push(`[${ariaLabel}]`);
+    }
+
+    // Traverse shadow root (open or closed)
+    const shadow = getShadowRoot(el);
+    if (shadow) {
+      walk(shadow);
+    }
+
+    // Flatten <slot> elements
+    if (tag === 'slot' && typeof (el as HTMLSlotElement).assignedNodes === 'function') {
+      try {
+        const assigned = (el as HTMLSlotElement).assignedNodes({ flatten: true });
+        for (const a of assigned) {
+          walk(a);
+        }
+      } catch {
+        for (const child of Array.from(node.childNodes)) {
+          walk(child);
+        }
+      }
+    } else {
+      for (const child of Array.from(node.childNodes)) {
+        walk(child);
+      }
+    }
+
+    // Block-level break for standard layout and Web Component wrappers
+    if (
+      /^(div|p|h[1-6]|li|section|article|header|footer|nav|blockquote|tr|table|shreddit-|faceplate-)/i.test(
+        tag,
+      )
+    ) {
+      chunks.push('\n');
+    }
+  }
+
+  walk(start);
+
+  return chunks
+    .join(' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
