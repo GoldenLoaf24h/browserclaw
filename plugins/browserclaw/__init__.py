@@ -9,6 +9,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import threading
 from typing import Any, Callable, Dict, List, Optional
 import urllib.error
 import urllib.request
@@ -25,11 +26,213 @@ DEFAULT_URLS = [
 BRIDGE_TOKEN_ENV_VARS = ('BROWSERCLAW_MCP_TOKEN', 'CHROME_MCP_TOKEN')
 BRIDGE_TOKEN_FILE = Path('.chrome-mcp') / 'bridge-token'
 
+# Optional pre-configured session ID env vars
+SESSION_ID_ENV_VARS = ('BROWSERCLAW_MCP_SESSION_ID', 'CHROME_MCP_SESSION_ID')
+
+MCP_PROTOCOL_VERSION = '2024-11-05'
+CLIENT_INFO = {
+    'name': 'browserclaw-python-plugin',
+    'version': '2.9.2',
+}
+
 _AUTH_HELP = (
     'BrowserClaw bridge rejected the request (HTTP 401): bridge token missing or invalid. '
     'Set BROWSERCLAW_MCP_TOKEN or CHROME_MCP_TOKEN to the token the native server uses, '
     'or make sure ~/.chrome-mcp/bridge-token (written by the native server) is readable.'
 )
+
+# Session state management
+_session_lock = threading.RLock()
+_active_session_id: Optional[str] = None
+_active_session_url: Optional[str] = None
+_request_counter: int = 0
+
+
+def _next_request_id() -> int:
+    """Return incrementing request id for JSON-RPC 2.0 messages."""
+    global _request_counter
+    with _session_lock:
+        _request_counter += 1
+        return _request_counter
+
+
+def _get_configured_session_id() -> Optional[str]:
+    """Check if a session ID is pre-configured via environment variable."""
+    for name in SESSION_ID_ENV_VARS:
+        val = os.getenv(name, '').strip()
+        if val:
+            return val
+    return None
+
+
+def _get_active_session_id() -> Optional[str]:
+    """Retrieve active session id, if any."""
+    with _session_lock:
+        return _active_session_id or _get_configured_session_id()
+
+
+def _set_active_session_id(session_id: Optional[str], url: Optional[str] = None) -> None:
+    """Explicitly update active session id (used internally or by tests)."""
+    global _active_session_id, _active_session_url
+    with _session_lock:
+        _active_session_id = session_id
+        _active_session_url = url
+
+
+def _reset_session() -> None:
+    """Invalidate currently cached session to trigger re-initialization on next call."""
+    global _active_session_id, _active_session_url
+    with _session_lock:
+        _active_session_id = None
+        _active_session_url = None
+
+
+def _get_target_urls() -> List[str]:
+    """Return deduplicated list of target MCP endpoints."""
+    urls: List[str] = []
+    env_url = os.getenv('BROWSERCLAW_MCP_URL', '').strip()
+    if env_url:
+        urls.append(env_url)
+    default_url = 'http://127.0.0.1:12306/mcp'
+    if default_url not in urls:
+        urls.append(default_url)
+    return urls
+
+
+def _extract_result_or_error(raw: str) -> str:
+    """Extract JSON-RPC result or error string from SSE stream or JSON response."""
+    if 'data: ' in raw:
+        for line in raw.splitlines():
+            if line.startswith('data: '):
+                try:
+                    parsed = json.loads(line[6:].strip())
+                    if 'result' in parsed:
+                        return json.dumps(parsed['result'], ensure_ascii=False)
+                    elif 'error' in parsed:
+                        return json.dumps({'error': parsed['error']}, ensure_ascii=False)
+                except Exception:
+                    pass
+    try:
+        parsed = json.loads(raw)
+        if 'result' in parsed:
+            return json.dumps(parsed['result'], ensure_ascii=False)
+        elif 'error' in parsed:
+            return json.dumps({'error': parsed['error']}, ensure_ascii=False)
+    except Exception:
+        pass
+    return raw
+
+
+def _perform_handshake(url: str, token: Optional[str]) -> str:
+    """Execute MCP 2024-11-05 initialize handshake and send notifications/initialized.
+
+    Returns the session ID issued by the server.
+    """
+    req_id = _next_request_id()
+    init_payload = json.dumps({
+        'jsonrpc': '2.0',
+        'id': req_id,
+        'method': 'initialize',
+        'params': {
+            'protocolVersion': MCP_PROTOCOL_VERSION,
+            'capabilities': {
+                'roots': {'listChanged': False},
+                'sampling': {},
+            },
+            'clientInfo': CLIENT_INFO,
+        },
+    }).encode('utf-8')
+
+    headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+    }
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+
+    init_req = urllib.request.Request(
+        url,
+        data=init_payload,
+        headers=headers,
+        method='POST',
+    )
+
+    session_id = None
+    with urllib.request.urlopen(init_req, timeout=30) as resp:
+        resp_headers = getattr(resp, 'headers', None)
+        if resp_headers:
+            session_id = resp_headers.get('mcp-session-id') or resp_headers.get('Mcp-Session-Id')
+
+        raw = resp.read().decode('utf-8')
+        if not session_id and raw:
+            try:
+                if 'data: ' in raw:
+                    for line in raw.splitlines():
+                        if line.startswith('data: '):
+                            parsed = json.loads(line[6:].strip())
+                            session_id = parsed.get('result', {}).get('sessionId')
+                            if session_id:
+                                break
+                else:
+                    parsed = json.loads(raw)
+                    session_id = parsed.get('result', {}).get('sessionId')
+            except Exception:
+                pass
+
+    session_id = (session_id or '').strip()
+
+    # Step 2: Send notifications/initialized according to MCP lifecycle spec
+    notify_payload = json.dumps({
+        'jsonrpc': '2.0',
+        'method': 'notifications/initialized',
+    }).encode('utf-8')
+
+    notify_headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+    }
+    if session_id:
+        notify_headers['mcp-session-id'] = session_id
+    if token:
+        notify_headers['Authorization'] = f'Bearer {token}'
+
+    notify_req = urllib.request.Request(
+        url,
+        data=notify_payload,
+        headers=notify_headers,
+        method='POST',
+    )
+
+    try:
+        with urllib.request.urlopen(notify_req, timeout=10) as _:
+            # Handshake notification acknowledged; do not read indefinitely on SSE keepalive
+            pass
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            raise
+        logger.debug('notifications/initialized HTTP error (ignored): %s', exc)
+    except Exception as exc:
+        logger.debug('notifications/initialized warning (ignored): %s', exc)
+
+    return session_id
+
+
+def _ensure_session(url: str, force_refresh: bool = False) -> Optional[str]:
+    """Ensure an active MCP session exists for the target URL."""
+    configured = _get_configured_session_id()
+    if configured and not force_refresh:
+        return configured
+
+    global _active_session_id, _active_session_url
+    with _session_lock:
+        if not force_refresh and _active_session_id and _active_session_url == url:
+            return _active_session_id
+
+        token = _bridge_token()
+        session_id = _perform_handshake(url, token)
+        _active_session_id = session_id or None
+        _active_session_url = url
+        return _active_session_id
 
 
 def _bridge_token() -> Optional[str]:
@@ -56,65 +259,81 @@ def _call_browserclaw(tool_name: str, arguments: dict) -> str:
     elif tool_name.startswith('browserclaw_'):
         remote_name = 'chrome_' + tool_name[len('browserclaw_'):]
 
-    payload = json.dumps({
-        'jsonrpc': '2.0',
-        'id': 1,
-        'method': 'tools/call',
-        'params': {
-            'name': remote_name,
-            'arguments': arguments or {},
-        },
-    }).encode('utf-8')
-
-    last_error = None
     token = _bridge_token()
-    headers = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
-    }
-    if token:
-        headers['Authorization'] = f'Bearer {token}'
-    for url in DEFAULT_URLS:
-        try:
-            req = urllib.request.Request(
-                url,
-                data=payload,
-                headers=headers,
-                method='POST',
-            )
-            with urllib.request.urlopen(req, timeout=45) as resp:
-                raw = resp.read().decode('utf-8')
-                if 'data: ' in raw:
-                    for line in raw.splitlines():
-                        if line.startswith('data: '):
-                            try:
-                                parsed = json.loads(line[6:].strip())
-                                if 'result' in parsed:
-                                    return json.dumps(parsed['result'], ensure_ascii=False)
-                                elif 'error' in parsed:
-                                    return json.dumps({'error': parsed['error']}, ensure_ascii=False)
-                            except Exception:
-                                pass
-                try:
-                    parsed = json.loads(raw)
-                    if 'result' in parsed:
-                        return json.dumps(parsed['result'], ensure_ascii=False)
-                    elif 'error' in parsed:
-                        return json.dumps({'error': parsed['error']}, ensure_ascii=False)
-                except Exception:
-                    pass
-                return raw
-        except urllib.error.HTTPError as e:
-            if e.code == 401:
-                return json.dumps({'error': _AUTH_HELP})
-            last_error = f'HTTP {e.code}'
-            continue
-        except urllib.error.URLError as e:
-            last_error = str(e)
-            continue
-        except Exception as e:
-            last_error = str(e)
-            continue
+    last_error = None
+    urls = _get_target_urls()
+
+    for url in urls:
+        for attempt in range(2):
+            try:
+                session_id = _ensure_session(url, force_refresh=(attempt > 0))
+
+                req_id = _next_request_id()
+                payload = json.dumps({
+                    'jsonrpc': '2.0',
+                    'id': req_id,
+                    'method': 'tools/call',
+                    'params': {
+                        'name': remote_name,
+                        'arguments': arguments or {},
+                    },
+                }).encode('utf-8')
+
+                headers = {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream',
+                }
+                if token:
+                    headers['Authorization'] = f'Bearer {token}'
+                if session_id:
+                    headers['mcp-session-id'] = session_id
+
+                req = urllib.request.Request(
+                    url,
+                    data=payload,
+                    headers=headers,
+                    method='POST',
+                )
+
+                with urllib.request.urlopen(req, timeout=45) as resp:
+                    raw = resp.read().decode('utf-8')
+                    res_str = _extract_result_or_error(raw)
+                    try:
+                        res_obj = json.loads(res_str)
+                        if isinstance(res_obj, dict) and 'error' in res_obj:
+                            err_msg = str(res_obj.get('error', '')).lower()
+                            if ('session' in err_msg or 'not initialized' in err_msg) and attempt == 0:
+                                logger.info(
+                                    'BrowserClaw MCP session invalid in payload (%s). Re-initializing...',
+                                    err_msg,
+                                )
+                                _reset_session()
+                                continue
+                    except Exception:
+                        pass
+                    return res_str
+
+            except urllib.error.HTTPError as e:
+                if e.code == 401:
+                    return json.dumps({'error': _AUTH_HELP})
+
+                # Session expired or invalid session header (HTTP 400 or 404)
+                if e.code in (400, 404) and attempt == 0:
+                    logger.info(
+                        'BrowserClaw MCP session invalid or expired (HTTP %d). Re-initializing session...',
+                        e.code,
+                    )
+                    _reset_session()
+                    continue
+
+                last_error = f'HTTP {e.code}'
+                break
+            except urllib.error.URLError as e:
+                last_error = str(e)
+                break
+            except Exception as e:
+                last_error = str(e)
+                break
 
     return json.dumps({
         'error': f'BrowserClaw server not reachable ({last_error}). Ensure Chrome extension is loaded and native server is running on http://127.0.0.1:12306/mcp.',

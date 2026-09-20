@@ -418,7 +418,10 @@ export class Server {
         const message = sessionId
           ? ERROR_MESSAGES.INVALID_SESSION_ID
           : ERROR_MESSAGES.INVALID_MCP_REQUEST;
-        safeWriteError(reply, status, { error: message });
+        const hint = !sessionId
+          ? 'MCP 2024-11-05 Streamable HTTP transport requires an initialize handshake first, followed by passing the mcp-session-id header on subsequent requests.'
+          : 'The specified MCP session ID was not found or has expired. Please re-initialize.';
+        safeWriteError(reply, status, { error: message, hint });
         return;
       }
 

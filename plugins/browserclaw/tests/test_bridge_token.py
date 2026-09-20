@@ -67,9 +67,31 @@ def test_browserclaw_env_beats_chrome_env(plugin, home, monkeypatch):
     assert plugin._bridge_token() == 'clawtoken'
 
 
-def _fake_response(payload: dict) -> io.BytesIO:
-    # BytesIO is a context manager and has .read(), which is all _call_browserclaw uses.
-    return io.BytesIO(json.dumps(payload).encode('utf-8'))
+@pytest.fixture(autouse=True)
+def reset_plugin_session(plugin):
+    plugin._reset_session()
+    yield
+    plugin._reset_session()
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict, headers: Optional[dict] = None):
+        self._data = json.dumps(payload).encode('utf-8')
+        self._stream = io.BytesIO(self._data)
+        self.headers = headers or {'mcp-session-id': 'sess-test-123'}
+
+    def read(self, *args, **kwargs):
+        return self._stream.read(*args, **kwargs)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+def _fake_response(payload: dict, headers: Optional[dict] = None) -> _FakeResponse:
+    return _FakeResponse(payload, headers)
 
 
 def test_call_sends_bearer_header(plugin, home, monkeypatch):
@@ -84,9 +106,25 @@ def test_call_sends_bearer_header(plugin, home, monkeypatch):
         out = plugin._call_browserclaw('browserclaw_get_windows_and_tabs', {})
 
     assert json.loads(out) == {}
+    # All MCP lifecycle requests (initialize, notifications/initialized, tools/call) must carry Bearer token
+    assert len(captured) >= 1
+    for req in captured:
+        assert req.get_header('Authorization') == 'Bearer secret123'
+
+    # Verify tools/call request was dispatched with expected tool name
+    tool_req = next(
+        r for r in captured
+        if json.loads(r.data.decode('utf-8') if isinstance(r.data, bytes) else r.data).get('method') == 'tools/call'
+    )
+    assert json.loads(tool_req.data)['params']['name'] == 'get_windows_and_tabs'
+
+    # Verify subsequent call within active session makes exactly 1 tools/call request
+    captured.clear()
+    with mock.patch.object(urllib.request, 'urlopen', fake_urlopen):
+        out2 = plugin._call_browserclaw('browserclaw_get_windows_and_tabs', {})
+    assert json.loads(out2) == {}
     assert len(captured) == 1
     assert captured[0].get_header('Authorization') == 'Bearer secret123'
-    assert json.loads(captured[0].data)['params']['name'] == 'get_windows_and_tabs'
 
 
 def test_call_without_token_sends_no_auth_header(plugin, home):
@@ -99,7 +137,9 @@ def test_call_without_token_sends_no_auth_header(plugin, home):
     with mock.patch.object(urllib.request, 'urlopen', fake_urlopen):
         plugin._call_browserclaw('browserclaw_navigate', {'url': 'https://example.com'})
 
-    assert captured[0].get_header('Authorization') is None
+    assert len(captured) >= 1
+    for req in captured:
+        assert req.get_header('Authorization') is None
 
 
 def test_401_returns_actionable_error_without_leaking_token(plugin, home, monkeypatch):
