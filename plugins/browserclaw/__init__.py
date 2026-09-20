@@ -45,6 +45,7 @@ _AUTH_HELP = (
 _session_lock = threading.RLock()
 _active_session_id: Optional[str] = None
 _active_session_url: Optional[str] = None
+_invalid_configured_sessions: set[str] = set()
 _request_counter: int = 0
 
 
@@ -57,10 +58,10 @@ def _next_request_id() -> int:
 
 
 def _get_configured_session_id() -> Optional[str]:
-    """Check if a session ID is pre-configured via environment variable."""
+    """Check if a session ID is pre-configured via environment variable and not known to be invalid."""
     for name in SESSION_ID_ENV_VARS:
         val = os.getenv(name, '').strip()
-        if val:
+        if val and val not in _invalid_configured_sessions:
             return val
     return None
 
@@ -79,10 +80,19 @@ def _set_active_session_id(session_id: Optional[str], url: Optional[str] = None)
         _active_session_url = url
 
 
-def _reset_session() -> None:
+def _reset_session(clear_invalid: bool = False) -> None:
     """Invalidate currently cached session to trigger re-initialization on next call."""
     global _active_session_id, _active_session_url
     with _session_lock:
+        if clear_invalid:
+            _invalid_configured_sessions.clear()
+        else:
+            if _active_session_id:
+                _invalid_configured_sessions.add(_active_session_id)
+            for name in SESSION_ID_ENV_VARS:
+                val = os.getenv(name, '').strip()
+                if val:
+                    _invalid_configured_sessions.add(val)
         _active_session_id = None
         _active_session_url = None
 
@@ -158,26 +168,57 @@ def _perform_handshake(url: str, token: Optional[str]) -> str:
     )
 
     session_id = None
-    with urllib.request.urlopen(init_req, timeout=30) as resp:
-        resp_headers = getattr(resp, 'headers', None)
-        if resp_headers:
-            session_id = resp_headers.get('mcp-session-id') or resp_headers.get('Mcp-Session-Id')
+    try:
+        with urllib.request.urlopen(init_req, timeout=30) as resp:
+            resp_headers = getattr(resp, 'headers', None)
+            if resp_headers:
+                session_id = (
+                    resp_headers.get('mcp-session-id')
+                    or resp_headers.get('Mcp-Session-Id')
+                    or (getattr(resp, 'getheader', lambda k: None)('mcp-session-id'))
+                    or (getattr(resp, 'getheader', lambda k: None)('Mcp-Session-Id'))
+                )
 
-        raw = resp.read().decode('utf-8')
-        if not session_id and raw:
-            try:
-                if 'data: ' in raw:
-                    for line in raw.splitlines():
-                        if line.startswith('data: '):
-                            parsed = json.loads(line[6:].strip())
+            raw = resp.read().decode('utf-8', errors='replace')
+            if raw:
+                try:
+                    if 'data: ' in raw:
+                        for line in raw.splitlines():
+                            if line.startswith('data: '):
+                                line_data = line[6:].strip()
+                                if not line_data:
+                                    continue
+                                parsed = json.loads(line_data)
+                                if 'error' in parsed:
+                                    err = parsed['error']
+                                    err_msg = err.get('message', str(err)) if isinstance(err, dict) else str(err)
+                                    raise RuntimeError(f'MCP initialize rejected: {err_msg}')
+                                if not session_id:
+                                    session_id = parsed.get('result', {}).get('sessionId')
+                                if session_id:
+                                    break
+                    else:
+                        parsed = json.loads(raw)
+                        if 'error' in parsed:
+                            err = parsed['error']
+                            err_msg = err.get('message', str(err)) if isinstance(err, dict) else str(err)
+                            raise RuntimeError(f'MCP initialize rejected: {err_msg}')
+                        if not session_id:
                             session_id = parsed.get('result', {}).get('sessionId')
-                            if session_id:
-                                break
-                else:
-                    parsed = json.loads(raw)
-                    session_id = parsed.get('result', {}).get('sessionId')
-            except Exception:
-                pass
+                except RuntimeError:
+                    raise
+                except Exception:
+                    pass
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            raise
+        err_body = ''
+        try:
+            err_body = exc.read().decode('utf-8', errors='replace').strip()
+        except Exception:
+            pass
+        logger.warning('MCP initialize handshake HTTP %d: %s', exc.code, err_body or exc.reason)
+        raise RuntimeError(f'MCP initialize handshake failed (HTTP {exc.code}): {err_body or exc.reason}') from exc
 
     session_id = (session_id or '').strip()
 
@@ -190,6 +231,7 @@ def _perform_handshake(url: str, token: Optional[str]) -> str:
     notify_headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json, text/event-stream',
+        'mcp-protocol-version': MCP_PROTOCOL_VERSION,
     }
     if session_id:
         notify_headers['mcp-session-id'] = session_id
@@ -282,6 +324,7 @@ def _call_browserclaw(tool_name: str, arguments: dict) -> str:
                 headers = {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json, text/event-stream',
+                    'mcp-protocol-version': MCP_PROTOCOL_VERSION,
                 }
                 if token:
                     headers['Authorization'] = f'Bearer {token}'
@@ -296,7 +339,7 @@ def _call_browserclaw(tool_name: str, arguments: dict) -> str:
                 )
 
                 with urllib.request.urlopen(req, timeout=45) as resp:
-                    raw = resp.read().decode('utf-8')
+                    raw = resp.read().decode('utf-8', errors='replace')
                     res_str = _extract_result_or_error(raw)
                     try:
                         res_obj = json.loads(res_str)
@@ -313,9 +356,22 @@ def _call_browserclaw(tool_name: str, arguments: dict) -> str:
                         pass
                     return res_str
 
+            except RuntimeError as e:
+                if attempt == 0:
+                    logger.info('BrowserClaw handshake error (%s). Retrying...', e)
+                    _reset_session()
+                    continue
+                return json.dumps({'error': str(e)}, ensure_ascii=False)
+
             except urllib.error.HTTPError as e:
                 if e.code == 401:
                     return json.dumps({'error': _AUTH_HELP})
+
+                err_body = ''
+                try:
+                    err_body = e.read().decode('utf-8', errors='replace').strip()
+                except Exception:
+                    pass
 
                 # Session expired or invalid session header (HTTP 400 or 404)
                 if e.code in (400, 404) and attempt == 0:
@@ -325,6 +381,19 @@ def _call_browserclaw(tool_name: str, arguments: dict) -> str:
                     )
                     _reset_session()
                     continue
+
+                if err_body:
+                    try:
+                        err_parsed = json.loads(err_body)
+                        if isinstance(err_parsed, dict):
+                            msg = err_parsed.get('error') or err_parsed.get('message')
+                            hint = err_parsed.get('hint')
+                            if hint and msg:
+                                return json.dumps({'error': f'{msg} ({hint})'}, ensure_ascii=False)
+                            return json.dumps(err_parsed, ensure_ascii=False)
+                    except Exception:
+                        pass
+                    return json.dumps({'error': f'BrowserClaw HTTP {e.code}: {err_body}'}, ensure_ascii=False)
 
                 last_error = f'HTTP {e.code}'
                 break

@@ -69,9 +69,9 @@ def test_browserclaw_env_beats_chrome_env(plugin, home, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def reset_plugin_session(plugin):
-    plugin._reset_session()
+    plugin._reset_session(clear_invalid=True)
     yield
-    plugin._reset_session()
+    plugin._reset_session(clear_invalid=True)
 
 
 class _FakeResponse:

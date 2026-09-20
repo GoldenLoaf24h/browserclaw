@@ -48,13 +48,13 @@ def plugin():
 
 @pytest.fixture(autouse=True)
 def clean_session_state(plugin, monkeypatch):
-    plugin._reset_session()
+    plugin._reset_session(clear_invalid=True)
     monkeypatch.delenv('BROWSERCLAW_MCP_TOKEN', raising=False)
     monkeypatch.delenv('CHROME_MCP_TOKEN', raising=False)
     monkeypatch.delenv('BROWSERCLAW_MCP_SESSION_ID', raising=False)
     monkeypatch.delenv('CHROME_MCP_SESSION_ID', raising=False)
     yield
-    plugin._reset_session()
+    plugin._reset_session(clear_invalid=True)
 
 
 def test_handshake_sends_initialize_with_spec_version_and_client_info(plugin):
@@ -112,12 +112,14 @@ def test_handshake_sends_initialize_with_spec_version_and_client_info(plugin):
     assert notify_body['method'] == 'notifications/initialized'
     assert 'id' not in notify_body  # notifications must not have an id
     assert captured_requests[1].get_header('Mcp-session-id') == 'sess-uuid-1001'
+    assert captured_requests[1].get_header('Mcp-protocol-version') == '2024-11-05'
 
     # Request 2: tools/call
     call_body = json.loads(captured_requests[2].data.decode('utf-8'))
     assert call_body['method'] == 'tools/call'
     assert call_body['params']['name'] == 'get_windows_and_tabs'
     assert captured_requests[2].get_header('Mcp-session-id') == 'sess-uuid-1001'
+    assert captured_requests[2].get_header('Mcp-protocol-version') == '2024-11-05'
 
     # Check that session id is actively stored
     assert plugin._get_active_session_id() == 'sess-uuid-1001'
@@ -357,3 +359,98 @@ def test_auth_401_on_initialize_returns_actionable_error_immediately(plugin):
     parsed = json.loads(res)
     assert '401' in parsed['error']
     assert 'bridge token missing or invalid' in parsed['error']
+
+
+def test_server_http_error_body_and_hint_returned_accurately(plugin):
+    """Verify that HTTP error body and diagnostic hint from Native Server are returned to caller."""
+    def mock_urlopen(req, timeout=None):
+        body = json.loads(req.data.decode('utf-8'))
+        method = body.get('method')
+        if method == 'initialize':
+            return MockHTTPResponse({}, headers={'mcp-session-id': 'sess-err-hint'})
+        elif method == 'notifications/initialized':
+            return MockHTTPResponse({})
+        elif method == 'tools/call':
+            # Server returns 400 Bad Request with actionable hint on tools/call
+            raise urllib.error.HTTPError(
+                req.full_url,
+                400,
+                'Bad Request',
+                None,
+                io.BytesIO(b'{"error": "Invalid tabId", "hint": "Provide a valid numeric tab ID."}'),
+            )
+        raise ValueError(f'Unexpected method: {method}')
+
+    with mock.patch.object(urllib.request, 'urlopen', mock_urlopen):
+        res = plugin._call_browserclaw('browserclaw_switch_tab', {'tabId': -999})
+
+    parsed = json.loads(res)
+    assert 'error' in parsed
+    # Must contain both the error message and the hint, NOT "server not reachable"
+    assert 'Invalid tabId' in parsed['error']
+    assert 'Provide a valid numeric tab ID' in parsed['error']
+    assert 'not reachable' not in parsed['error']
+
+
+def test_handshake_jsonrpc_error_surfaces_informative_error(plugin):
+    """Verify that when initialize returns a JSON-RPC error payload, it is surfaced cleanly."""
+    def mock_urlopen(req, timeout=None):
+        body = json.loads(req.data.decode('utf-8'))
+        method = body.get('method')
+        if method == 'initialize':
+            return MockHTTPResponse({
+                'jsonrpc': '2.0',
+                'id': body['id'],
+                'error': {'code': -32600, 'message': 'Unsupported protocol version: 2024-11-05'},
+            })
+        raise ValueError(f'Unexpected method: {method}')
+
+    with mock.patch.object(urllib.request, 'urlopen', mock_urlopen):
+        res = plugin._call_browserclaw('browserclaw_get_windows_and_tabs', {})
+
+    parsed = json.loads(res)
+    assert 'error' in parsed
+    assert 'MCP initialize rejected' in parsed['error']
+    assert 'Unsupported protocol version' in parsed['error']
+
+
+def test_stale_configured_session_marked_invalid_and_recovered(plugin, monkeypatch):
+    """Verify that a stale pre-configured session env var is invalidated and recovered transparently."""
+    monkeypatch.setenv('BROWSERCLAW_MCP_SESSION_ID', 'bad-configured-session')
+    call_log = []
+
+    def mock_urlopen(req, timeout=None):
+        body = json.loads(req.data.decode('utf-8'))
+        method = body.get('method')
+        session_header = req.get_header('Mcp-session-id')
+        call_log.append((method, session_header))
+
+        if method == 'tools/call' and session_header == 'bad-configured-session':
+            raise urllib.error.HTTPError(
+                req.full_url,
+                400,
+                'Bad Request',
+                None,
+                io.BytesIO(b'{"error": "Invalid MCP request or session"}'),
+            )
+        elif method == 'initialize':
+            return MockHTTPResponse({}, headers={'mcp-session-id': 'new-recovered-session'})
+        elif method == 'notifications/initialized':
+            return MockHTTPResponse({})
+        elif method == 'tools/call' and session_header == 'new-recovered-session':
+            return MockHTTPResponse({'result': {'recovered': True}})
+        raise ValueError(f'Unexpected request: {method} with {session_header}')
+
+    with mock.patch.object(urllib.request, 'urlopen', mock_urlopen):
+        # First call: encounters bad-configured-session, invalidates it, handshakes, and succeeds
+        res1 = plugin._call_browserclaw('browserclaw_get_windows_and_tabs', {})
+        assert json.loads(res1).get('recovered') is True
+
+        # Second call: must NOT use bad-configured-session again! Must use new-recovered-session
+        call_log.clear()
+        res2 = plugin._call_browserclaw('browserclaw_read_dom', {})
+        assert json.loads(res2).get('recovered') is True
+
+    # Call 2 should only make 1 request using new-recovered-session
+    assert len(call_log) == 1
+    assert call_log[0] == ('tools/call', 'new-recovered-session')
