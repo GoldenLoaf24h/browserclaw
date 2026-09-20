@@ -43,7 +43,7 @@ import {
   isPrivateOrBlockedIp,
   safeLookup,
   MAX_DOWNLOAD_SIZE,
-} from '../app/native-server/src/file-handler.ts';
+} from '../app/native-server/dist/file-handler.js';
 import { screenshotContextManager, scaleCoordinates } from '../app/chrome-extension/utils/screenshot-context.ts';
 import { overlayCoordinateGrid } from '../app/chrome-extension/utils/image-utils.ts';
 import { safePostMessage, MAX_NATIVE_MESSAGE_BYTES } from '../app/chrome-extension/utils/safe-post-message.ts';
@@ -2438,4 +2438,3 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
 after(() => {
   setTimeout(() => process.exit(0), 100);
 });
-

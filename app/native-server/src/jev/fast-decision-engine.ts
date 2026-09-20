@@ -200,7 +200,9 @@ export class FastDecisionEngine {
 
       // In Heuristic mode, check goal_done approximation before action (§4.3)
       if (engine === 'heuristic' && step > 1) {
-        if (this.heuristicEngine.isGoalDone(params.goal, currentElements)) {
+        const lastOutcome = history.length > 0 ? history[history.length - 1].outcome : '';
+        const urlChangedInLastStep = /urlChanged:true/i.test(lastOutcome);
+        if (this.heuristicEngine.isGoalDone(params.goal, currentElements, urlChangedInLastStep)) {
           return this.formatResult(
             'done',
             engine,
@@ -511,7 +513,12 @@ export class FastDecisionEngine {
 
       // If engine is heuristic (either by default or downgraded)
       if (engine === 'heuristic') {
-        const decision = this.heuristicEngine.evaluate(params.goal, currentElements, history);
+        const decision = this.heuristicEngine.evaluate(
+          params.goal,
+          currentElements,
+          history,
+          Math.min(confidenceThreshold, 0.9),
+        );
         actionToTake = decision.action;
         targetIndex = decision.targetIndex;
         targetLine = decision.targetLine || (targetIndex ? `[${targetIndex}]` : '');
@@ -566,45 +573,12 @@ export class FastDecisionEngine {
             engine,
             engineSwitched,
             fallbackReason,
-            decision.reason || 'Heuristic confidence < 0.30 or target ambiguous',
+            decision.reason || `Heuristic confidence < threshold or target ambiguous`,
             steps,
             finalPage,
             currentElements,
             jevCalls,
             inputTokens,
-          );
-        }
-      }
-
-      // Safety Breakpoint Guard (§Issue 2): pauseBeforeKeywords
-      if (
-        params.pauseBeforeKeywords &&
-        Array.isArray(params.pauseBeforeKeywords) &&
-        params.pauseBeforeKeywords.length > 0
-      ) {
-        const checkTarget = targetLine
-          ? `${targetLine}${actionToTake === 'submit' ? ' submit' : ''}`
-          : targetIndex !== undefined
-            ? `[${targetIndex}]`
-            : actionToTake;
-        const matchedKw = findMatchingPauseKeyword(checkTarget, params.pauseBeforeKeywords);
-        if (matchedKw) {
-          return this.formatResult(
-            'paused',
-            engine,
-            engineSwitched,
-            fallbackReason,
-            `Action execution suspended before committing "${actionToTake}" on target "${targetLine || 'element'}" matching pause keyword "${matchedKw}"`,
-            steps,
-            finalPage,
-            currentElements,
-            jevCalls,
-            inputTokens,
-            {
-              action: actionToTake,
-              target: targetLine || (targetIndex !== undefined ? `[${targetIndex}]` : undefined),
-              matchedKeyword: matchedKw,
-            },
           );
         }
       }

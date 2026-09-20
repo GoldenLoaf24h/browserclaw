@@ -17,8 +17,6 @@ import { PerformanceInsightFormatter } from 'chrome-devtools-frontend/front_end/
 // @ts-ignore
 import { AgentFocus } from 'chrome-devtools-frontend/front_end/models/ai_assistance/performance/AIContext.js';
 
-const engine = TraceEngine.TraceModel.Model.createWithAllHandlers();
-
 function readJsonFile(path: string): any {
   const text = fs.readFileSync(path, 'utf-8');
   return JSON.parse(text);
@@ -28,6 +26,9 @@ export async function parseTrace(json: any): Promise<{
   parsedTrace: any;
   insights: any | null;
 }> {
+  // Per-request engine instance: the module-level singleton raced concurrent
+  // analyses (a second parse reset the first one's processor state).
+  const engine = TraceEngine.TraceModel.Model.createWithAllHandlers();
   engine.resetProcessor();
   const events = Array.isArray(json) ? json : json.traceEvents;
   if (!events || !Array.isArray(events)) {

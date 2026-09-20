@@ -5677,16 +5677,18 @@ export function inPageFindSmartScrollTarget(options?: {
         const widthPenalty = rect.width < 220 ? 0.1 : rect.width < 320 ? 0.3 : 1.0;
 
         // Semantic analysis: negative weighting for navigation/sidebars
+        const getAttr = (k: string) =>
+          typeof el.getAttribute === 'function' ? el.getAttribute(k) || '' : '';
         const tag = el.tagName.toLowerCase();
-        const role = (el.getAttribute('role') || '').toLowerCase();
+        const role = getAttr('role').toLowerCase();
         const idClass = (
           (el.id || '') +
           ' ' +
           (typeof el.className === 'string' ? el.className : '') +
           ' ' +
-          (el.getAttribute('data-testid') || '') +
+          getAttr('data-testid') +
           ' ' +
-          (el.getAttribute('aria-label') || '')
+          getAttr('aria-label')
         ).toLowerCase();
 
         const isNavOrSidebar =
@@ -5750,11 +5752,12 @@ export function inPageFindSmartScrollTarget(options?: {
 
       // Default to window if viewport center has no scroll container and window can scroll,
       // or if best candidate is a penalized sidebar
+      const bestIsPenalizedSidebar = bestEl ? /sidebar|side-nav|sidenav|navigation|navbar|rail|drawer|menu-list|toc/i.test(bestEl.id + ' ' + (typeof bestEl.className === 'string' ? bestEl.className : '')) : false;
       const shouldPreferWindow =
         windowCanScrollInDir &&
         (!bestEl ||
-          (!centerScrollParent && bestScore < winW * winH * 0.35) ||
-          bestScore < winW * winH * 0.15);
+          (bestIsPenalizedSidebar && bestScore < winW * winH * 0.35) ||
+          bestScore < winW * winH * 0.02);
 
       if (!shouldPreferWindow && bestEl) {
         targetEl = bestEl;

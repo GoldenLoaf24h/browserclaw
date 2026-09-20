@@ -50,12 +50,14 @@ export function resetInvalidKeyLatch(): void {
  */
 export function isSensitiveElement(line: string): boolean {
   const lower = line.toLowerCase();
+  // Only mask actual credential/file INPUT controls; plain links or hints that
+  // merely mention "password" (e.g. "Forgot password?") must stay visible.
   return (
-    lower.includes('password') ||
     lower.includes('type="password"') ||
     lower.includes('type="file"') ||
     lower.includes('role="file"') ||
-    /^\[\d+\]\s*(password|file)\b/.test(lower)
+    /^\[\d+\]\s*(password|file)\b/.test(lower) ||
+    (lower.includes('password') && /\b(textbox|searchbox|input|combobox)\b/.test(lower))
   );
 }
 
@@ -80,7 +82,7 @@ export function buildState(
     cleanLines.push(trimmed.slice(0, 120));
   }
 
-  const state: JevState = {
+  let state: JevState = {
     task: goal,
     page: {
       url: (tabUrl || '').slice(0, 200),
@@ -229,8 +231,11 @@ export function extractTextPayload(goal: string, textHint?: string): string | nu
     return textHint.trim();
   }
 
-  // 3. Trailing phrase after keyword
-  const trailingMatch = goal.match(/(?:输入|搜索|type|enter|for)\s*[:：]?\s*([^\s,，。;；\n]+)/i);
+  // 3. Trailing phrase after keyword; stop at common terminators/prepositions
+  // instead of the first space so multi-word payloads survive.
+  const trailingMatch = goal.match(
+    /(?:输入|搜索|键入|填写|填入|type|enter|search for)\s*[:：]?\s*([^,，。;；\n]+?)(?=\s+(?:into|in|on|to)\b|\s*(?:到|进|入|至|并|后|里|中|框|栏)|["“'「‘]|$)/i,
+  );
   if (trailingMatch && trailingMatch[1].trim()) {
     return trailingMatch[1].trim();
   }

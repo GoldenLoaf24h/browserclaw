@@ -68,8 +68,10 @@ if (command === 'nav' || command === 'navigate' || command === 'goto') {
   } catch {
     toolArgs = {};
     for (let i = 0; i < rest.length; i++) {
-      const [k, v] = rest[i].split('=');
-      if (k && v !== undefined) {
+      const eqIdx = rest[i].indexOf('=');
+      if (eqIdx > 0) {
+        const k = rest[i].slice(0, eqIdx);
+        const v = rest[i].slice(eqIdx + 1);
         toolArgs[k] = v;
       }
     }
@@ -164,10 +166,12 @@ const postData = (payload, sessId) => {
         try {
           const parsed = JSON.parse(line.slice(6));
           if (parsed.result?.content) {
+            if (parsed.result.isError) process.exitCode = 1;
             for (const item of parsed.result.content) {
               if (item.type === 'text') outputText += item.text + '\n';
             }
           } else if (parsed.error) {
+            process.exitCode = 1;
             outputText = `Error: ${parsed.error.message}`;
           }
         } catch {}
@@ -178,10 +182,12 @@ const postData = (payload, sessId) => {
       try {
         const parsed = JSON.parse(callRes.body);
         if (parsed.result?.content) {
+          if (parsed.result.isError) process.exitCode = 1;
           for (const item of parsed.result.content) {
             if (item.type === 'text') outputText += item.text + '\n';
           }
         } else if (parsed.error) {
+          process.exitCode = 1;
           outputText = `Error: ${parsed.error.message}`;
         }
       } catch {}

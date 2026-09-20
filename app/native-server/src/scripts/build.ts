@@ -96,6 +96,15 @@ try {
   } else {
     console.error(`错误: Windows 包装脚本源文件未找到: ${windowsWrapperSourcePath}`);
   }
+
+  // Copy postinstall-guard.js so published npm package has it in dist/scripts
+  const guardSrc = path.join(scriptsSourceDir, 'postinstall-guard.js');
+  const guardDest = path.join(distDir, 'scripts', 'postinstall-guard.js');
+  if (fs.existsSync(guardSrc)) {
+    fs.mkdirSync(path.dirname(guardDest), { recursive: true });
+    fs.copyFileSync(guardSrc, guardDest);
+    console.log(`已将 ${guardSrc} 复制到 ${guardDest}`);
+  }
 } catch (error) {
   console.error('复制包装脚本时出错:', error);
 }

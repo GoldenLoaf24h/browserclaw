@@ -96,7 +96,7 @@ Copy and paste this message directly to your AI assistant (Claude Code, Cursor, 
 
 > _"Set up BrowserClaw for me: https://github.com/GoldenLoaf24h/browserclaw. Read `INSTALL.md` and follow the steps."_
 
-Your agent will configure the backend automatically. Afterwards, download the latest **`browserclaw-extension-v*.zip`** asset from **[Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** (e.g. `browserclaw-extension-v2.8.0.zip`), unzip it to a persistent local folder, open `chrome://extensions` (with Developer mode enabled), and drag that folder in.
+Your agent will configure the backend automatically. Afterwards, download the latest **`browserclaw-extension-v*.zip`** asset from **[Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** (e.g. `browserclaw-extension-v2.9.3.zip`), unzip it to a persistent local folder, open `chrome://extensions` (with Developer mode enabled), and drag that folder in.
 
 ### Option 2: Add via ChatGPT / Codex Plugin Marketplace
 

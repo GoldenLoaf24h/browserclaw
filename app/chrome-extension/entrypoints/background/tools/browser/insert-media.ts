@@ -87,7 +87,17 @@ export class InsertMediaTool extends BaseBrowserToolExecutor {
           }
           if (nativeRes.mediaUrl) {
             try {
-              const resp = await fetch(nativeRes.mediaUrl);
+              // The media-asset endpoint sits behind the global bridge-token
+              // preHandler; without the token every streamed fetch gets 401.
+              const mediaUrl = new URL(nativeRes.mediaUrl);
+              const stored = await chrome.storage.local
+                .get(['serverStatus'])
+                .catch(() => ({} as any));
+              const bridgeToken = (stored as any)?.serverStatus?.token;
+              if (bridgeToken) {
+                mediaUrl.searchParams.set('token', bridgeToken);
+              }
+              const resp = await fetch(mediaUrl.toString());
               if (!resp.ok) {
                 return createErrorResponse(
                   `Failed to stream media asset from server (${resp.status}): ${nativeRes.mediaUrl}`,

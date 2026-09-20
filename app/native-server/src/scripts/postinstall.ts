@@ -272,7 +272,7 @@ function printManualInstructions(): void {
 /**
  * 主函数
  */
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   console.log(colorText(`Installing ${COMMAND_NAME}...`, 'green'));
 
   // Debug information

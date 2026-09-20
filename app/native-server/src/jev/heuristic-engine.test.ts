@@ -113,12 +113,14 @@ describe('Heuristic Decision Engine Tests (§4.3)', () => {
   });
 
   describe('3. Goal done approximation', () => {
-    test('returns true when goal keyword coverage >= 80%', () => {
+    test('requires a navigation/mutation signal plus keyword coverage', () => {
       const elements = [
         '[1] text "欢迎使用 BrowserClaw 自动化系统"',
         '[2] text "操作成功，已保存数据"',
       ];
-      expect(engine.isGoalDone('操作成功', elements)).toBe(true);
+      // Static keyword coverage alone must NOT declare success (false positive).
+      expect(engine.isGoalDone('操作成功', elements)).toBe(false);
+      expect(engine.isGoalDone('操作成功', elements, true)).toBe(true);
       expect(engine.isGoalDone('完全不相关的目标未达成', elements)).toBe(false);
     });
   });

@@ -261,4 +261,4 @@ if [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
     echo "ANTHROPIC_AUTH_TOKEN is set (value hidden)" >> "${WRAPPER_LOG}"
 fi
 
-exec "${NODE_EXEC}" "${NODE_SCRIPT}" 2>> "${STDERR_LOG}"
+exec "${NODE_EXEC}" "${NODE_SCRIPT}" "$@" 2>> "${STDERR_LOG}"

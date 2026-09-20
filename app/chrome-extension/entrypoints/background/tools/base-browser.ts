@@ -194,9 +194,11 @@ export abstract class BaseBrowserToolExecutor implements ToolExecutor {
    */
   protected async sendMessageToTab(tabId: number, message: any, frameId?: number): Promise<any> {
     try {
+      // ponytail: never await before the race — a dead/crashed frame would
+      // otherwise suspend here forever and the 5s guard below never fires.
       const send =
         typeof frameId === 'number'
-          ? await chrome.tabs.sendMessage(tabId, message, { frameId })
+          ? chrome.tabs.sendMessage(tabId, message, { frameId })
           : chrome.tabs.sendMessage(tabId, message);
       const response = await Promise.race([
         Promise.resolve(send),

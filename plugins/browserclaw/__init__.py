@@ -32,7 +32,7 @@ SESSION_ID_ENV_VARS = ('BROWSERCLAW_MCP_SESSION_ID', 'CHROME_MCP_SESSION_ID')
 MCP_PROTOCOL_VERSION = '2024-11-05'
 CLIENT_INFO = {
     'name': 'browserclaw-python-plugin',
-    'version': '2.9.2',
+    'version': '2.9.3',
 }
 
 _AUTH_HELP = (

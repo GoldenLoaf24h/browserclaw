@@ -1,12 +1,13 @@
-export enum NATIVE_MESSAGE_TYPE {
-  START = 'start',
-  STARTED = 'started',
-  STOP = 'stop',
-  STOPPED = 'stopped',
-  PING = 'ping',
-  PONG = 'pong',
-  ERROR = 'error',
-}
+export const NATIVE_MESSAGE_TYPE = {
+  START: 'start',
+  STARTED: 'started',
+  STOP: 'stop',
+  STOPPED: 'stopped',
+  PING: 'ping',
+  PONG: 'pong',
+  ERROR: 'error',
+} as const;
+export type NATIVE_MESSAGE_TYPE = (typeof NATIVE_MESSAGE_TYPE)[keyof typeof NATIVE_MESSAGE_TYPE];
 
 export const NATIVE_SERVER_PORT = 12306;
 

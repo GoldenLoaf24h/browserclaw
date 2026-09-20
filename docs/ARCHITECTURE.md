@@ -1,6 +1,6 @@
 # BrowserClaw (mcp-chrome) Architecture & System Design 🏗️
 
-> **Version**: 2.0.0 (Boost Hardened Release)  
+> **Version**: 2.9.3 (Hardened Release)  
 > **Target Runtime**: Chrome Extension Manifest V3, Chrome DevTools Protocol (CDP 1.3), Model Context Protocol (MCP 2024-11-05), Fastify HTTP/SSE, Chrome Native Messaging.
 
 ---

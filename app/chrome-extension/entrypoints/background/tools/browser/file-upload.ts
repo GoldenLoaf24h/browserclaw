@@ -484,7 +484,12 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
 
       if (!ok) {
         clearTimeout(timeout);
-        resolve({ error: 'Failed to communicate with native host: Native host not connected' });
+        // safePostMessage returns false when the 1MB Native Messaging ceiling
+        // rejects the payload; report the real cause instead of a dead-host error.
+        resolve({
+          error:
+            'Native message rejected: payload exceeded the 1MB Native Messaging ceiling. Upload smaller files or pass a file path / server media URL instead of base64Data.',
+        });
       }
     });
   }

@@ -1,6 +1,6 @@
 {
   "name": "mcp-chrome-bridge",
-  "version": "2.9.2",
+  "version": "2.9.3",
   "description": "Chrome Native-Messaging host (Node)",
   "main": "dist/index.js",
   "bin": {
@@ -15,11 +15,11 @@
     "build": "ts-node src/scripts/build.ts",
     "test": "jest",
     "test:watch": "jest --watch",
-    "lint": "eslint 'src/**/*.{js,ts}'",
-    "lint:fix": "eslint 'src/**/*.{js,ts}' --fix",
+    "lint": "eslint "src/**/*.{js,ts}"",
+    "lint:fix": "eslint "src/**/*.{js,ts}" --fix",
     "format": "prettier --write 'src/**/*.{js,ts,json}'",
     "register:dev": "node dist/scripts/register-dev.js",
-    "postinstall": "node src/scripts/postinstall-guard.js"
+    "postinstall": "node dist/scripts/postinstall-guard.js || node src/scripts/postinstall-guard.js"
   },
   "files": [
     "dist",

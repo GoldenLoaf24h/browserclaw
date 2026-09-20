@@ -30,7 +30,8 @@ describe('Jev Client & Helper Unit Tests', () => {
 
       expect(isSensitiveElement('[6] button "Sign in"')).toBe(false);
       expect(isSensitiveElement('[7] textbox "Username"')).toBe(false);
-      expect(isSensitiveElement('[8] link "Forgot password?"')).toBe(true); // contains password keyword
+      expect(isSensitiveElement('[8] link "Forgot password?"')).toBe(false); // plain link, not an input
+      expect(isSensitiveElement('[9] textbox "Password" type="password"')).toBe(true);
     });
   });
 
@@ -223,9 +224,13 @@ describe('Jev Client & Helper Unit Tests', () => {
     });
 
     test('extracts trailing phrase after keywords', () => {
-      expect(extractTextPayload('搜索 BrowserClaw 插件')).toBe('BrowserClaw');
+      expect(extractTextPayload('搜索 BrowserClaw 插件')).toBe('BrowserClaw 插件');
       expect(extractTextPayload('type: hello_world into field')).toBe('hello_world');
       expect(extractTextPayload('输入 user@test.com 到邮箱')).toBe('user@test.com');
+      expect(extractTextPayload('type mechanical keyboard into searchbox')).toBe(
+        'mechanical keyboard',
+      );
+      expect(extractTextPayload('Click button for next page')).toBeNull();
     });
 
     test('returns null when text is unclear', () => {

@@ -74,18 +74,26 @@ export function tokenizeGoal(text: string): string[] {
   const rawWords = normalized.split(/\s+/).filter(Boolean);
   const tokens: string[] = [];
 
-  for (const word of rawWords) {
-    if (STOPWORDS.has(word)) continue;
-    // Check if word has CJK characters
-    const cjkChars = word.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu);
-    if (cjkChars && cjkChars.length >= 2) {
-      for (let i = 0; i < cjkChars.length - 1; i++) {
-        tokens.push(cjkChars[i] + cjkChars[i + 1]);
+    for (const word of rawWords) {
+      if (STOPWORDS.has(word)) continue;
+      // Split mixed scripts BEFORE bigramming: the old code dropped embedded
+      // Latin/digit runs ("搜索iPhone15购买" lost "iphone15") and forged
+      // cross-word bigrams ("索购").
+      const segments = word.match(
+        /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+|[\p{L}\p{N}_-]+/gu,
+      );
+      if (!segments) continue;
+      for (const seg of segments) {
+        const cjkChars = seg.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu);
+        if (cjkChars && cjkChars.length >= 2 && cjkChars.length === seg.length) {
+          for (let i = 0; i < cjkChars.length - 1; i++) {
+            tokens.push(cjkChars[i] + cjkChars[i + 1]);
+          }
+        } else {
+          tokens.push(seg.toLowerCase());
+        }
       }
-    } else {
-      tokens.push(word);
     }
-  }
 
   return tokens.length > 0 ? tokens : rawWords;
 }
@@ -111,9 +119,16 @@ export class HeuristicEngine {
   /**
    * Score elements and make a decision conforming to §4.3
    */
-  public evaluate(goal: string, elements: string[], history: JevHistoryItem[]): HeuristicDecision {
+  public evaluate(
+    goal: string,
+    elements: string[],
+    history: JevHistoryItem[],
+    confidenceThreshold = 0.3,
+  ): HeuristicDecision {
     const goalTokens = tokenizeGoal(goal);
     const goalLower = goal.toLowerCase();
+    // Hoist per-goal preprocessing out of the per-element loop.
+    const cleanGoal = goalLower.replace(/[^\p{L}\p{N}]/gu, '');
 
     // Determine intent hints
     const wantsType = /(?:输入|填|type|input|search|搜索|write)/i.test(goalLower);
@@ -135,8 +150,7 @@ export class HeuristicEngine {
 
       let score = 0;
 
-      // 1. Substring match bonus: +2.0
-      const cleanGoal = goalLower.replace(/[^\p{L}\p{N}]/gu, '');
+      // 1. Substring match bonus: +2.0 (cleanGoal hoisted above the loop)
       const cleanLine = lineLower.replace(/[^\p{L}\p{N}]/gu, '');
       const quotedStrings = Array.from(line.matchAll(/"([^"]+)"/g)).map((m) =>
         m[1].toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''),
@@ -226,8 +240,9 @@ export class HeuristicEngine {
       };
     }
 
-    // Confidence threshold < 0.3 -> escalate (§4.3)
-    if (confidence < 0.3) {
+    // Confidence threshold -> escalate (§4.3); threshold comes from the caller
+    // so the external confidenceThreshold parameter is honored on this path too.
+    if (confidence < confidenceThreshold) {
       const candidateSummary = topCandidates.map((c) => `[${c.index}] ${c.line}`).join(' vs ');
       return {
         action: 'escalate',
@@ -236,7 +251,7 @@ export class HeuristicEngine {
         confidence,
         topCandidates,
         shouldEscalate: true,
-        reason: `Ambiguous target match (confidence ${confidence.toFixed(2)} < 0.30): ${candidateSummary}`,
+        reason: `Ambiguous target match (confidence ${confidence.toFixed(2)} < ${confidenceThreshold.toFixed(2)}): ${candidateSummary}`,
       };
     }
 
@@ -248,7 +263,11 @@ export class HeuristicEngine {
       (wantsSelect && !wantsType && !wantsClick)
     ) {
       action = 'select';
-    } else if (top1.role === 'textbox' || top1.role === 'searchbox' || wantsType) {
+    } else if (
+      top1.role === 'textbox' ||
+      top1.role === 'searchbox' ||
+      (wantsType && /(?:textbox|searchbox|input|textarea)/i.test(top1.line))
+    ) {
       action = 'type';
     } else if (wantsScroll) {
       action = 'scroll_down';
@@ -267,9 +286,17 @@ export class HeuristicEngine {
   /**
    * Approximate goal completion by measuring keyword coverage across page text (>= 0.8)
    */
-  public isGoalDone(goal: string, elements: string[]): boolean {
+  public isGoalDone(
+    goal: string,
+    elements: string[],
+    urlChangedInLastStep = false,
+  ): boolean {
     const goalTokens = tokenizeGoal(goal);
     if (goalTokens.length === 0) return false;
+    // Static keyword coverage alone false-positives on pages that already
+    // contain the goal words ("点击用户登录" on a login page). Require at
+    // least one navigation/mutation signal before declaring victory.
+    if (!urlChangedInLastStep) return false;
 
     const allPageText = elements.join(' ').toLowerCase();
     let hitCount = 0;

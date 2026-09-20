@@ -638,6 +638,10 @@ export class FileHandler {
   async readMediaFile(filePath: string): Promise<any> {
     try {
       const resolvedPath = path.resolve(filePath);
+      // Reject traversal into sensitive user configuration or key stores
+      if (/([/\\])(\.ssh|\.aws|\.gnupg|\.config|\.chrome-mcp|\.env)([/\\]|$)/i.test(resolvedPath)) {
+        throw new Error('Access to sensitive directories is prohibited');
+      }
       if (!fs.existsSync(resolvedPath)) {
         throw new Error(`Media file does not exist: ${filePath}`);
       }
@@ -649,15 +653,21 @@ export class FileHandler {
         throw new Error(`File size (${stats.size} bytes) exceeds limit of 50MB`);
       }
       const ext = path.extname(resolvedPath).toLowerCase();
-      let mimeType = 'application/octet-stream';
-      if (ext === '.png') mimeType = 'image/png';
-      else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
-      else if (ext === '.gif') mimeType = 'image/gif';
-      else if (ext === '.webp') mimeType = 'image/webp';
-      else if (ext === '.svg') mimeType = 'image/svg+xml';
-      else if (ext === '.mp4') mimeType = 'video/mp4';
-      else if (ext === '.webm') mimeType = 'video/webm';
-      else if (ext === '.pdf') mimeType = 'application/pdf';
+      const MEDIA_MIMES: Record<string, string> = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
+        '.mp4': 'video/mp4',
+        '.webm': 'video/webm',
+        '.pdf': 'application/pdf',
+      };
+      const mimeType = MEDIA_MIMES[ext];
+      if (!mimeType) {
+        throw new Error(`Unsupported media file extension: ${ext}. Only image, video, and PDF files are allowed.`);
+      }
 
       if (stats.size > 650 * 1024) {
         const assetId = crypto.randomUUID();

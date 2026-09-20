@@ -6,6 +6,7 @@ const rootSkill = path.resolve('skill');
 const canonicalSkillMd = fs.readFileSync(path.join(rootSkill, 'SKILL.md'), 'utf-8');
 
 const targets = [
+  { dir: path.resolve('skills/browserclaw'), name: 'browserclaw' },
   { dir: 'D:/workspace/browserclaw/skill', name: 'browserclaw' },
   { dir: path.resolve('plugins/browserclaw/skills/browserclaw'), name: 'browserclaw' },
   { dir: 'D:/workspace/browserclaw/plugins/browserclaw/skills/browserclaw', name: 'browserclaw' },
@@ -30,23 +31,34 @@ function copyDir(src, dest) {
 }
 
 for (const target of targets) {
-  copyDir(rootSkill, target.dir);
-  let content = canonicalSkillMd;
-  if (target.name === 'mcp-chrome') {
-    content = content.replace(/^name:\s*browserclaw/m, 'name: mcp-chrome');
-  }
-  const destSkillMd = path.join(target.dir, 'SKILL.md');
-  fs.writeFileSync(destSkillMd, content, 'utf-8');
+  try {
+    // Skip remote/external targets if parent directory doesn't exist
+    if (path.isAbsolute(target.dir) && !target.dir.startsWith(path.resolve('.'))) {
+      const parentDir = path.dirname(target.dir);
+      if (!fs.existsSync(parentDir)) {
+        continue;
+      }
+    }
+    copyDir(rootSkill, target.dir);
+    let content = canonicalSkillMd;
+    if (target.name === 'mcp-chrome') {
+      content = content.replace(/^name:\s*browserclaw/m, 'name: mcp-chrome');
+    }
+    const destSkillMd = path.join(target.dir, 'SKILL.md');
+    fs.writeFileSync(destSkillMd, content, 'utf-8');
 
-  if (target.managed) {
-    const hash = crypto.createHash('sha256').update(content).digest('hex');
-    const managedFile = path.join(target.dir, '.browserclaw-managed.json');
-    const managedData = {
-      contentHash: hash,
-      updatedAt: new Date().toISOString(),
-      lastSync: new Date().toISOString(),
-    };
-    fs.writeFileSync(managedFile, JSON.stringify(managedData, null, 2) + '\n', 'utf-8');
+    if (target.managed) {
+      const hash = crypto.createHash('sha256').update(content).digest('hex');
+      const managedFile = path.join(target.dir, '.browserclaw-managed.json');
+      const managedData = {
+        contentHash: hash,
+        updatedAt: new Date().toISOString(),
+        lastSync: new Date().toISOString(),
+      };
+      fs.writeFileSync(managedFile, JSON.stringify(managedData, null, 2) + '\n', 'utf-8');
+    }
+  } catch (err) {
+    console.warn(`Skipped sync to ${target.dir}: ${err.message}`);
   }
 }
 console.log('Skill synchronization completed successfully across all targets.');

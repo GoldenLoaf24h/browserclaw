@@ -155,13 +155,15 @@ describe('Fast Decision Engine Integration Tests (§4, §5, §6)', () => {
     const changingCaller = async (toolName: string, args: any) => {
       if (toolName === 'chrome_read_dom') {
         stepCount++;
+        // Include a URL change so the goal-done heuristic has a real
+        // navigation/mutation signal instead of static-text false positives.
         const text = stepCount > 1 ? '[1] text "已完成任务，保存成功"' : '[1] button "完成任务"';
         return {
           content: [
             {
               type: 'text',
               text: JSON.stringify({
-                tabUrl: 'https://example.com',
+                tabUrl: stepCount > 1 ? 'https://example.com/done' : 'https://example.com',
                 tabTitle: 'Task Flow',
                 treeString: text,
               }),
@@ -173,7 +175,7 @@ describe('Fast Decision Engine Integration Tests (§4, §5, §6)', () => {
         content: [
           {
             type: 'text',
-            text: JSON.stringify({ urlChanged: false, mutated: true }),
+            text: JSON.stringify({ urlChanged: true, mutated: true }),
           },
         ],
       };
