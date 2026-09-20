@@ -82,7 +82,7 @@ export function buildState(
     cleanLines.push(trimmed.slice(0, 120));
   }
 
-  let state: JevState = {
+  const state: JevState = {
     task: goal,
     page: {
       url: (tabUrl || '').slice(0, 200),
