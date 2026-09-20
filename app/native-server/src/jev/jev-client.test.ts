@@ -248,6 +248,19 @@ describe('Jev Client & Helper Unit Tests', () => {
       }
       expect(isDestructiveTarget('[2] button "Next Step"')).toBe(false);
       expect(isDestructiveTarget('[3] link "Learn More"')).toBe(false);
+      expect(isDestructiveTarget('[4] textbox "Postal Code"')).toBe(false);
+      expect(isDestructiveTarget('[5] textbox "Company Poster"')).toBe(false);
+      expect(isDestructiveTarget('[6] button "Deposit Funds"')).toBe(false);
+      expect(isDestructiveTarget('[7] textbox "Confirmation Number"')).toBe(false);
+      expect(isDestructiveTarget('[8] button "Prepaid Card"')).toBe(false);
+      expect(isDestructiveTarget('[9] button "pay_now"')).toBe(true);
+      expect(isDestructiveTarget('[10] button "btn_pay_now"')).toBe(true);
+      expect(isDestructiveTarget('[11] button "submit_order"')).toBe(true);
+      expect(isDestructiveTarget('[12] button "delete_account"')).toBe(true);
+      expect(isDestructiveTarget('[13] button "confirm-order"')).toBe(true);
+      expect(isDestructiveTarget('[14] button "pay-now"')).toBe(true);
+      expect(isDestructiveTarget('[15] button "repay"')).toBe(false);
+      expect(isDestructiveTarget('[16] textbox "taxpayer"')).toBe(false);
     });
   });
 
@@ -384,6 +397,34 @@ describe('Jev Client & Helper Unit Tests', () => {
         score: 0,
         usage: { inputTokens: 0 },
       });
+    });
+  });
+
+  describe('11. Dynamic API Key Rotation & Latch Recovery (§4.2)', () => {
+    const originalEnv = process.env.TYPESAFE_API_KEY;
+
+    afterEach(() => {
+      process.env.TYPESAFE_API_KEY = originalEnv;
+      resetInvalidKeyLatch();
+    });
+
+    test('rebuilds client when environment key is dynamically rotated', () => {
+      delete process.env.TYPESAFE_API_KEY;
+      delete process.env.JEV_API_KEY;
+      const wrapper = new JevClientWrapper();
+      expect(wrapper.isAvailable()).toBe(false);
+
+      process.env.TYPESAFE_API_KEY = 'test_key_dynamic_1';
+      expect(wrapper.isAvailable()).toBe(true);
+      expect(wrapper.getClient()).not.toBeNull();
+
+      process.env.TYPESAFE_API_KEY = 'test_key_dynamic_2';
+      const client2 = wrapper.getClient();
+      expect(client2).not.toBeNull();
+
+      delete process.env.TYPESAFE_API_KEY;
+      expect(wrapper.getClient()).toBeNull();
+      expect(wrapper.isAvailable()).toBe(false);
     });
   });
 });

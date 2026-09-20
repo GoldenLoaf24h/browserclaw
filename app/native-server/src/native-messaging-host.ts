@@ -47,10 +47,15 @@ export class NativeMessagingHost {
 
           // Validate length header: Chrome strictly caps messages at 1MB
           if (expectedLength <= 0 || expectedLength > MAX_MESSAGE_SIZE_BYTES) {
+            console.error(
+              `[NativeHost] Fatal protocol framing error: invalid message length ${expectedLength} (cap: ${MAX_MESSAGE_SIZE_BYTES})`,
+            );
             this.sendError(`Invalid message length: ${expectedLength} (exceeds Chrome 1MB limit)`);
-            // Reset state to resynchronize stream
             expectedLength = -1;
             buffer = Buffer.alloc(0);
+            if (process.env.NODE_ENV !== 'test') {
+              setTimeout(() => process.exit(1), 50);
+            }
             break;
           }
         }

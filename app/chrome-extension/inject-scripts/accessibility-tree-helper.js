@@ -470,9 +470,12 @@
     if (!isVisible(el)) return false;
     if (cfg.filter !== 'all') {
       const r = /** @type {HTMLElement} */ (el).getBoundingClientRect();
-      if (
-        !(r.top < window.innerHeight && r.bottom > 0 && r.left < window.innerWidth && r.right > 0)
-      )
+      if (!(
+        r.top < window.innerHeight &&
+        r.bottom > 0 &&
+        r.left < window.innerWidth &&
+        r.right > 0
+      ))
         return false;
     }
     if (cfg.filter === 'interactive') return isInteractive(el);
@@ -745,6 +748,9 @@
       const listener = (ev) => {
         const data = ev?.data;
         if (!data || data.type !== 'rr-bridge-hover-ref-result' || data.reqId !== reqId) return;
+        // Verify response comes from one of the targeted child frames
+        const isFromChild = frames.some((f) => f && f.contentWindow === ev.source);
+        if (!isFromChild) return;
         window.removeEventListener('message', listener, true);
         resolve(data.result);
       };
@@ -764,7 +770,11 @@
   // Chrome message bridge for ping and tree generation
   chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     try {
-      if (request && (request.action === 'chrome_read_page_ping' || String(request.action || '').startsWith('mcp_ping_'))) {
+      if (
+        request &&
+        (request.action === 'chrome_read_page_ping' ||
+          String(request.action || '').startsWith('mcp_ping_'))
+      ) {
         sendResponse({ status: 'pong' });
         return false;
       }
@@ -991,10 +1001,7 @@
             let refId = null;
             try {
               for (const k in window.__mcpElementMap) {
-                if (
-                  window.__mcpElementMap[k].deref &&
-                  window.__mcpElementMap[k].deref() === el
-                ) {
+                if (window.__mcpElementMap[k].deref && window.__mcpElementMap[k].deref() === el) {
                   refId = k;
                   break;
                 }
@@ -1672,13 +1679,28 @@
       (ev) => {
         try {
           const data = ev && ev.data;
+          if (
+            !data ||
+            (data.type !== 'rr-bridge-hover-ref' && data.type !== 'rr-bridge-ensure-ref')
+          ) {
+            return;
+          }
+          // Security guard: child-frame bridge must only process requests from parent frame
+          // Top-level windows have no parent and must never process child-bridge requests
+          if (window === window.top || !window.parent || window.parent === window) {
+            return;
+          }
+          if (ev.source !== window.parent) {
+            return;
+          }
+          const targetOrigin = ev.origin && ev.origin !== 'null' ? ev.origin : '*';
           // Handle hover-ref bridge requests from parent frame
           if (data && data.type === 'rr-bridge-hover-ref') {
             handleHoverForRef(data.ref)
               .then((result) => {
                 ev.source?.postMessage(
                   { type: 'rr-bridge-hover-ref-result', reqId: data.reqId, result },
-                  '*',
+                  targetOrigin,
                 );
               })
               .catch((error) => {
@@ -1688,7 +1710,7 @@
                     reqId: data.reqId,
                     result: { success: false, error: error?.message || String(error) },
                   },
-                  '*',
+                  targetOrigin,
                 );
               });
             return;
@@ -1700,7 +1722,7 @@
               ev.source &&
                 ev.source.postMessage(
                   { type: 'rr-bridge-ensure-ref-result', reqId, ...payload },
-                  '*',
+                  targetOrigin,
                 );
             } catch {}
           };

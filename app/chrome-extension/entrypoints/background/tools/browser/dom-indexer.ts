@@ -240,21 +240,35 @@ export function deepElementFromPoint(
   y: number,
   startRoot?: Document | ShadowRoot | Element,
 ): Element | null {
-  const doc = typeof document !== 'undefined' ? document : null;
-  if (!doc) return null;
+  const doc: Document | null =
+    (startRoot &&
+      ((startRoot as any).ownerDocument ||
+        ((startRoot as any).nodeType === 9 ? (startRoot as Document) : null))) ||
+    (typeof document !== 'undefined' ? document : null);
+  if (!doc && !startRoot) return null;
 
   let current: Element | null = null;
   try {
-    if (startRoot instanceof Document || (startRoot && (startRoot as any).nodeType === 11)) {
+    if (
+      startRoot &&
+      ((typeof Document !== 'undefined' && startRoot instanceof Document) ||
+        (startRoot as any).nodeType === 11 ||
+        (startRoot as any).nodeType === 9 ||
+        typeof (startRoot as any).elementFromPoint === 'function')
+    ) {
       current = (startRoot as Document | ShadowRoot).elementFromPoint(x, y);
-    } else if (startRoot instanceof Element) {
-      const sr = getShadowRoot(startRoot);
+    } else if (
+      startRoot &&
+      ((typeof Element !== 'undefined' && startRoot instanceof Element) ||
+        Boolean((startRoot as any).tagName))
+    ) {
+      const sr = getShadowRoot(startRoot as Element);
       if (sr && typeof (sr as any).elementFromPoint === 'function') {
         current = (sr as any).elementFromPoint(x, y);
       } else {
-        current = startRoot;
+        current = startRoot as Element;
       }
-    } else if (typeof doc.elementFromPoint === 'function') {
+    } else if (doc && typeof doc.elementFromPoint === 'function') {
       current = doc.elementFromPoint(x, y);
     }
   } catch {}
@@ -5752,7 +5766,11 @@ export function inPageFindSmartScrollTarget(options?: {
 
       // Default to window if viewport center has no scroll container and window can scroll,
       // or if best candidate is a penalized sidebar
-      const bestIsPenalizedSidebar = bestEl ? /sidebar|side-nav|sidenav|navigation|navbar|rail|drawer|menu-list|toc/i.test(bestEl.id + ' ' + (typeof bestEl.className === 'string' ? bestEl.className : '')) : false;
+      const bestIsPenalizedSidebar = bestEl
+        ? /sidebar|side-nav|sidenav|navigation|navbar|rail|drawer|menu-list|toc/i.test(
+            bestEl.id + ' ' + (typeof bestEl.className === 'string' ? bestEl.className : ''),
+          )
+        : false;
       const shouldPreferWindow =
         windowCanScrollInDir &&
         (!bestEl ||

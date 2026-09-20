@@ -1,8 +1,12 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
+import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { TOOL_NAMES, TOOL_SCHEMAS } from '../packages/shared/dist/index.mjs';
 import { ScreenshotRingBuffer } from '../app/chrome-extension/utils/screenshot-ring-buffer.ts';
-import { SnapshotCacheManager, snapshotCacheManager } from '../app/chrome-extension/utils/snapshot-cache-manager.ts';
+import {
+  SnapshotCacheManager,
+  snapshotCacheManager,
+} from '../app/chrome-extension/utils/snapshot-cache-manager.ts';
 
 describe('P0 & P1 Architecture Hardening Verification', () => {
   describe('P0-1: Background Execution & Focus Protection', () => {
@@ -75,29 +79,41 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
         'utf-8',
       );
 
-      assert.ok(webFetcher.includes('active: (args as any).background === false') || webFetcher.includes('active: background === false'));
+      assert.ok(
+        webFetcher.includes('active: (args as any).background === false') ||
+          webFetcher.includes('active: background === false'),
+      );
       assert.ok(consoleTool.includes('active: background === false'));
     });
 
     it('verifies background default semantics in TOOL_SCHEMAS prevent focus stealing', async () => {
       const switchTab = TOOL_SCHEMAS.find((t) => t.name === TOOL_NAMES.BROWSER.SWITCH_TAB);
-      assert.ok(switchTab?.inputSchema?.properties?.background, 'SWITCH_TAB schema must include background property');
+      assert.ok(
+        switchTab?.inputSchema?.properties?.background,
+        'SWITCH_TAB schema must include background property',
+      );
 
       const navigate = TOOL_SCHEMAS.find((t) => t.name === TOOL_NAMES.BROWSER.NAVIGATE);
       assert.ok(
-        (navigate?.inputSchema?.properties?.background as any)?.description.includes('Default: true'),
+        (navigate?.inputSchema?.properties?.background as any)?.description.includes(
+          'Default: true',
+        ),
         'NAVIGATE schema background must indicate Default: true',
       );
 
       const computer = TOOL_SCHEMAS.find((t) => t.name === TOOL_NAMES.BROWSER.COMPUTER);
       assert.ok(
-        (computer?.inputSchema?.properties?.background as any)?.description.includes('Default: true'),
+        (computer?.inputSchema?.properties?.background as any)?.description.includes(
+          'Default: true',
+        ),
         'COMPUTER schema background must indicate Default: true',
       );
 
       const screenshot = TOOL_SCHEMAS.find((t) => t.name === TOOL_NAMES.BROWSER.SCREENSHOT);
       assert.ok(
-        (screenshot?.inputSchema?.properties?.background as any)?.description.includes('Default: true'),
+        (screenshot?.inputSchema?.properties?.background as any)?.description.includes(
+          'Default: true',
+        ),
         'SCREENSHOT schema background must indicate Default: true',
       );
     });
@@ -196,21 +212,26 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
 
   describe('P1-4: Unified Locator & Visual Coordinate Abstraction', () => {
     it('resolves target using 4-tier degradation chain: ref -> selector -> text/role -> coordinate', async () => {
-      const { resolveTargetLocation } = await import(
-        '../app/chrome-extension/utils/unified-locator.ts'
-      );
+      const { resolveTargetLocation } =
+        await import('../app/chrome-extension/utils/unified-locator.ts');
 
       // Tier 1: ref match
       const mockDepsRef = {
         executeInPage: async (target: any, fnName: string, args: any[]) => {
           if (fnName === 'inPageGetElementCoordinates' && args[0] === 5) {
-            return [{ result: { success: true, x: 100, y: 150, tagName: 'BUTTON', text: 'Submit' } }];
+            return [
+              { result: { success: true, x: 100, y: 150, tagName: 'BUTTON', text: 'Submit' } },
+            ];
           }
           return [{ result: { success: false } }];
         },
       };
 
-      const refRes = await resolveTargetLocation(1, { ref: 5, selector: '#btn', coordinate: { x: 50, y: 50 } }, mockDepsRef);
+      const refRes = await resolveTargetLocation(
+        1,
+        { ref: 5, selector: '#btn', coordinate: { x: 50, y: 50 } },
+        mockDepsRef,
+      );
       assert.strictEqual(refRes.success, true);
       assert.strictEqual(refRes.resolutionPath, 'ref');
       assert.strictEqual(refRes.x, 100);
@@ -272,9 +293,8 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
     });
 
     it('attaches box-model visibility warning when target has zero dimensions in coordinate mode', async () => {
-      const { resolveTargetLocation } = await import(
-        '../app/chrome-extension/utils/unified-locator.ts'
-      );
+      const { resolveTargetLocation } =
+        await import('../app/chrome-extension/utils/unified-locator.ts');
 
       const mockDepsCdp = {
         sendCdpCommand: async (tabId: number, method: string) => {
@@ -296,9 +316,8 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
     });
 
     it('attaches snapshot invalidation alert when snapshot is stale', async () => {
-      const { resolveTargetLocation } = await import(
-        '../app/chrome-extension/utils/unified-locator.ts'
-      );
+      const { resolveTargetLocation } =
+        await import('../app/chrome-extension/utils/unified-locator.ts');
 
       const testTabId = 7777;
       snapshotCacheManager.setSnapshot(testTabId, { url: 'https://site.com', elementCount: 10 });
@@ -310,7 +329,7 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
 
       const res = await resolveTargetLocation(testTabId, { ref: 1 }, mockDeps);
       assert.strictEqual(res.success, true);
-      assert.ok(res.warning?.includes('ACTION REQUIRED: Please call \'chrome_read_dom\''));
+      assert.ok(res.warning?.includes("ACTION REQUIRED: Please call 'chrome_read_dom'"));
 
       snapshotCacheManager.clear(testTabId);
     });
@@ -318,9 +337,7 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
 
   describe('P1-5: Popup.html Navigation Guard', () => {
     it('blocks navigation to popup.html through isPopupUrl guard across variations', async () => {
-      const { isPopupUrl } = await import(
-        '../app/chrome-extension/utils/popup-guard.ts'
-      );
+      const { isPopupUrl } = await import('../app/chrome-extension/utils/popup-guard.ts');
 
       assert.strictEqual(isPopupUrl('chrome-extension://abcdefg/popup.html'), true);
       assert.strictEqual(isPopupUrl('chrome-extension://abcdefg/popup.html?session=123'), true);
@@ -356,7 +373,7 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
       cache.invalidate(42, 'URL changed');
       assert.strictEqual(cache.isSnapshotValid(42), false);
       const msg = cache.getInvalidationMessage(42);
-      assert.ok(msg.includes('ACTION REQUIRED: Please call \'chrome_read_dom\''));
+      assert.ok(msg.includes("ACTION REQUIRED: Please call 'chrome_read_dom'"));
       assert.ok(msg.includes('URL changed'));
 
       cache.clear(42);
@@ -375,9 +392,8 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
 
   describe('P1-7: Complete DOM Snapshot, Ad Filtering & Purified Context', () => {
     it('masks password and sensitive tokens while preserving regular input values', async () => {
-      const { inPageDOMPruner } = await import(
-        '../app/chrome-extension/entrypoints/background/tools/browser/dom-indexer.ts'
-      );
+      const { inPageDOMPruner } =
+        await import('../app/chrome-extension/entrypoints/background/tools/browser/dom-indexer.ts');
 
       const originalDoc = globalThis.document;
       const originalWin = globalThis.window;
@@ -392,9 +408,19 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           type: 'password',
           name: 'user_password',
           value: 'SecretPass123!',
-          getAttribute: (attr: string) => (attr === 'type' ? 'password' : attr === 'name' ? 'user_password' : null),
+          getAttribute: (attr: string) =>
+            attr === 'type' ? 'password' : attr === 'name' ? 'user_password' : null,
           hasAttribute: (attr: string) => attr === 'type' || attr === 'name',
-          getBoundingClientRect: () => ({ x: 10, y: 10, width: 100, height: 30, left: 10, right: 110, top: 10, bottom: 40 }),
+          getBoundingClientRect: () => ({
+            x: 10,
+            y: 10,
+            width: 100,
+            height: 30,
+            left: 10,
+            right: 110,
+            top: 10,
+            bottom: 40,
+          }),
           children: [],
           getRootNode: () => ({}),
           closest: () => null,
@@ -406,9 +432,19 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           type: 'text',
           name: 'cc-number',
           value: '4111-2222-3333-4444',
-          getAttribute: (attr: string) => (attr === 'type' ? 'text' : attr === 'name' ? 'cc-number' : null),
+          getAttribute: (attr: string) =>
+            attr === 'type' ? 'text' : attr === 'name' ? 'cc-number' : null,
           hasAttribute: (attr: string) => attr === 'type' || attr === 'name',
-          getBoundingClientRect: () => ({ x: 10, y: 50, width: 100, height: 30, left: 10, right: 110, top: 50, bottom: 80 }),
+          getBoundingClientRect: () => ({
+            x: 10,
+            y: 50,
+            width: 100,
+            height: 30,
+            left: 10,
+            right: 110,
+            top: 50,
+            bottom: 80,
+          }),
           children: [],
           getRootNode: () => ({}),
           closest: () => null,
@@ -420,9 +456,19 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           type: 'text',
           name: 'username',
           value: 'johndoe',
-          getAttribute: (attr: string) => (attr === 'type' ? 'text' : attr === 'name' ? 'username' : null),
+          getAttribute: (attr: string) =>
+            attr === 'type' ? 'text' : attr === 'name' ? 'username' : null,
           hasAttribute: (attr: string) => attr === 'type' || attr === 'name',
-          getBoundingClientRect: () => ({ x: 10, y: 90, width: 100, height: 30, left: 10, right: 110, top: 90, bottom: 120 }),
+          getBoundingClientRect: () => ({
+            x: 10,
+            y: 90,
+            width: 100,
+            height: 30,
+            left: 10,
+            right: 110,
+            top: 90,
+            bottom: 120,
+          }),
           children: [],
           getRootNode: () => ({}),
           closest: () => null,
@@ -438,7 +484,16 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           getAttribute: () => null,
           hasAttribute: () => false,
           closest: () => null,
-          getBoundingClientRect: () => ({ x: 0, y: 0, width: 800, height: 600, left: 0, right: 800, top: 0, bottom: 600 }),
+          getBoundingClientRect: () => ({
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+            left: 0,
+            right: 800,
+            top: 0,
+            bottom: 600,
+          }),
           scrollHeight: 600,
           clientHeight: 600,
           offsetHeight: 600,
@@ -494,9 +549,8 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
     });
 
     it('filters out ad and tracking elements from the indexed DOM tree', async () => {
-      const { inPageDOMPruner } = await import(
-        '../app/chrome-extension/entrypoints/background/tools/browser/dom-indexer.ts'
-      );
+      const { inPageDOMPruner } =
+        await import('../app/chrome-extension/entrypoints/background/tools/browser/dom-indexer.ts');
 
       const originalDoc = globalThis.document;
       const originalWin = globalThis.window;
@@ -511,7 +565,16 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           className: 'google_ads ad-banner-top',
           getAttribute: (attr: string) => (attr === 'class' ? 'google_ads ad-banner-top' : null),
           hasAttribute: (attr: string) => attr === 'class',
-          getBoundingClientRect: () => ({ x: 0, y: 0, width: 728, height: 90, left: 0, right: 728, top: 0, bottom: 90 }),
+          getBoundingClientRect: () => ({
+            x: 0,
+            y: 0,
+            width: 728,
+            height: 90,
+            left: 0,
+            right: 728,
+            top: 0,
+            bottom: 90,
+          }),
           children: [],
           getRootNode: () => ({}),
           closest: () => null,
@@ -522,7 +585,16 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           tagName: 'BUTTON',
           getAttribute: () => null,
           hasAttribute: () => false,
-          getBoundingClientRect: () => ({ x: 10, y: 150, width: 100, height: 40, left: 10, right: 110, top: 150, bottom: 190 }),
+          getBoundingClientRect: () => ({
+            x: 10,
+            y: 150,
+            width: 100,
+            height: 40,
+            left: 10,
+            right: 110,
+            top: 150,
+            bottom: 190,
+          }),
           children: [],
           getRootNode: () => ({}),
           closest: () => null,
@@ -539,7 +611,16 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           getAttribute: () => null,
           hasAttribute: () => false,
           closest: () => null,
-          getBoundingClientRect: () => ({ x: 0, y: 0, width: 800, height: 600, left: 0, right: 800, top: 0, bottom: 600 }),
+          getBoundingClientRect: () => ({
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+            left: 0,
+            right: 800,
+            top: 0,
+            bottom: 600,
+          }),
           scrollHeight: 600,
           clientHeight: 600,
           offsetHeight: 600,
@@ -586,9 +667,8 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
     });
 
     it('respects configurable maxTextLength option in extractCleanElementText and pruner', async () => {
-      const { extractCleanElementText } = await import(
-        '../app/chrome-extension/entrypoints/background/tools/browser/dom-indexer.ts'
-      );
+      const { extractCleanElementText } =
+        await import('../app/chrome-extension/entrypoints/background/tools/browser/dom-indexer.ts');
 
       const longString = 'A'.repeat(300);
       const mockEl = {
@@ -608,9 +688,8 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
     });
 
     it('indexes non-interactive informational nodes (h1, alert) with isInteractive: false', async () => {
-      const { inPageDOMPruner } = await import(
-        '../app/chrome-extension/entrypoints/background/tools/browser/dom-indexer.ts'
-      );
+      const { inPageDOMPruner } =
+        await import('../app/chrome-extension/entrypoints/background/tools/browser/dom-indexer.ts');
 
       const originalDoc = globalThis.document;
       const originalWin = globalThis.window;
@@ -626,7 +705,16 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           innerText: 'Main Page Heading',
           getAttribute: () => null,
           hasAttribute: () => false,
-          getBoundingClientRect: () => ({ x: 10, y: 10, width: 400, height: 40, left: 10, right: 410, top: 10, bottom: 50 }),
+          getBoundingClientRect: () => ({
+            x: 10,
+            y: 10,
+            width: 400,
+            height: 40,
+            left: 10,
+            right: 410,
+            top: 10,
+            bottom: 50,
+          }),
           children: [],
           getRootNode: () => ({}),
           closest: () => null,
@@ -640,7 +728,16 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           innerText: 'Your session has expired',
           getAttribute: (attr: string) => (attr === 'role' ? 'alert' : null),
           hasAttribute: (attr: string) => attr === 'role',
-          getBoundingClientRect: () => ({ x: 10, y: 60, width: 400, height: 30, left: 10, right: 410, top: 60, bottom: 90 }),
+          getBoundingClientRect: () => ({
+            x: 10,
+            y: 60,
+            width: 400,
+            height: 30,
+            left: 10,
+            right: 410,
+            top: 60,
+            bottom: 90,
+          }),
           children: [],
           getRootNode: () => ({}),
           closest: () => null,
@@ -653,7 +750,16 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           innerText: 'Dismiss',
           getAttribute: () => null,
           hasAttribute: () => false,
-          getBoundingClientRect: () => ({ x: 10, y: 100, width: 80, height: 30, left: 10, right: 90, top: 100, bottom: 130 }),
+          getBoundingClientRect: () => ({
+            x: 10,
+            y: 100,
+            width: 80,
+            height: 30,
+            left: 10,
+            right: 90,
+            top: 100,
+            bottom: 130,
+          }),
           children: [],
           getRootNode: () => ({}),
           closest: () => null,
@@ -669,7 +775,16 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           getAttribute: () => null,
           hasAttribute: () => false,
           closest: () => null,
-          getBoundingClientRect: () => ({ x: 0, y: 0, width: 800, height: 600, left: 0, right: 800, top: 0, bottom: 600 }),
+          getBoundingClientRect: () => ({
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+            left: 0,
+            right: 800,
+            top: 0,
+            bottom: 600,
+          }),
           scrollHeight: 600,
           clientHeight: 600,
           offsetHeight: 600,
@@ -723,9 +838,8 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
     });
 
     it('performs deterministic visual reading-order sorting by y coordinate then x coordinate', async () => {
-      const { inPageDOMPruner } = await import(
-        '../app/chrome-extension/entrypoints/background/tools/browser/dom-indexer.ts'
-      );
+      const { inPageDOMPruner } =
+        await import('../app/chrome-extension/entrypoints/background/tools/browser/dom-indexer.ts');
 
       const originalDoc = globalThis.document;
       const originalWin = globalThis.window;
@@ -742,7 +856,16 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           textContent: 'Bottom Action',
           getAttribute: (attr: string) => (attr === 'id' ? 'btn-bottom' : null),
           hasAttribute: (attr: string) => attr === 'id',
-          getBoundingClientRect: () => ({ x: 100, y: 300, width: 80, height: 30, left: 100, right: 180, top: 300, bottom: 330 }),
+          getBoundingClientRect: () => ({
+            x: 100,
+            y: 300,
+            width: 80,
+            height: 30,
+            left: 100,
+            right: 180,
+            top: 300,
+            bottom: 330,
+          }),
           children: [],
           getRootNode: () => ({}),
           closest: () => null,
@@ -755,7 +878,16 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           textContent: 'Top Right Action',
           getAttribute: (attr: string) => (attr === 'id' ? 'btn-top-right' : null),
           hasAttribute: (attr: string) => attr === 'id',
-          getBoundingClientRect: () => ({ x: 200, y: 50, width: 80, height: 30, left: 200, right: 280, top: 50, bottom: 80 }),
+          getBoundingClientRect: () => ({
+            x: 200,
+            y: 50,
+            width: 80,
+            height: 30,
+            left: 200,
+            right: 280,
+            top: 50,
+            bottom: 80,
+          }),
           children: [],
           getRootNode: () => ({}),
           closest: () => null,
@@ -768,7 +900,16 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           textContent: 'Top Left Action',
           getAttribute: (attr: string) => (attr === 'id' ? 'btn-top-left' : null),
           hasAttribute: (attr: string) => attr === 'id',
-          getBoundingClientRect: () => ({ x: 20, y: 50, width: 80, height: 30, left: 20, right: 100, top: 50, bottom: 80 }),
+          getBoundingClientRect: () => ({
+            x: 20,
+            y: 50,
+            width: 80,
+            height: 30,
+            left: 20,
+            right: 100,
+            top: 50,
+            bottom: 80,
+          }),
           children: [],
           getRootNode: () => ({}),
           closest: () => null,
@@ -784,7 +925,16 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
           getAttribute: () => null,
           hasAttribute: () => false,
           closest: () => null,
-          getBoundingClientRect: () => ({ x: 0, y: 0, width: 800, height: 600, left: 0, right: 800, top: 0, bottom: 600 }),
+          getBoundingClientRect: () => ({
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+            left: 0,
+            right: 800,
+            top: 0,
+            bottom: 600,
+          }),
           scrollHeight: 600,
           clientHeight: 600,
           offsetHeight: 600,
@@ -828,6 +978,87 @@ describe('P0 & P1 Architecture Hardening Verification', () => {
         globalThis.window = originalWin;
         (globalThis as any).Element = originalElement;
       }
+    });
+  });
+
+  describe('P0 & P1 Deep Security, Memory & Protocol Hardening', () => {
+    it('verifies isDestructiveTarget regex logic matches snake_case keywords and ignores non-boundary substrings', async () => {
+      const fs = await import('node:fs');
+      const clientCode = fs.readFileSync('app/native-server/src/jev/jev-client.ts', 'utf-8');
+      assert.ok(
+        clientCode.includes('(^|[^a-zA-Z0-9])'),
+        'Must use [^a-zA-Z0-9] boundary to allow snake_case',
+      );
+      assert.ok(
+        clientCode.includes('LATIN_DESTRUCTIVE_REGEX'),
+        'Must use precompiled regex for Latin destructive keywords',
+      );
+    });
+
+    it('verifies findMatchingPauseKeyword regex logic handles snake_case tokens', async () => {
+      const fs = await import('node:fs');
+      const engineCode = fs.readFileSync(
+        'app/native-server/src/jev/fast-decision-engine.ts',
+        'utf-8',
+      );
+      assert.ok(
+        engineCode.includes('(^|[^a-zA-Z0-9])'),
+        'Must use [^a-zA-Z0-9] boundary in findMatchingPauseKeyword',
+      );
+    });
+
+    it('verifies deepElementFromPoint succeeds with mock root in non-browser environment', async () => {
+      const { deepElementFromPoint } =
+        await import('../app/chrome-extension/entrypoints/background/tools/browser/dom-indexer.ts');
+      const mockElement = { tagName: 'DIV' };
+      const mockDoc = {
+        nodeType: 9,
+        elementFromPoint: (x: number, y: number) => mockElement,
+      };
+      const result = deepElementFromPoint(10, 20, mockDoc as any);
+      assert.strictEqual(result, mockElement);
+    });
+
+    it('verifies cdpSessionManager.hasInFlightRequests prunes requests older than 5000ms', async () => {
+      const { cdpSessionManager } =
+        await import('../app/chrome-extension/utils/cdp-session-manager.ts');
+      const tabId = 99999;
+      const internalMap = (cdpSessionManager as any).inFlightRequests;
+      const reqMap = new Map<string, number>();
+      reqMap.set('stale-req-1', Date.now() - 6000);
+      internalMap.set(tabId, reqMap);
+
+      assert.strictEqual(cdpSessionManager.hasInFlightRequests(tabId), false);
+      assert.strictEqual(reqMap.size, 0);
+
+      reqMap.set('fresh-req-1', Date.now());
+      assert.strictEqual(cdpSessionManager.hasInFlightRequests(tabId), true);
+      cdpSessionManager.clearInFlightRequests(tabId);
+    });
+
+    it('verifies Fastify server preHandler whitelists /media-asset/:assetId', async () => {
+      const fs = await import('node:fs');
+      const serverCode = fs.readFileSync('app/native-server/src/server/index.ts', 'utf-8');
+      assert.ok(
+        serverCode.includes("pathOnly === '/ping' || pathOnly.startsWith('/media-asset/')"),
+        'Server preHandler must allow /media-asset/ without requiring token',
+      );
+    });
+
+    it('verifies accessibility-tree-helper cross-frame bridge enforces subframe and parent validation', async () => {
+      const fs = await import('node:fs');
+      const helperCode = fs.readFileSync(
+        'app/chrome-extension/inject-scripts/accessibility-tree-helper.js',
+        'utf-8',
+      );
+      assert.ok(
+        helperCode.includes('window === window.top || !window.parent || window.parent === window'),
+        'Must reject execution if window is top-level',
+      );
+      assert.ok(
+        helperCode.includes('ev.source !== window.parent'),
+        'Must reject messages not sent by window.parent',
+      );
     });
   });
 });

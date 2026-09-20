@@ -136,9 +136,9 @@ export class Server {
         return;
       }
 
-      // 2. Allow health check endpoint (handshake)
+      // 2. Allow health check endpoint (handshake) and temporary media asset streaming
       const pathOnly = (request.raw.url || request.url || '').split('?')[0];
-      if (pathOnly === '/ping') {
+      if (pathOnly === '/ping' || pathOnly.startsWith('/media-asset/')) {
         return;
       }
 

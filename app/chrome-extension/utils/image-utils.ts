@@ -46,7 +46,11 @@ export async function stitchImages(
   let safeHeight = Math.max(1, Math.round(totalHeightPx));
   let scale = 1.0;
 
-  if (safeWidth > MAX_CANVAS_DIM || safeHeight > MAX_CANVAS_DIM || safeWidth * safeHeight > MAX_CANVAS_AREA) {
+  if (
+    safeWidth > MAX_CANVAS_DIM ||
+    safeHeight > MAX_CANVAS_DIM ||
+    safeWidth * safeHeight > MAX_CANVAS_AREA
+  ) {
     const dimScale = Math.min(MAX_CANVAS_DIM / safeWidth, MAX_CANVAS_DIM / safeHeight);
     const areaScale = Math.sqrt(MAX_CANVAS_AREA / (safeWidth * safeHeight));
     scale = Math.min(dimScale, areaScale);
@@ -295,21 +299,27 @@ export async function normalizeImageToCssDimensions(
   quality: number = 0.8,
 ): Promise<string> {
   const img = await createImageBitmapFromUrl(dataUrl);
-  if (
-    img.width === targetWidthCss &&
-    img.height === targetHeightCss &&
-    dataUrl.startsWith(`data:${mimeType}`)
-  ) {
-    return dataUrl;
+  try {
+    if (
+      img.width === targetWidthCss &&
+      img.height === targetHeightCss &&
+      dataUrl.startsWith(`data:${mimeType}`)
+    ) {
+      return dataUrl;
+    }
+    if (typeof OffscreenCanvas === 'undefined') {
+      return dataUrl;
+    }
+    const canvas = new OffscreenCanvas(targetWidthCss, targetHeightCss);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Failed to get 2D context from OffscreenCanvas');
+    ctx.drawImage(img, 0, 0, targetWidthCss, targetHeightCss);
+    return await canvasToDataURL(canvas, mimeType, quality);
+  } finally {
+    if (img && typeof (img as any).close === 'function') {
+      (img as any).close();
+    }
   }
-  if (typeof OffscreenCanvas === 'undefined') {
-    return dataUrl;
-  }
-  const canvas = new OffscreenCanvas(targetWidthCss, targetHeightCss);
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Failed to get 2D context from OffscreenCanvas');
-  ctx.drawImage(img, 0, 0, targetWidthCss, targetHeightCss);
-  return await canvasToDataURL(canvas, mimeType, quality);
 }
 
 export interface SmartCompressResult {
@@ -370,7 +380,7 @@ export async function smartCompressForTransport(
 
   // Phase 1: High-Clarity Optimization at Scale 1.0 (Zero downsampling blur)
   const targetFormat = preferredFormat === 'image/png' ? 'image/webp' : preferredFormat;
-  const qualitySteps = [options?.quality ?? 0.82, 0.72, 0.60, 0.48];
+  const qualitySteps = [options?.quality ?? 0.82, 0.72, 0.6, 0.48];
   let bestCandidate: { dataUrl: string; mimeType: string } | null = null;
   let bestCandidateLen = Infinity;
 
@@ -555,7 +565,7 @@ export async function overlayCoordinateGrid(
         const globalX = Math.round((x + ox) / dpr);
         const globalY = Math.round((y + oy) / dpr);
 
-        let label = (ox !== 0 || oy !== 0) ? `(${globalX},${globalY})` : `(${xCss},${yCss})`;
+        let label = ox !== 0 || oy !== 0 ? `(${globalX},${globalY})` : `(${xCss},${yCss})`;
         if (options?.normalized1000) {
           const normY = Math.round((yCss / (canvas.height / dpr)) * 1000);
           const normX = Math.round((xCss / (canvas.width / dpr)) * 1000);
@@ -591,7 +601,7 @@ export async function overlayCoordinateGrid(
     ctx.font = `bold ${Math.max(8, Math.round(8 * dpr))}px monospace`;
     const originLabel = options?.normalized1000
       ? '[0,0]'
-      : (ox !== 0 || oy !== 0)
+      : ox !== 0 || oy !== 0
         ? `${Math.round(ox / dpr)},${Math.round(oy / dpr)}`
         : '0,0';
     ctx.fillText(originLabel, 2 * dpr, Math.round(12 * dpr));
@@ -605,9 +615,17 @@ export async function overlayCoordinateGrid(
       const x = Math.round(xCss * dpr);
       const isMajor = xCss % gridStepCss === 0;
       const isMedium = !isMajor && xCss % 50 === 0;
-      const tickLen = isMajor ? Math.round(8 * dpr) : isMedium ? Math.round(5 * dpr) : Math.round(3 * dpr);
+      const tickLen = isMajor
+        ? Math.round(8 * dpr)
+        : isMedium
+          ? Math.round(5 * dpr)
+          : Math.round(3 * dpr);
 
-      ctx.fillStyle = isMajor ? '#facc15' : isMedium ? 'rgba(250, 204, 21, 0.7)' : 'rgba(148, 163, 184, 0.5)';
+      ctx.fillStyle = isMajor
+        ? '#facc15'
+        : isMedium
+          ? 'rgba(250, 204, 21, 0.7)'
+          : 'rgba(148, 163, 184, 0.5)';
       ctx.fillRect(x, rulerH - tickLen, 1, tickLen);
 
       if (isMajor) {
@@ -630,9 +648,17 @@ export async function overlayCoordinateGrid(
       const y = Math.round(yCss * dpr);
       const isMajor = yCss % gridStepCss === 0;
       const isMedium = !isMajor && yCss % 50 === 0;
-      const tickLen = isMajor ? Math.round(8 * dpr) : isMedium ? Math.round(5 * dpr) : Math.round(3 * dpr);
+      const tickLen = isMajor
+        ? Math.round(8 * dpr)
+        : isMedium
+          ? Math.round(5 * dpr)
+          : Math.round(3 * dpr);
 
-      ctx.fillStyle = isMajor ? '#facc15' : isMedium ? 'rgba(250, 204, 21, 0.7)' : 'rgba(148, 163, 184, 0.5)';
+      ctx.fillStyle = isMajor
+        ? '#facc15'
+        : isMedium
+          ? 'rgba(250, 204, 21, 0.7)'
+          : 'rgba(148, 163, 184, 0.5)';
       ctx.fillRect(rulerW - tickLen, y, tickLen, 1);
 
       if (isMajor) {

@@ -101,7 +101,10 @@ export function parseUnifiedCoordinate(
           ) {
             const vw = ctx.viewportWidth || scWidth;
             const vh = ctx.viewportHeight || scHeight;
-            if (rx > vw && rx <= Math.round(vw * dpr + 10)) {
+            if (
+              (rx > vw && rx <= Math.round(vw * dpr + 10)) ||
+              (ry > vh && ry <= Math.round(vh * dpr + 10))
+            ) {
               scWidth = Math.round(vw * dpr);
               scHeight = Math.round(vh * dpr);
             }

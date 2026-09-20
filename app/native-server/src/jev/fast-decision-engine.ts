@@ -47,7 +47,7 @@ export function findMatchingPauseKeyword(targetText: string, keywords?: string[]
     // to prevent false positives like "postal_code" matching "post" or "deposit" matching "post"
     if (/^[a-zA-Z0-9_-]+$/.test(cleanKw)) {
       const regex = new RegExp(
-        `(^|[^a-zA-Z0-9_])${cleanKw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[^a-zA-Z0-9_]|$)`,
+        `(^|[^a-zA-Z0-9])${cleanKw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[^a-zA-Z0-9]|$)`,
         'i',
       );
       if (regex.test(targetText)) {

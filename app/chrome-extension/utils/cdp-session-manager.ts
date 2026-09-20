@@ -26,7 +26,7 @@ class CDPSessionManager {
   private idleTimers = new Map<number, any>();
   private eventObservers = new Set<CdpEventObserver>();
   private dialogStates = new Map<number, PendingDialogInfo>();
-  private inFlightRequests = new Map<number, Set<string>>();
+  private inFlightRequests = new Map<number, Map<string, number>>();
   private domainRefCounts = new Map<number, Map<string, number>>();
   private activeCommands = new Map<number, number>();
 
@@ -48,12 +48,12 @@ class CDPSessionManager {
           } else if (method === 'Network.requestWillBeSent') {
             const reqId = params?.requestId;
             if (reqId) {
-              let reqSet = this.inFlightRequests.get(tabId);
-              if (!reqSet) {
-                reqSet = new Set<string>();
-                this.inFlightRequests.set(tabId, reqSet);
+              let reqMap = this.inFlightRequests.get(tabId);
+              if (!reqMap) {
+                reqMap = new Map<string, number>();
+                this.inFlightRequests.set(tabId, reqMap);
               }
-              reqSet.add(String(reqId));
+              reqMap.set(String(reqId), Date.now());
             }
           } else if (method === 'Network.loadingFinished' || method === 'Network.loadingFailed') {
             const reqId = params?.requestId;
@@ -112,12 +112,20 @@ class CDPSessionManager {
   }
 
   getInFlightRequests(tabId: number): Set<string> {
-    return this.inFlightRequests.get(tabId) || new Set();
+    const m = this.inFlightRequests.get(tabId);
+    return m ? new Set(m.keys()) : new Set();
   }
 
   hasInFlightRequests(tabId: number): boolean {
     const s = this.inFlightRequests.get(tabId);
-    return Boolean(s && s.size > 0);
+    if (!s || s.size === 0) return false;
+    const now = Date.now();
+    for (const [id, start] of s.entries()) {
+      if (now - start > 5000) {
+        s.delete(id);
+      }
+    }
+    return s.size > 0;
   }
 
   clearInFlightRequests(tabId: number): void {

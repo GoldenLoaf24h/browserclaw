@@ -32,17 +32,29 @@ export const DESTRUCTIVE_KEYWORDS: readonly string[] = [
 
 // Session-level latch for 401 Unauthorized (§4.2)
 let isKeyInvalidLatched = false;
+let keyInvalidLatchedAt = 0;
+const LATCH_EXPIRY_MS = 5 * 60 * 1000; // 5-minute recovery window
 
 export function isSessionKeyInvalid(): boolean {
+  if (
+    isKeyInvalidLatched &&
+    keyInvalidLatchedAt > 0 &&
+    Date.now() - keyInvalidLatchedAt > LATCH_EXPIRY_MS
+  ) {
+    isKeyInvalidLatched = false;
+    keyInvalidLatchedAt = 0;
+  }
   return isKeyInvalidLatched;
 }
 
 export function latchInvalidKey(): void {
   isKeyInvalidLatched = true;
+  keyInvalidLatchedAt = Date.now();
 }
 
 export function resetInvalidKeyLatch(): void {
   isKeyInvalidLatched = false;
+  keyInvalidLatchedAt = 0;
 }
 
 /**
@@ -243,13 +255,28 @@ export function extractTextPayload(goal: string, textHint?: string): string | nu
   return null;
 }
 
+const LATIN_DESTRUCTIVE_KEYWORDS = DESTRUCTIVE_KEYWORDS.filter((kw) =>
+  /^[a-zA-Z0-9_-]+$/.test(kw.trim()),
+);
+const NON_LATIN_DESTRUCTIVE_KEYWORDS = DESTRUCTIVE_KEYWORDS.filter(
+  (kw) => !/^[a-zA-Z0-9_-]+$/.test(kw.trim()),
+);
+const LATIN_DESTRUCTIVE_REGEX = new RegExp(
+  `(^|[^a-zA-Z0-9])(${LATIN_DESTRUCTIVE_KEYWORDS.map((k) => k.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(?=[^a-zA-Z0-9]|$)`,
+  'i',
+);
+
 /**
  * Check if element text or label hits destructive keywords
  */
 export function isDestructiveTarget(text: string): boolean {
   if (!text) return false;
+  if (LATIN_DESTRUCTIVE_REGEX.test(text)) return true;
   const lower = text.toLowerCase();
-  return DESTRUCTIVE_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()));
+  for (const kw of NON_LATIN_DESTRUCTIVE_KEYWORDS) {
+    if (lower.includes(kw.trim().toLowerCase())) return true;
+  }
+  return false;
 }
 
 /**
@@ -271,20 +298,47 @@ export function getTop3Probabilities(
 
 export class JevClientWrapper {
   private client: TypeSafeClient | null = null;
+  private explicitApiKey?: string;
+  private currentKey?: string;
 
   constructor(apiKey?: string) {
-    const key = apiKey || process.env.TYPESAFE_API_KEY;
-    if (key && key.trim()) {
+    this.explicitApiKey = apiKey;
+    const key = (apiKey || process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY || '').trim();
+    if (key) {
       try {
-        this.client = new TypeSafeClient({ apiKey: key.trim() });
+        this.currentKey = key;
+        this.client = new TypeSafeClient({ apiKey: key });
       } catch (e) {
         this.client = null;
       }
     }
   }
 
+  public getClient(): TypeSafeClient | null {
+    const key = (
+      this.explicitApiKey ||
+      process.env.TYPESAFE_API_KEY ||
+      process.env.JEV_API_KEY ||
+      ''
+    ).trim();
+    if (key) {
+      if (!this.client || this.currentKey !== key) {
+        try {
+          this.currentKey = key;
+          this.client = new TypeSafeClient({ apiKey: key });
+        } catch {
+          this.client = null;
+        }
+      }
+    } else {
+      this.client = null;
+      this.currentKey = undefined;
+    }
+    return this.client;
+  }
+
   public isAvailable(): boolean {
-    return Boolean(this.client && !isSessionKeyInvalid());
+    return Boolean(this.getClient() && !isSessionKeyInvalid());
   }
 
   /**
@@ -298,7 +352,8 @@ export class JevClientWrapper {
     errorReason: FallbackReason;
     rawError?: any;
   }> {
-    if (!this.client || isSessionKeyInvalid()) {
+    const client = this.getClient();
+    if (!client || isSessionKeyInvalid()) {
       return {
         result: null,
         errorReason: isSessionKeyInvalid() ? 'invalid_key' : 'no_api_key',
@@ -306,7 +361,7 @@ export class JevClientWrapper {
     }
 
     try {
-      const response = await this.client.systemOne({
+      const response = await client.systemOne({
         state: state as any,
         questions,
       });
@@ -353,7 +408,7 @@ export class JevClientWrapper {
     score: number;
     usage?: { inputTokens: number };
   } | null> {
-    if (!this.client || options.length === 0) return null;
+    if (!this.getClient() || options.length === 0) return null;
     if (options.length === 1) {
       return {
         bestIndex: 0,

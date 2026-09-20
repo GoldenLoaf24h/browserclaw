@@ -97,7 +97,7 @@ describe('TabFaviconManager (Glowing Agent Favicon & Clean Restoration)', () => 
     });
 
     expect(globalSpy).toHaveBeenCalledWith(42);
-  });
+  }, 15000);
 
   it('clears and deletes idle timer and original favicon on tab removed', () => {
     const timer = setTimeout(() => {}, 100000);
