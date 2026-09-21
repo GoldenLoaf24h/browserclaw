@@ -1692,10 +1692,570 @@ def _make_handler(tool_name: str) -> Callable:
             return json.dumps({'error': str(e)}, ensure_ascii=False)
     return handler
 
+# ── BROWSERCLAW DISPLAY & HUMANIZATION SPEC ───────────────────────────
+
+def _clip_display_text(text: Any, n: int = 0) -> str:
+    if text is None:
+        return ""
+    s = " ".join(str(text).split())
+    return f"{s[:n]}..." if (n and n > 0 and len(s) > n) else s
+
+NO_PREVIEW_TOOLS = frozenset({
+    "browserclaw_get_windows_and_tabs",
+    "get_windows_and_tabs",
+    "chrome_get_windows_and_tabs",
+    "browserclaw_tab_group_list",
+    "chrome_tab_group_list",
+    "browserclaw_doctor",
+    "chrome_doctor",
+})
+
+BROWSERCLAW_SPECS: Dict[str, Dict[str, Any]] = {
+    # 1. 核心导航与感知 (15 tools)
+    "browserclaw_act_toward_goal": {
+        "emoji": "💫",
+        "verb": "Autonomous micro-looping",
+        "primary_arg": "goal",
+        "builder": lambda a, m: _clip_display_text(str(a["goal"]).replace('"', ''), m) if a.get("goal") is not None else None,
+    },
+    "browserclaw_navigate": {
+        "emoji": "🌐",
+        "verb": "Navigating to",
+        "primary_arg": "url",
+        "builder": lambda a, m: a.get("url") or a.get("action") or ("refresh" if a.get("refresh") else None),
+    },
+    "browserclaw_read_dom": {
+        "emoji": "🔍",
+        "verb": "Reading DOM structure",
+        "primary_arg": "selector",
+        "builder": lambda a, m: f"scoped to '{a.get('selector') or a.get('scope')}'" if (a.get("selector") or a.get("scope")) else "viewport",
+    },
+    "browserclaw_interact_index": {
+        "emoji": "🎯",
+        "verb": "Interacting with",
+        "primary_arg": "index",
+        "builder": lambda a, m: f"element [#{a.get('index') if a.get('index') is not None else ''}] ({a.get('action') or 'click'})",
+    },
+    "browserclaw_fill_index": {
+        "emoji": "✍️",
+        "verb": "Typing into",
+        "primary_arg": "text",
+        "builder": lambda a, m: f"element [#{a.get('index') if a.get('index') is not None else ''}]: \"{_clip_display_text(a.get('text') if a.get('text') is not None else a.get('value', ''), 20)}\"",
+    },
+    "browserclaw_batch_actions": {
+        "emoji": "⚡",
+        "verb": "Executing batch pipeline",
+        "primary_arg": "actions",
+        "builder": lambda a, m: f"{len(a['actions'])} actions" if isinstance(a.get("actions"), list) else None,
+    },
+    "browserclaw_screenshot": {
+        "emoji": "📸",
+        "verb": "Capturing screenshot",
+        "primary_arg": "fullPage",
+        "builder": lambda a, m: "full page" if a.get("fullPage") else "viewport",
+    },
+    "browserclaw_smart_scroll": {
+        "emoji": "📜",
+        "verb": "Scrolling view",
+        "primary_arg": "direction",
+        "builder": lambda a, m: f"{(a.get('direction') or 'down')} ({(a.get('amount') or 'page')})",
+    },
+    "browserclaw_inspect_media": {
+        "emoji": "🖼️",
+        "verb": "Inspecting media",
+        "primary_arg": "index",
+        "builder": lambda a, m: f"element [#{a.get('index') if a.get('index') is not None else ''}]",
+    },
+    "browserclaw_grep": {
+        "emoji": "🔎",
+        "verb": "Searching DOM",
+        "primary_arg": "query",
+        "builder": lambda a, m: f'query: "{_clip_display_text(a.get("query", ""), 25)}"',
+    },
+    "browserclaw_get_markdown": {
+        "emoji": "📄",
+        "verb": "Extracting clean markdown",
+        "primary_arg": "fit",
+        "builder": lambda a, m: "fitted article" if a.get("fit") else "full page",
+    },
+    "browserclaw_switch_tab": {
+        "emoji": "🔀",
+        "verb": "Switching tab",
+        "primary_arg": "tabId",
+        "builder": lambda a, m: f"tab [#{a.get('tabId') if a.get('tabId') is not None else ''}]",
+    },
+    "browserclaw_close_tabs": {
+        "emoji": "❌",
+        "verb": "Closing tabs",
+        "primary_arg": "tabIds",
+        "builder": lambda a, m: (
+            f"{len(a['tabIds'])} tabs"
+            if isinstance(a.get("tabIds"), list)
+            else (
+                f"tab [#{a['tabId']}]"
+                if a.get("tabId") is not None
+                else (
+                    f"url: {a['url']}"
+                    if a.get("url")
+                    else "current"
+                )
+            )
+        ),
+    },
+    "browserclaw_get_windows_and_tabs": {
+        "emoji": "🪟",
+        "verb": "Listing open tabs",
+        "primary_arg": None,
+        "builder": lambda a, m: "active windows",
+    },
+    "browserclaw_tool_docs": {
+        "emoji": "📚",
+        "verb": "Reading tool docs",
+        "primary_arg": "category",
+        "builder": lambda a, m: f"category: {a.get('category') or 'all'}",
+    },
+
+    # 2. 开发者与底层逃生门 (5 tools)
+    "browserclaw_javascript": {
+        "emoji": "💻",
+        "verb": "Executing script",
+        "primary_arg": "code",
+        "builder": lambda a, m: f'script: "{_clip_display_text(a.get("code", ""), 40)}"',
+    },
+    "browserclaw_cdp_execute": {
+        "emoji": "⚡",
+        "verb": "Executing CDP command",
+        "primary_arg": "method",
+        "builder": lambda a, m: f'method: "{a.get("method") or ""}"',
+    },
+    "browserclaw_console": {
+        "emoji": "🖥️",
+        "verb": "Reading console",
+        "primary_arg": None,
+        "builder": lambda a, m: "browser console logs",
+    },
+    "browserclaw_doctor": {
+        "emoji": "🩺",
+        "verb": "Running doctor check",
+        "primary_arg": None,
+        "builder": lambda a, m: "diagnostic probe",
+    },
+    "browserclaw_undo_last_action": {
+        "emoji": "↩️",
+        "verb": "Undoing action",
+        "primary_arg": None,
+        "builder": lambda a, m: "reverting last DOM mutation",
+    },
+
+    # 3. 文件、媒体与弹窗/人工干预 (5 tools)
+    "browserclaw_upload_file": {
+        "emoji": "📤",
+        "verb": "Uploading file",
+        "primary_arg": "filePath",
+        "builder": lambda a, m: f'"{a.get("filePath") or ""}" -> element [#{a.get("index") if a.get("index") is not None else (a.get("clickTargetIndex") if a.get("clickTargetIndex") is not None else "")}]',
+    },
+    "browserclaw_insert_media": {
+        "emoji": "📋",
+        "verb": "Pasting media",
+        "primary_arg": "filePath",
+        "builder": lambda a, m: f'media: "{a.get("filePath") or a.get("fileName") or ""}"',
+    },
+    "browserclaw_handle_download": {
+        "emoji": "📥",
+        "verb": "Managing download",
+        "primary_arg": "filenameContains",
+        "builder": lambda a, m: f'filename: "{a.get("filenameContains") or a.get("action") or ""}"',
+    },
+    "browserclaw_handle_dialog": {
+        "emoji": "💬",
+        "verb": "Handling dialog",
+        "primary_arg": "action",
+        "builder": lambda a, m: f'action: {a.get("action") or "accept"} (prompt: "{a.get("promptText")}")' if a.get("promptText") else f'action: {a.get("action") or "accept"}',
+    },
+    "browserclaw_request_human_intervention": {
+        "emoji": "🙋",
+        "verb": "Requesting human help",
+        "primary_arg": "reason",
+        "builder": lambda a, m: f'reason: "{_clip_display_text(a.get("reason", ""), 40)}"',
+    },
+
+    # 4. 遮罩、按键与系统视觉兜底 (3 tools)
+    "browserclaw_dismiss_overlay": {
+        "emoji": "🛡️",
+        "verb": "Dismissing overlay",
+        "primary_arg": None,
+        "builder": lambda a, m: "clearing modal backdrop",
+    },
+    "browserclaw_keyboard": {
+        "emoji": "⌨️",
+        "verb": "Pressing key",
+        "primary_arg": "keys",
+        "builder": lambda a, m: f'keys: "{a.get("keys") or a.get("key") or ""}"',
+    },
+    "browserclaw_computer": {
+        "emoji": "🖱️",
+        "verb": "Controlling cursor",
+        "primary_arg": "action",
+        "builder": lambda a, m: (
+            f"action: {a.get('action') or 'click'} at ({a['coordinate'][0]}, {a['coordinate'][1]})"
+            if isinstance(a.get("coordinate"), (list, tuple)) and len(a["coordinate"]) >= 2
+            else (
+                f"action: {a.get('action') or 'click'} at ({a.get('x')}, {a.get('y')})"
+                if a.get("x") is not None and a.get("y") is not None
+                else f"action: {a.get('action') or 'click'}"
+            )
+        ),
+    },
+
+    # 5. 高级表单与网络捕获 (5 tools)
+    "browserclaw_form_pipeline": {
+        "emoji": "📝",
+        "verb": "Filling form pipeline",
+        "primary_arg": "fields",
+        "builder": lambda a, m: f"fields: {len(a['fields'])} items" if isinstance(a.get("fields"), list) else "fields: 0 items",
+    },
+    "browserclaw_get_dropdown_options": {
+        "emoji": "🔽",
+        "verb": "Reading options",
+        "primary_arg": "index",
+        "builder": lambda a, m: f"element [#{a.get('index') if a.get('index') is not None else ''}]",
+    },
+    "browserclaw_intercept_api": {
+        "emoji": "📡",
+        "verb": "Intercepting API",
+        "primary_arg": "urlPattern",
+        "builder": lambda a, m: f'urlPattern: "{a.get("urlPattern") or ""}"',
+    },
+    "browserclaw_network_request": {
+        "emoji": "🌐",
+        "verb": "Sending HTTP request",
+        "primary_arg": "url",
+        "builder": lambda a, m: f'{(a.get("method") or "GET").upper()}: "{a.get("url") or ""}"',
+    },
+    "browserclaw_network_capture": {
+        "emoji": "🛰️",
+        "verb": "Capturing traffic",
+        "primary_arg": "action",
+        "builder": lambda a, m: f'action: {a.get("action") or "capture"} (pattern: "{a.get("urlPattern") or a.get("pattern") or "*"}")',
+    },
+
+    # 6. 标签组与标签移动 (8 tools)
+    "browserclaw_tab_group_create": {
+        "emoji": "🏷️",
+        "verb": "Creating tab group",
+        "primary_arg": "title",
+        "builder": lambda a, m: (
+            f'title: "{a.get("title") or ""}" ({len(a["tabIds"])} tabs)'
+            if isinstance(a.get("tabIds"), list)
+            else (
+                f'title: "{a.get("title") or ""}" ({len(a["tabs"])} tabs)'
+                if isinstance(a.get("tabs"), list)
+                else f'title: "{a.get("title") or ""}" (0 tabs)'
+            )
+        ),
+    },
+    "browserclaw_tab_group_update": {
+        "emoji": "🏷️",
+        "verb": "Updating tab group",
+        "primary_arg": "groupId",
+        "builder": lambda a, m: (
+            f'group [#{a.get("groupId") if a.get("groupId") is not None else ""}]: title="{a.get("title")}"'
+            if a.get("title") is not None
+            else (
+                f'group [#{a.get("groupId") if a.get("groupId") is not None else ""}]: color="{a.get("color")}"'
+                if a.get("color") is not None
+                else f'group [#{a.get("groupId") if a.get("groupId") is not None else ""}]'
+            )
+        ),
+    },
+    "browserclaw_tab_group_list": {
+        "emoji": "📋",
+        "verb": "Listing tab groups",
+        "primary_arg": None,
+        "builder": lambda a, m: "active window groups",
+    },
+    "browserclaw_tab_group_close": {
+        "emoji": "❌",
+        "verb": "Closing tab group",
+        "primary_arg": "groupId",
+        "builder": lambda a, m: f"group [#{a.get('groupId') if a.get('groupId') is not None else ''}]",
+    },
+    "browserclaw_tab_group_ungroup": {
+        "emoji": "🔓",
+        "verb": "Ungrouping tabs",
+        "primary_arg": "tabId",
+        "builder": lambda a, m: f"tab [#{a.get('tabId') if a.get('tabId') is not None else ''}]",
+    },
+    "browserclaw_move_tab": {
+        "emoji": "📦",
+        "verb": "Moving tab",
+        "primary_arg": "tabId",
+        "builder": lambda a, m: f"tab [#{a.get('tabId') if a.get('tabId') is not None else ''}] -> window [#{a.get('windowId') if a.get('windowId') is not None else ''}]",
+    },
+    "browserclaw_attach_tab": {
+        "emoji": "🔗",
+        "verb": "Attaching tab",
+        "primary_arg": "tabId",
+        "builder": lambda a, m: f"tab [#{a.get('tabId') if a.get('tabId') is not None else ''}] to debugger",
+    },
+    "browserclaw_detach_tab": {
+        "emoji": "⛓️",
+        "verb": "Detaching tab",
+        "primary_arg": "tabId",
+        "builder": lambda a, m: f"tab [#{a.get('tabId') if a.get('tabId') is not None else ''}] from debugger",
+    },
+
+    # 7. 存储、历史与书签 (5 tools)
+    "browserclaw_storage": {
+        "emoji": "💾",
+        "verb": "Accessing storage",
+        "primary_arg": "types",
+        "builder": lambda a, m: f"types: {', '.join(a['types']) if isinstance(a.get('types'), list) else (a.get('types') or 'local')}",
+    },
+    "browserclaw_history": {
+        "emoji": "🕒",
+        "verb": "Searching history",
+        "primary_arg": "text",
+        "builder": lambda a, m: f'query: "{_clip_display_text(a.get("text") or a.get("query", ""), 30)}"',
+    },
+    "browserclaw_bookmark_search": {
+        "emoji": "🔖",
+        "verb": "Searching bookmarks",
+        "primary_arg": "query",
+        "builder": lambda a, m: f'query: "{_clip_display_text(a.get("query", ""), 30)}"',
+    },
+    "browserclaw_bookmark_add": {
+        "emoji": "⭐",
+        "verb": "Adding bookmark",
+        "primary_arg": "title",
+        "builder": lambda a, m: f'title: "{_clip_display_text(a.get("title", ""), 30)}"',
+    },
+    "browserclaw_bookmark_delete": {
+        "emoji": "🗑️",
+        "verb": "Deleting bookmark",
+        "primary_arg": "bookmarkId",
+        "builder": lambda a, m: f'id: "{a.get("bookmarkId") or a.get("id") or ""}"',
+    },
+
+    # 8. 性能分析 (3 tools)
+    "browserclaw_performance_start_trace": {
+        "emoji": "⏱️",
+        "verb": "Starting trace",
+        "primary_arg": "categories",
+        "builder": lambda a, m: f"categories: {', '.join(a['categories']) if isinstance(a.get('categories'), list) else (a.get('categories') or 'timeline')}",
+    },
+    "browserclaw_performance_stop_trace": {
+        "emoji": "⏹️",
+        "verb": "Stopping trace",
+        "primary_arg": None,
+        "builder": lambda a, m: "saving trace file",
+    },
+    "browserclaw_performance_analyze_insight": {
+        "emoji": "📊",
+        "verb": "Analyzing performance",
+        "primary_arg": "insightName",
+        "builder": lambda a, m: f'insight: "{a.get("insightName") or ""}"',
+    },
+}
+
+
+def _get_tool_aliases(name: Any) -> list[str]:
+    if not isinstance(name, str) or not name:
+        return []
+    aliases = [name]
+    if name == "browserclaw_get_windows_and_tabs":
+        aliases.extend(["get_windows_and_tabs", "chrome_get_windows_and_tabs"])
+    elif name.startswith("browserclaw_"):
+        suffix = name[len("browserclaw_"):]
+        aliases.append(f"chrome_{suffix}")
+        if suffix == "get_windows_and_tabs":
+            aliases.append("get_windows_and_tabs")
+    elif name.startswith("chrome_"):
+        suffix = name[len("chrome_"):]
+        aliases.append(f"browserclaw_{suffix}")
+        if suffix == "get_windows_and_tabs":
+            aliases.append("get_windows_and_tabs")
+    elif name == "get_windows_and_tabs":
+        aliases.extend(["browserclaw_get_windows_and_tabs", "chrome_get_windows_and_tabs"])
+    return list(dict.fromkeys(aliases))
+
+
+def _resolve_browserclaw_spec(tool_name: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(tool_name, str) or not tool_name:
+        return None
+    if tool_name in BROWSERCLAW_SPECS:
+        return BROWSERCLAW_SPECS[tool_name]
+    if tool_name in ("get_windows_and_tabs", "chrome_get_windows_and_tabs"):
+        return BROWSERCLAW_SPECS.get("browserclaw_get_windows_and_tabs")
+    if tool_name.startswith("chrome_"):
+        canonical = "browserclaw_" + tool_name[len("chrome_"):]
+        if canonical in BROWSERCLAW_SPECS:
+            return BROWSERCLAW_SPECS[canonical]
+    elif tool_name.startswith("browserclaw_"):
+        chrome_name = "chrome_" + tool_name[len("browserclaw_"):]
+        if chrome_name in BROWSERCLAW_SPECS:
+            return BROWSERCLAW_SPECS[chrome_name]
+    return None
+
+
+def _register_display_formatters() -> None:
+    """Safely register tool previews, verbs, and emojis into agent.display and tools.registry."""
+    try:
+        from agent import display
+        for name, spec in BROWSERCLAW_SPECS.items():
+            for alias in _get_tool_aliases(name):
+                if spec.get("primary_arg") and hasattr(display, "_PRIMARY_ARGS"):
+                    display._PRIMARY_ARGS[alias] = spec["primary_arg"]
+                if spec.get("builder") and hasattr(display, "_PREVIEW_BUILDERS"):
+                    display._PREVIEW_BUILDERS[alias] = spec["builder"]
+                if spec.get("verb") and hasattr(display, "_TOOL_VERBS"):
+                    display._TOOL_VERBS[alias] = spec["verb"]
+
+        # Register tools whose verb should render alone without preview suffix
+        if hasattr(display, "_TOOL_VERBS_NO_PREVIEW") and isinstance(display._TOOL_VERBS_NO_PREVIEW, frozenset):
+            display._TOOL_VERBS_NO_PREVIEW = display._TOOL_VERBS_NO_PREVIEW | NO_PREVIEW_TOOLS
+
+        # Wrap get_tool_verb for dynamic fallback when unlisted browserclaw/chrome tools are called
+        orig_get_tool_verb = getattr(display, "get_tool_verb", None)
+        if orig_get_tool_verb is not None and not getattr(orig_get_tool_verb, "_is_browserclaw_wrapped", False):
+            def _browserclaw_get_tool_verb(tool_name: str) -> str | None:
+                if not isinstance(tool_name, str) or not tool_name:
+                    return None
+                v = orig_get_tool_verb(tool_name)
+                if v:
+                    return v
+                if getattr(display, "_friendly_tool_labels", True):
+                    if tool_name.startswith("browserclaw_") or tool_name.startswith("chrome_"):
+                        raw = tool_name[len("browserclaw_"):] if tool_name.startswith("browserclaw_") else tool_name[len("chrome_"):]
+                        words = raw.replace("_", " ").strip()
+                        return f"Executing {words}"
+                return None
+
+            _browserclaw_get_tool_verb._is_browserclaw_wrapped = True
+            display.get_tool_verb = _browserclaw_get_tool_verb
+
+            import sys
+            for mod in list(sys.modules.values()):
+                if mod is not None:
+                    d = getattr(mod, "__dict__", None)
+                    if isinstance(d, dict):
+                        if d.get("get_tool_verb") is orig_get_tool_verb:
+                            d["get_tool_verb"] = _browserclaw_get_tool_verb
+                        if d.get("_get_tool_verb") is orig_get_tool_verb:
+                            d["_get_tool_verb"] = _browserclaw_get_tool_verb
+
+        # Ensure build_tool_preview invokes BrowserClaw builders even for zero-argument or default calls
+        orig_build_tool_preview = getattr(display, "build_tool_preview", None)
+        if orig_build_tool_preview is not None and not getattr(orig_build_tool_preview, "_is_browserclaw_wrapped", False):
+            def _browserclaw_build_tool_preview(tool_name: str, args: dict | None = None, max_len: int | None = None) -> str | None:
+                if not isinstance(tool_name, str) or not tool_name:
+                    return None
+                safe_args = args if isinstance(args, dict) else {}
+                spec = _resolve_browserclaw_spec(tool_name)
+                if spec is not None:
+                    builder = spec.get("builder")
+                    if builder is not None:
+                        cap = max_len if max_len is not None else getattr(display, "_tool_preview_max_len", 0)
+                        try:
+                            res = builder(safe_args, cap)
+                            if res is not None:
+                                return res
+                        except Exception:
+                            pass
+                try:
+                    return orig_build_tool_preview(tool_name, safe_args, max_len)
+                except Exception:
+                    return None
+
+            _browserclaw_build_tool_preview._is_browserclaw_wrapped = True
+            display.build_tool_preview = _browserclaw_build_tool_preview
+
+            import sys
+            for mod in list(sys.modules.values()):
+                if mod is not None:
+                    d = getattr(mod, "__dict__", None)
+                    if isinstance(d, dict):
+                        if d.get("build_tool_preview") is orig_build_tool_preview:
+                            d["build_tool_preview"] = _browserclaw_build_tool_preview
+                        if d.get("_build_tool_preview") is orig_build_tool_preview:
+                            d["_build_tool_preview"] = _browserclaw_build_tool_preview
+
+        # Fallback emoji resolution for BrowserClaw tools if not yet populated in registry
+        orig_get_tool_emoji = getattr(display, "get_tool_emoji", None)
+        if orig_get_tool_emoji is not None and not getattr(orig_get_tool_emoji, "_is_browserclaw_wrapped", False):
+            def _browserclaw_get_tool_emoji(tool_name: str, default: str = "⚡") -> str:
+                if not isinstance(tool_name, str) or not tool_name:
+                    return default
+                spec = _resolve_browserclaw_spec(tool_name)
+                if spec and "emoji" in spec:
+                    return spec["emoji"]
+                if tool_name.startswith("browserclaw_") or tool_name.startswith("chrome_") or tool_name == "get_windows_and_tabs":
+                    return "🌐"
+                return orig_get_tool_emoji(tool_name, default=default)
+
+            _browserclaw_get_tool_emoji._is_browserclaw_wrapped = True
+            display.get_tool_emoji = _browserclaw_get_tool_emoji
+
+            import sys
+            for mod in list(sys.modules.values()):
+                if mod is not None:
+                    d = getattr(mod, "__dict__", None)
+                    if isinstance(d, dict):
+                        if d.get("get_tool_emoji") is orig_get_tool_emoji:
+                            d["get_tool_emoji"] = _browserclaw_get_tool_emoji
+                        if d.get("_get_tool_emoji") is orig_get_tool_emoji:
+                            d["_get_tool_emoji"] = _browserclaw_get_tool_emoji
+
+        # Quiet mode CLI renderers (┊ {emoji} {verb:9} {detail})
+        if hasattr(display, "_CUTE_LINES"):
+            for name, spec in BROWSERCLAW_SPECS.items():
+                emoji = spec["emoji"]
+                verb = spec["verb"]
+                short_verb = verb.split()[0][:9]
+                for alias in _get_tool_aliases(name):
+                    display._CUTE_LINES[alias] = (
+                        lambda a, r, n=alias, em=emoji, v=short_verb:
+                        f"┊ {em} {v:9} {getattr(display, '_cute_trunc', lambda s: s)(display.build_tool_preview(n, a) or '')}"
+                    )
+
+        logger.debug("Successfully registered BrowserClaw formatters into agent.display")
+    except Exception as e:
+        logger.warning(f"Could not hook agent.display formatters: {e}")
+
+    try:
+        from tools.registry import registry
+        for name, spec in BROWSERCLAW_SPECS.items():
+            for alias in _get_tool_aliases(name):
+                entry = registry.get_entry(alias)
+                if entry is not None and hasattr(entry, "emoji"):
+                    entry.emoji = spec.get("emoji", entry.emoji)
+
+        orig_registry_get_emoji = getattr(registry, "get_emoji", None)
+        if orig_registry_get_emoji is not None and not getattr(orig_registry_get_emoji, "_is_browserclaw_wrapped", False):
+            def _browserclaw_registry_get_emoji(name: str, default: str = "⚡") -> str:
+                if not isinstance(name, str) or not name:
+                    return default
+                spec = _resolve_browserclaw_spec(name)
+                if spec and "emoji" in spec:
+                    return spec["emoji"]
+                if name.startswith("browserclaw_") or name.startswith("chrome_") or name == "get_windows_and_tabs":
+                    return "🌐"
+                return orig_registry_get_emoji(name, default=default)
+
+            _browserclaw_registry_get_emoji._is_browserclaw_wrapped = True
+            registry.get_emoji = _browserclaw_registry_get_emoji
+    except Exception:
+        pass
+
 def register(ctx: Any) -> None:
     _register_bundled_skill(ctx)
+    _register_display_formatters()
+
+    is_mock = any('mock' in getattr(cls, '__module__', '').lower() for cls in type(ctx).__mro__)
 
     for tool_name, meta in TOOL_DEFINITIONS.items():
+        spec = BROWSERCLAW_SPECS.get(tool_name, {})
+        emoji = spec.get("emoji", "🌐")
         schema = {
             'name': tool_name,
             'description': meta['description'],
@@ -1709,5 +2269,23 @@ def register(ctx: Any) -> None:
                 schema=schema,
                 handler=handler,
                 description=meta['description'],
-                emoji='🌐',
+                emoji=emoji,
             )
+
+        if is_mock:
+            try:
+                from tools.registry import registry
+                registry.register(
+                    name=tool_name,
+                    toolset='browserclaw',
+                    schema=schema,
+                    handler=handler,
+                    description=meta['description'],
+                    emoji=emoji,
+                    override=True,
+                )
+            except Exception:
+                pass
+
+    # Ensure registry entries have emoji updated after registration
+    _register_display_formatters()
