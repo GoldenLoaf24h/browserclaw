@@ -2,6 +2,7 @@ import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import {
   TOOL_NAMES,
+  resolveToolName,
   type BatchActionItem,
   type BatchActionResult,
   type CaptureNetworkOptions,
@@ -17,7 +18,7 @@ import {
   createDialogInterruptResponse,
 } from '@/utils/race-cdp';
 import { resolveTargetLocation } from './unified-locator';
-import { captureDeltaIfRequested } from '@/utils/delta-helper';
+import { captureDeltaIfRequested, ensureSnapshotBaseline } from '@/utils/delta-helper';
 import { getSubframeViewportOffset } from './interact-index';
 import { tabFaviconManager } from './tab-favicon';
 import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
@@ -170,7 +171,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
         sessionId: args.sessionId || args.sessionContext,
       });
       if (!tab.id) {
-        return createErrorResponse('No active tab found for chrome_batch_actions');
+        return createErrorResponse(`No active tab found for ${resolveToolName('batch_actions')}`);
       }
       const tabId = tab.id;
       tabFaviconManager.markTabActive(tabId);
@@ -209,6 +210,8 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
       )
         .then((r) => r?.[0]?.result)
         .catch(() => null);
+
+      await ensureSnapshotBaseline(tabId, args.includeDelta);
 
       for (let i = 0; i < actions.length; i++) {
         const item = actions[i];

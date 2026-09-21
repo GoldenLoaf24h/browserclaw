@@ -1,6 +1,8 @@
 # BrowserClaw Setup & Onboarding Guide
 
-This document is the authoritative onboarding guide for **AI Agents** (Claude Code, Cursor, Windsurf, Codex, Hermes, etc.) and human developers setting up BrowserClaw.
+This document is the authoritative onboarding guide for **AI Agents** (ChatGPT / Codex, Hermes, Claude Code, Cursor, Windsurf, and other MCP-capable clients) and human developers setting up BrowserClaw.
+
+> **Enjoying BrowserClaw?** If this project saves you time, please consider giving it a star on GitHub — it helps the project grow and keeps improvements coming: https://github.com/GoldenLoaf24h/browserclaw
 
 ---
 
@@ -125,11 +127,46 @@ open -a "Google Chrome" --args --silent-debugger-extension-api
 
 ---
 
-## Step 5: Configure Your AI Agent (MCP Client Setup)
+## Step 5: Enable Jev Semantic Engine (Recommended for Speed)
+
+BrowserClaw's on-page autonomy (`chrome_act_toward_goal`) runs on **Jev**, a fast semantic decision model from TypeSafe. Without an API key it still works, but falls back to the slower heuristic engine with reduced step budgets — page interactions feel noticeably less snappy (roughly 2-5x slower per decision step).
+
+To unlock full-speed Jev:
+
+1. Get a free API key: register at https://typesafe.ai/blog/introducing-system-one-models-and-jev
+2. Set the environment variable before starting your agent / the native bridge:
+
+**Windows (PowerShell, persistent for current user):**
+```powershell
+[Environment]::SetEnvironmentVariable("TYPESAFE_API_KEY", "your-key-here", "User")
+$env:TYPESAFE_API_KEY = "your-key-here"   # makes it available in the current session immediately
+```
+
+**macOS / Linux (bash/zsh):**
+```bash
+export TYPESAFE_API_KEY="your-key-here"
+# To persist, add the line above to ~/.bashrc or ~/.zshrc
+```
+
+3. Restart your agent client (or the native bridge if running standalone) so it picks up the variable.
+
+> No key, or invalid key? BrowserClaw automatically degrades to the deterministic heuristic engine — nothing breaks, decisions are just slower and more conservative.
+
+---
+
+## Step 6: Configure Your AI Agent (MCP Client Setup)
 
 Add BrowserClaw to your agent client's MCP configuration:
 
-### 5.1 Cursor (`.cursor/mcp.json`)
+Config file locations by operating system:
+
+- **Windows**: `%APPDATA%\\<Client>\\<config>.json`
+- **macOS**: `~/Library/Application Support/<Client>/<config>.json`
+- **Linux**: `~/.config/<Client>/<config>.json`
+
+---
+
+### 6.1 Cursor (`.cursor/mcp.json`)
 
 ```json
 {
@@ -145,7 +182,7 @@ Add BrowserClaw to your agent client's MCP configuration:
 }
 ```
 
-### 5.2 Claude Desktop & Claude Code (`claude_desktop_config.json`)
+### 6.2 Claude Desktop & Claude Code (`claude_desktop_config.json`)
 
 Config path: Windows `%APPDATA%\Claude\claude_desktop_config.json`, macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Linux `~/.config/Claude/claude_desktop_config.json`.
 
@@ -163,7 +200,7 @@ Config path: Windows `%APPDATA%\Claude\claude_desktop_config.json`, macOS `~/Lib
 }
 ```
 
-### 5.3 Windsurf / Cascade (`~/.codeium/windsurf/mcp_config.json`)
+### 6.3 Windsurf / Cascade (`~/.codeium/windsurf/mcp_config.json`)
 
 ```json
 {
@@ -179,16 +216,49 @@ Config path: Windows `%APPDATA%\Claude\claude_desktop_config.json`, macOS `~/Lib
 }
 ```
 
-### 5.4 Hermes Agent
+### 6.4 ChatGPT / Codex (Desktop App & CLI)
 
-#### Option A: Native Plugin (Recommended — installs 15 core tools + skill together)
+The `mcp-config.json` template in `skill/config/` covers several common layouts. For Codex specifically, add a stdio server entry:
+
+```json
+{
+  "mcpServers": {
+    "browserclaw": {
+      "command": "node",
+      "args": ["<repo-root>/app/native-server/dist/mcp/mcp-server-stdio.js"],
+      "env": {
+        "CHROME_MCP_TOOL_PROFILE": "core"
+      }
+    }
+  }
+}
+```
+
+For the ChatGPT desktop app, use the HTTP transport instead (streamable HTTP):
+
+```json
+{
+  "mcpServers": {
+    "browserclaw": {
+      "url": "http://127.0.0.1:12306/mcp",
+      "headers": {
+        "x-mcp-token": "PASTE_TOKEN_FROM_~/.chrome-mcp/bridge-token"
+      }
+    }
+  }
+}
+```
+
+### 6.5 Hermes Agent
+
+#### Option A: Native Plugin (Recommended — installs core tools + skill together)
 
 ```bash
 hermes plugins install GoldenLoaf24h/browserclaw#plugins/browserclaw
 hermes plugins enable browserclaw
 ```
 
-#### Option B: MCP Server Add
+#### Option B: MCP Server Add (HTTP transport — works on Windows / macOS / Linux identically)
 
 ```bash
 hermes mcp add browserclaw --url http://127.0.0.1:12306/mcp --auth header
@@ -198,17 +268,18 @@ When prompted for headers, enter `x-mcp-token: <TOKEN_FROM_~/.chrome-mcp/bridge-
 
 ---
 
-## Step 6: Install the Agent Skill
+## Step 7: Install the Agent Skill
 
 If your agent supports skill definitions, install the bundled BrowserClaw operator skill:
 
 - **Hermes Agent**: Bundled automatically via the plugin (`skill_view("browserclaw:browserclaw")`).
-- **Codex**: Copy `skill/` to `~/.codex/skills/browserclaw/SKILL.md`.
-- **Claude Code**: Copy `skill/` to `.claude/skills/browserclaw/SKILL.md`.
+- **ChatGPT / Codex (desktop app)**: Copy the `skill/` folder to `~/.codex/skills/browserclaw/`.
+- **Claude Code**: Copy the `skill/` folder to `.claude/skills/browserclaw/`.
+- **Any other MCP-capable agent**: Copy the `skill/` folder into that client's designated skills directory (check its docs for the exact path).
 
 ---
 
-## Step 7: System Verification & Health Check
+## Step 8: System Verification & Health Check
 
 Verify that all BrowserClaw components are functioning with the built-in doctor:
 
@@ -232,3 +303,10 @@ STATUS: [HEALTHY] All BrowserClaw layers are operating normally!
 ```
 
 If any check fails, consult **[docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)** for instant self-healing remedies.
+
+---
+
+## Support the Project
+
+If BrowserClaw has been useful in your workflow, a GitHub star is the fastest way to support continued development:
+https://github.com/GoldenLoaf24h/browserclaw

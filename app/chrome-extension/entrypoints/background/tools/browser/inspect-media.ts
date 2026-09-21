@@ -1,6 +1,6 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
-import { TOOL_NAMES } from 'chrome-mcp-shared';
+import { TOOL_NAMES, resolveToolName } from 'chrome-mcp-shared';
 import { screenshotTool } from './screenshot';
 
 export interface InspectMediaParams {
@@ -44,7 +44,7 @@ export class InspectMediaTool extends BaseBrowserToolExecutor {
 
     if (typeof args.index !== 'number' && (!args.selector || !args.selector.trim())) {
       return createErrorResponse(
-        'Either "index" (1-based from chrome_read_dom) or "selector" must be provided',
+        `Either "index" (1-based from ${resolveToolName('read_dom')}) or "selector" must be provided`,
       );
     }
 

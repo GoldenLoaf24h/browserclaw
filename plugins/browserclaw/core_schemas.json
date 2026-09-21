@@ -62,7 +62,7 @@
     }
   },
   "chrome_screenshot": {
-    "description": "[Prefer chrome_read_dom over taking a screenshot] Take a screenshot of the current page or a specific element. Returns base64 image directly in MCP image content block without writing to disk. By default, output is compressed JPEG with maxWidth <= 1280px. Debug disk save is available via savePng/saveToDisk into system temporary directory.",
+    "description": "[Prefer browserclaw_read_dom over taking a screenshot] Take a screenshot of the current page or a specific element. Returns base64 image directly in MCP image content block without writing to disk. By default, output is compressed JPEG with maxWidth <= 1280px. Debug disk save is available via savePng/saveToDisk into system temporary directory.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -76,7 +76,7 @@
         },
         "assetIndex": {
           "type": "number",
-          "description": "View one visual asset listed by chrome_read_dom ([asset N] lines): returns the real image resource; falls back to a viewport crop when bytes are unavailable"
+          "description": "View one visual asset listed by browserclaw_read_dom ([asset N] lines): returns the real image resource; falls back to a viewport crop when bytes are unavailable"
         },
         "tabId": {
           "type": "number",
@@ -132,11 +132,11 @@
         },
         "targetIndex": {
           "type": "number",
-          "description": "Compact 1-based numeric index of target element from chrome_read_dom to crop and capture only this specific region of interest"
+          "description": "Compact 1-based numeric index of target element from browserclaw_read_dom to crop and capture only this specific region of interest"
         },
         "index": {
           "type": "number",
-          "description": "Alias for targetIndex: compact 1-based numeric index of target element from chrome_read_dom to crop and capture"
+          "description": "Alias for targetIndex: compact 1-based numeric index of target element from browserclaw_read_dom to crop and capture"
         },
         "padding": {
           "type": "number",
@@ -343,7 +343,7 @@
     }
   },
   "chrome_interact_index": {
-    "description": "Click, hover, or interact with an element using its compact 1-based numeric index from chrome_read_dom. When performing predictable multi-step actions (e.g. form submission or chain navigation), prefer chrome_batch_actions to finish in a single round-trip.",
+    "description": "Click, hover, or interact with an element using its compact 1-based numeric index from browserclaw_read_dom. When performing predictable multi-step actions (e.g. form submission or chain navigation), prefer browserclaw_batch_actions to finish in a single round-trip.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -437,7 +437,7 @@
           "properties": {
             "index": {
               "type": "number",
-              "description": "1-based index (from chrome_read_dom) of the drag destination element"
+              "description": "1-based index (from browserclaw_read_dom) of the drag destination element"
             },
             "coordinate": {
               "type": "object",
@@ -548,7 +548,7 @@
     }
   },
   "chrome_fill_index": {
-    "description": "Fill text into an input or textarea element using its compact 1-based numeric index. For single search/form submission, pass pressEnter: true to fill and submit in 1 turn without needing a separate click. When filling multiple fields or clicking submit, use chrome_batch_actions to pipeline in 1 turn.",
+    "description": "Fill text into an input or textarea element using its compact 1-based numeric index. For single search/form submission, pass pressEnter: true to fill and submit in 1 turn without needing a separate click. When filling multiple fields or clicking submit, use browserclaw_batch_actions to pipeline in 1 turn.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -605,7 +605,7 @@
     }
   },
   "chrome_batch_actions": {
-    "description": "Execute a sequential multi-step pipeline of browser actions in a single round-trip without waiting for intermediate model turns.\n* CRITICAL EFFICIENCY RULE: When the next 2+ actions are predictable (e.g. form filling: [fill username, fill password, click submit]; or search flow: [fill query, press Enter, wait]), ALWAYS use chrome_batch_actions instead of individual tool calls. It completes the entire sequence in 1 turn (3~5x faster, 75%+ lower token cost).\n* Supported action types: click, double_click, right_click, fill, hover, scroll, press_key, wait, fill_form, assert, extract.\n* Set includeDelta: true to automatically inspect DOM changes after the pipeline completes.",
+    "description": "Execute a sequential multi-step pipeline of browser actions in a single round-trip without waiting for intermediate model turns.\n* CRITICAL EFFICIENCY RULE: When the next 2+ actions are predictable (e.g. form filling: [fill username, fill password, click submit]; or search flow: [fill query, press Enter, wait]), ALWAYS use browserclaw_batch_actions instead of individual tool calls. It completes the entire sequence in 1 turn (3~5x faster, 75%+ lower token cost).\n* Supported action types: click, double_click, right_click, fill, hover, scroll, press_key, wait, fill_form, assert, extract.\n* Set includeDelta: true to automatically inspect DOM changes after the pipeline completes.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -638,7 +638,7 @@
               },
               "ref": {
                 "type": ["string", "number"],
-                "description": "Target element numeric index or ref from chrome_read_dom"
+                "description": "Target element numeric index or ref from browserclaw_read_dom"
               },
               "selector": {
                 "type": "string",
@@ -663,7 +663,7 @@
                   "properties": {
                     "ref": {
                       "type": ["string", "number"],
-                      "description": "Target element numeric index or ref from chrome_read_dom"
+                      "description": "Target element numeric index or ref from browserclaw_read_dom"
                     },
                     "index": {
                       "type": "number",
@@ -1054,7 +1054,7 @@
       "properties": {
         "index": {
           "type": "number",
-          "description": "1-based element index from chrome_read_dom"
+          "description": "1-based element index from browserclaw_read_dom"
         },
         "selector": {
           "type": "string",
@@ -1072,7 +1072,7 @@
     }
   },
   "chrome_grep": {
-    "description": "Search the page without dumping full DOM tree. Supports searching interactive elements (returning indices for chrome_interact_index), all DOM nodes, or raw visible text lines.",
+    "description": "Search the page without dumping full DOM tree. Supports searching interactive elements (returning indices for browserclaw_interact_index), all DOM nodes, or raw visible text lines.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1178,7 +1178,7 @@
         },
         "index": {
           "type": "number",
-          "description": "1-based compact element index from chrome_read_dom targeting the rich-text editor or composer. Defaults to active element or discovered composer."
+          "description": "1-based compact element index from browserclaw_read_dom targeting the rich-text editor or composer. Defaults to active element or discovered composer."
         },
         "selector": {
           "type": "string",

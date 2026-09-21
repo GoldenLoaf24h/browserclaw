@@ -1,6 +1,6 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
-import { TOOL_NAMES } from 'chrome-mcp-shared';
+import { TOOL_NAMES, resolveToolName } from 'chrome-mcp-shared';
 import { TOOL_MESSAGE_TYPES } from '@/common/message-types';
 import {
   canvasToDataURL,
@@ -435,7 +435,7 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
         if (!asset?.rect) {
           return createErrorResponse(
             asset?.reason ||
-              `Asset ${args.assetIndex} not found. Run chrome_read_dom to list assets.`,
+              `Asset ${args.assetIndex} not found. Run ${resolveToolName('read_dom')} to list assets.`,
           );
         }
         if (asset.dataUrl && asset.dataUrl.startsWith('data:')) {

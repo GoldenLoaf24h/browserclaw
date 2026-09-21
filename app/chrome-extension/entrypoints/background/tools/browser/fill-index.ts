@@ -1,7 +1,7 @@
 import { actionHistoryManager } from '@/utils/action-history-manager';
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
-import { TOOL_NAMES } from 'chrome-mcp-shared';
+import { TOOL_NAMES, resolveToolName } from 'chrome-mcp-shared';
 import { executeInPage } from './in-page-engine';
 import { computePerceptiveDelta } from './dom-indexer';
 import { waitForPageSettle } from '@/utils/action-watchdog';
@@ -14,7 +14,7 @@ import {
 } from '@/utils/race-cdp';
 import { sessionTabAffinity } from '@/utils/session-tab-affinity';
 import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
-import { captureDeltaIfRequested } from '@/utils/delta-helper';
+import { captureDeltaIfRequested, ensureSnapshotBaseline } from '@/utils/delta-helper';
 import { getSubframeViewportOffset } from './interact-index';
 import { tabFaviconManager } from './tab-favicon';
 import { computeHumanizedPoints } from '@/utils/mouse-trajectory';
@@ -59,7 +59,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
         sessionId: args.sessionId || args.sessionContext,
       });
       if (!tab.id) {
-        return createErrorResponse('No active tab found for chrome_fill_index');
+        return createErrorResponse(`No active tab found for ${resolveToolName('fill_index')}`);
       }
       const targetTabId: number = tab.id;
 
@@ -74,6 +74,8 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
         )
           .then((r) => r?.[0]?.result)
           .catch(() => null);
+
+        await ensureSnapshotBaseline(targetTabId, args.includeDelta);
 
         // D3 (TESTING-NOTES #19): surface active-tab fallback in the response.
         const fillIdxAffinityWarning =
@@ -99,7 +101,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
             (fillResult.error ||
               fillResult.diagnostics ||
               `Failed to commit text into element with index [${args.index}]`) +
-              `. Hint: If the element is within a ShadowRoot or custom rich-text composer, verify with chrome_read_dom or try clicking directly.`,
+              `. Hint: If the element is within a ShadowRoot or custom rich-text composer, verify with ${resolveToolName('read_dom')} or try clicking directly.`,
           );
         }
 
@@ -165,7 +167,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           const btnIdx = (outcome.submitButtonState as any).index;
           const btnTxt = outcome.submitButtonState.text || 'Submit';
           console.log(
-            `[chrome_fill_index] Autocomplete consumed Enter or submit requested without URL change; auto-clicking detected submit button [${btnIdx}] ("${btnTxt}")`,
+            `[${resolveToolName('fill_index')}] Autocomplete consumed Enter or submit requested without URL change; auto-clicking detected submit button [${btnIdx}] ("${btnTxt}")`,
           );
           try {
             const { interactIndexTool } = await import('./interact-index');
@@ -197,7 +199,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
               urlChanged = Boolean(previousUrl && currentUrl && previousUrl !== currentUrl);
             } catch {}
           } catch (autoClickErr) {
-            console.warn('[chrome_fill_index] Failed to auto-click submit button:', autoClickErr);
+            console.warn(`[${resolveToolName('fill_index')}] Failed to auto-click submit button:`, autoClickErr);
           }
         }
 
@@ -241,11 +243,11 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
           (outcome as any).submitButtonText = btnTxt;
           if (!args.submit && !outcome.submitted) {
             (outcome as any).nextActionHint =
-              `Submit button detected at index [${btnIdx}] ("${btnTxt}"). 1-Turn Optimal Paradigm: Use chrome_fill_index({ index: ${args.index}, text: '...', submit: true }), pass pressEnter: true, or use chrome_batch_actions([{type: 'fill', index: ${args.index}, text: '...'}, {type: 'click', index: ${btnIdx}}]) to eliminate extra turns.`;
+              `Submit button detected at index [${btnIdx}] ("${btnTxt}"). 1-Turn Optimal Paradigm: Use ${resolveToolName('fill_index')}({ index: ${args.index}, text: '...', submit: true }), pass pressEnter: true, or use ${resolveToolName('batch_actions')}([{type: 'fill', index: ${args.index}, text: '...'}, {type: 'click', index: ${btnIdx}}]) to eliminate extra turns.`;
           }
         } else if (!args.pressEnter && !args.submit && !outcome.submitted) {
           (outcome as any).nextActionHint =
-            `1-Turn Optimal Paradigm: Pass submit: true or pressEnter: true to chrome_fill_index, or use chrome_batch_actions to pipeline fill and submit in 1 turn.`;
+            `1-Turn Optimal Paradigm: Pass submit: true or pressEnter: true to ${resolveToolName('fill_index')}, or use ${resolveToolName('batch_actions')} to pipeline fill and submit in 1 turn.`;
         }
 
         const seen = new WeakSet();
@@ -275,7 +277,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
         return createTargetOccludedResponse(error as any);
       }
       return createErrorResponse(
-        `Error executing chrome_fill_index: ${error instanceof Error ? error.message : String(error)}`,
+        `Error executing ${resolveToolName('fill_index')}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }

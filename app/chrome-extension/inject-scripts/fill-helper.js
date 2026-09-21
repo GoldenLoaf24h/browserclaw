@@ -26,7 +26,7 @@ if (window.__FILL_HELPER_INITIALIZED__) {
         }
         if (!element || !(element instanceof Element)) {
           return {
-            error: `Element ref "${ref}" not found. Please call chrome_read_dom first and ensure the ref is still valid.`,
+            error: `Element ref "${ref}" not found. Please call browserclaw_read_dom first and ensure the ref is still valid.`,
           };
         }
       } else {

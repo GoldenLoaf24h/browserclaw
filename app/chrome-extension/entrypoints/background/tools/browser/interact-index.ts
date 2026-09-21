@@ -1,6 +1,6 @@
 import { createErrorResponse, ToolResult } from '../../../../common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
-import { TOOL_NAMES, type CaptureNetworkOptions } from 'chrome-mcp-shared';
+import { TOOL_NAMES, resolveToolName, type CaptureNetworkOptions } from 'chrome-mcp-shared';
 import { cdpSessionManager } from '../../../../utils/cdp-session-manager';
 import {
   raceCdp,
@@ -25,7 +25,7 @@ import {
 } from '../../../../utils/coordinate-parser';
 import { sessionTabAffinity } from '../../../../utils/session-tab-affinity';
 import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
-import { captureDeltaIfRequested } from '../../../../utils/delta-helper';
+import { captureDeltaIfRequested, ensureSnapshotBaseline } from '../../../../utils/delta-helper';
 import { tabFaviconManager } from './tab-favicon';
 import { startActionNetworkCapture } from '../../../../utils/action-network-capture';
 
@@ -306,7 +306,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
 
     if (!hasIndex && !hasCoord && !hasPoints) {
       return createErrorResponse(
-        'Either index (positive 1-based integer) or coordinate ({ x: number, y: number }) must be provided for chrome_interact_index',
+        `Either index (positive 1-based integer) or coordinate ({ x: number, y: number }) must be provided for ${resolveToolName('interact_index')}`,
       );
     }
 
@@ -331,7 +331,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
       });
       const tabId = tab.id;
       if (!tabId) {
-        return createErrorResponse('No active tab found for chrome_interact_index');
+        return createErrorResponse(`No active tab found for ${resolveToolName('interact_index')}`);
       }
 
       return await sessionTabAffinity.runSerialized(tabId, async () => {
@@ -341,6 +341,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         const preSignature = await executeInPage({ tabId }, 'inPageDetectPerceptiveSignature', [])
           .then((r) => r?.[0]?.result)
           .catch(() => null);
+
+        await ensureSnapshotBaseline(tabId, args.includeDelta);
 
         // D3 (TESTING-NOTES #19): when no explicit tabId/session bound the
         // target, resolveAffinityTab fell through to the user's ACTIVE tab -
@@ -614,7 +616,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
               return createErrorResponse(
                 (coordResult?.error ||
                   `Element with index [${args.index}] not found in active DOM index map`) +
-                  `. Hint: Element may reside inside a dynamic or closed ShadowRoot. Try calling chrome_javascript to inspect or dispatch, or re-scan with chrome_read_dom.`,
+                  `. Hint: Element may reside inside a dynamic or closed ShadowRoot. Try calling ${resolveToolName('javascript')} to inspect or dispatch, or re-scan with ${resolveToolName('read_dom')}.`,
               );
             }
           } else {
@@ -657,7 +659,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 netCapture.dispose();
                 return createTargetOccludedResponse(
                   new StalePageError(
-                    `Element [${args.index}] click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first. Hint: If this is an open modal, interact with its buttons to dismiss. If it is a captcha or human verification, call chrome_request_human_intervention.`,
+                    `Element [${args.index}] click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first. Hint: If this is an open modal, interact with its buttons to dismiss. If it is a captcha or human verification, call ${resolveToolName('request_human_intervention')}.`,
                   ),
                 );
               }
@@ -1040,11 +1042,11 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
               } catch {}
               if (isCaptcha) {
                 return createErrorResponse(
-                  `[CAPTCHA_BLOCKED: Slider / human verification detected] The page is blocked by anti-bot verification. Call chrome_request_human_intervention to let the user solve it.`,
+                  `[CAPTCHA_BLOCKED: Slider / human verification detected] The page is blocked by anti-bot verification. Call ${resolveToolName('request_human_intervention')} to let the user solve it.`,
                 );
               }
               return createErrorResponse(
-                `${cdpErr instanceof Error ? cdpErr.message : String(cdpErr)}. Hint: If a native dialog is open, call chrome_handle_dialog. If this is a slider or captcha verification, call chrome_request_human_intervention.`,
+                `${cdpErr instanceof Error ? cdpErr.message : String(cdpErr)}. Hint: If a native dialog is open, call ${resolveToolName('handle_dialog')}. If this is a slider or captcha verification, call ${resolveToolName('request_human_intervention')}.`,
               );
             }
             console.warn(
@@ -1223,7 +1225,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         return createDialogInterruptResponse(error);
       }
       return createErrorResponse(
-        `Error executing chrome_interact_index: ${error instanceof Error ? error.message : String(error)}`,
+        `Error executing ${resolveToolName('interact_index')}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }

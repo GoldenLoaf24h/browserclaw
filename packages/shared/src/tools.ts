@@ -1,5 +1,133 @@
 import { type Tool } from '@modelcontextprotocol/sdk/types.js';
 
+export type ToolNamespacePrefix = 'browserclaw_' | 'chrome_';
+
+// Default canonical prefix aligned with current environment prefix (browserclaw_)
+let activePrefix: ToolNamespacePrefix = 'browserclaw_';
+
+// Check environment variables if available (e.g. Node.js runtime)
+if (typeof process !== 'undefined' && process?.env) {
+  if (process.env.BROWSERCLAW_TOOL_PREFIX) {
+    const envPfx = process.env.BROWSERCLAW_TOOL_PREFIX.endsWith('_')
+      ? process.env.BROWSERCLAW_TOOL_PREFIX
+      : `${process.env.BROWSERCLAW_TOOL_PREFIX}_`;
+    activePrefix = envPfx as ToolNamespacePrefix;
+  } else if (process.env.CHROME_MCP_TOOL_PREFIX) {
+    const envPfx = process.env.CHROME_MCP_TOOL_PREFIX.endsWith('_')
+      ? process.env.CHROME_MCP_TOOL_PREFIX
+      : `${process.env.CHROME_MCP_TOOL_PREFIX}_`;
+    activePrefix = envPfx as ToolNamespacePrefix;
+  }
+}
+
+/**
+ * Get the currently active tool prefix.
+ */
+export function getActiveToolPrefix(): ToolNamespacePrefix {
+  return activePrefix;
+}
+
+/**
+ * Dynamically set the active tool prefix.
+ */
+export function setActiveToolPrefix(prefix: ToolNamespacePrefix | string): void {
+  const normalized = prefix.endsWith('_') ? prefix : `${prefix}_`;
+  activePrefix = normalized as ToolNamespacePrefix;
+}
+
+/**
+ * Extract the base name from any tool name (e.g. 'chrome_read_dom' -> 'read_dom', 'browserclaw_read_dom' -> 'read_dom').
+ */
+export function getBaseToolName(toolIdentifier: string): string {
+  if (!toolIdentifier || typeof toolIdentifier !== 'string') return toolIdentifier;
+  if (toolIdentifier.startsWith('browserclaw_')) {
+    return toolIdentifier.slice('browserclaw_'.length);
+  }
+  if (toolIdentifier.startsWith('chrome_')) {
+    return toolIdentifier.slice('chrome_'.length);
+  }
+  return toolIdentifier;
+}
+
+/**
+ * Resolve a tool's canonical runtime name based on active namespace prefix.
+ * Examples:
+ *   resolveToolName('read_dom') => 'browserclaw_read_dom'
+ *   resolveToolName('chrome_read_dom') => 'browserclaw_read_dom'
+ *   resolveToolName('get_windows_and_tabs') => 'browserclaw_get_windows_and_tabs'
+ */
+export function resolveToolName(toolIdentifier: string, prefixOverride?: string): string {
+  const prefix =
+    prefixOverride !== undefined
+      ? prefixOverride.endsWith('_')
+        ? prefixOverride
+        : `${prefixOverride}_`
+      : activePrefix;
+
+  const baseName = getBaseToolName(toolIdentifier);
+
+  if (baseName === 'get_windows_and_tabs') {
+    return prefix === 'chrome_' ? 'get_windows_and_tabs' : `${prefix}get_windows_and_tabs`;
+  }
+
+  return `${prefix}${baseName}`;
+}
+
+/**
+ * Normalize an incoming tool name to the internal backend name used by the extension / native host.
+ */
+export function normalizeIncomingToolName(name: string): {
+  canonicalBackendName: string;
+  prefix: ToolNamespacePrefix | '';
+} {
+  if (!name || typeof name !== 'string') {
+    return { canonicalBackendName: name, prefix: '' };
+  }
+  if (name.startsWith('browserclaw_')) {
+    if (name === 'browserclaw_get_windows_and_tabs') {
+      return { canonicalBackendName: 'get_windows_and_tabs', prefix: 'browserclaw_' };
+    }
+    return {
+      canonicalBackendName: 'chrome_' + name.slice('browserclaw_'.length),
+      prefix: 'browserclaw_',
+    };
+  }
+  if (name.startsWith('chrome_')) {
+    return { canonicalBackendName: name, prefix: 'chrome_' };
+  }
+  if (name === 'get_windows_and_tabs') {
+    return { canonicalBackendName: name, prefix: '' };
+  }
+  return { canonicalBackendName: name, prefix: '' };
+}
+
+/**
+ * Rewrites any tool references inside an agent-facing text/prompt/error to the target prefix.
+ */
+export function alignToolReferences(text: string, targetPrefix: string = activePrefix): string {
+  if (!text || typeof text !== 'string') return text;
+  const pfx = targetPrefix.endsWith('_') ? targetPrefix : `${targetPrefix}_`;
+
+  if (pfx === 'chrome_') {
+    return text
+      .replace(/\bbrowserclaw_([a-zA-Z0-9_]+)\b/g, (_match, tool) => {
+        if (tool === 'get_windows_and_tabs') {
+          return 'get_windows_and_tabs';
+        }
+        return `chrome_${tool}`;
+      });
+  }
+
+  return text
+    .replace(/\bchrome_([a-zA-Z0-9_]+)\b/g, (_match, tool) => {
+      return `${pfx}${tool}`;
+    })
+    .replace(/\bget_windows_and_tabs\b/g, () => {
+      return `${pfx}get_windows_and_tabs`;
+    });
+}
+
+
 export const TOOL_NAMES = {
   BROWSER: {
     GET_WINDOWS_AND_TABS: 'get_windows_and_tabs',
@@ -172,7 +300,7 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
       openWorldHint: true,
     },
     description:
-      "Use a mouse and keyboard to interact with a web browser, and take screenshots.\n* Whenever you intend to click on an element like an icon, you should consult chrome_read_dom to determine the index or ref of the element before moving the cursor.\n* If you tried clicking on an element but it failed to load, try taking a screenshot (with visual grid) and adjusting your click location.\n* Universal multimodal coordinate support: Cartesian { x, y } object, [x, y] / [y, x] points, or [ymin, xmin, ymax, xmax] bounding boxes (supports normalized 0~1.0, per-mille 0~1000, and absolute viewport pixels).\n* Make sure to click any buttons, links, icons, etc with the cursor tip in the center of the element. Don't click boxes on their edges unless asked.",
+      `Use a mouse and keyboard to interact with a web browser, and take screenshots.\n* Whenever you intend to click on an element like an icon, you should consult ${resolveToolName('read_dom')} to determine the index or ref of the element before moving the cursor.\n* If you tried clicking on an element but it failed to load, try taking a screenshot (with visual grid) and adjusting your click location.\n* Universal multimodal coordinate support: Cartesian { x, y } object, [x, y] / [y, x] points, or [ymin, xmin, ymax, xmax] bounding boxes (supports normalized 0~1.0, per-mille 0~1000, and absolute viewport pixels).\n* Make sure to click any buttons, links, icons, etc with the cursor tip in the center of the element. Don't click boxes on their edges unless asked.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -3142,6 +3270,24 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
   },
 ];
 
+function alignSchemaDescriptions(schema: any): any {
+  if (!schema || typeof schema !== 'object') return schema;
+  if (Array.isArray(schema)) {
+    return schema.map(alignSchemaDescriptions);
+  }
+  const copy: any = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === 'description' && typeof value === 'string') {
+      copy[key] = alignToolReferences(value);
+    } else if (typeof value === 'object' && value !== null) {
+      copy[key] = alignSchemaDescriptions(value);
+    } else {
+      copy[key] = value;
+    }
+  }
+  return copy;
+}
+
 export const PURGED_TOOL_NAMES = new Set([
   'chrome_click_element',
   'chrome_burst_interact',
@@ -3152,4 +3298,5 @@ export const PURGED_TOOL_NAMES = new Set([
 
 export const TOOL_SCHEMAS: Tool[] = RAW_TOOL_SCHEMAS.filter(
   (tool) => !PURGED_TOOL_NAMES.has(tool.name),
-);
+).map((tool) => alignSchemaDescriptions(tool));
+

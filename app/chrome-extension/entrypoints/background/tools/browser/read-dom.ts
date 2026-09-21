@@ -1,7 +1,7 @@
 import { tabFaviconManager } from './tab-favicon';
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
-import { TOOL_NAMES, type PrunedDOMTreeResult, type IndexedElement } from 'chrome-mcp-shared';
+import { TOOL_NAMES, resolveToolName, type PrunedDOMTreeResult, type IndexedElement } from 'chrome-mcp-shared';
 import { executeInPage } from './in-page-engine';
 import { snapshotCacheManager } from '@/utils/snapshot-cache-manager';
 import { renderCompactElementLine } from './dom-indexer';
@@ -78,7 +78,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         sessionId: args.sessionId || args.sessionContext,
       });
       if (!tab.id) {
-        return createErrorResponse('No active tab found for chrome_read_dom');
+        return createErrorResponse(`No active tab found for ${resolveToolName('read_dom')}`);
       }
       tabFaviconManager.markTabActive(tab.id);
 
@@ -298,7 +298,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
               `[asset ${a.index}] ${a.kind} ${a.rect.width}x${a.rect.height} @(${a.rect.x},${a.rect.y})${a.src ? ' ' + a.src.slice(0, 120) : ''}${a.alt ? ' alt=' + JSON.stringify(a.alt.slice(0, 60)) : ''}`,
           )
           .join('\n');
-        mergedData.treeString += `\n[Visual Assets: ${mergedData.assets.length} found. Pass assetIndex to chrome_screenshot to view one.]\n${assetLines}`;
+        mergedData.treeString += `\n[Visual Assets: ${mergedData.assets.length} found. Pass assetIndex to ${resolveToolName('screenshot')} to view one.]\n${assetLines}`;
       }
 
       // Delta DOM support: return only changed/added/removed diffs
@@ -439,7 +439,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         ...(mergedData.modalIsolated ? { modalIsolated: true } : {}),
         ...(mergedData.isConfirmationTrap ? { isConfirmationTrap: true } : {}),
         pipelineHint:
-          '1-Turn Optimal Paradigm: Pipeline fill + submit in 1 turn via chrome_batch_actions([{type: "fill", index: ..., text: "..."}, {type: "click", index: ...}]) or chrome_fill_index({ index, text, pressEnter: true }). Avoid splitting fill and submit into separate LLM turns.',
+          `1-Turn Optimal Paradigm: Pipeline fill + submit in 1 turn via ${resolveToolName('batch_actions')}([{type: "fill", index: ..., text: "..."\x7d, {type: "click", index: ...\x7d]) or ${resolveToolName('fill_index')}({ index, text, pressEnter: true \x7d). Avoid splitting fill and submit into separate LLM turns.`,
       };
 
       // Default response is the pruned tree plus counters only. The detail
@@ -464,7 +464,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
       };
     } catch (error) {
       return createErrorResponse(
-        `Error executing chrome_read_dom: ${error instanceof Error ? error.message : String(error)}`,
+        `Error executing ${resolveToolName('read_dom')}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }

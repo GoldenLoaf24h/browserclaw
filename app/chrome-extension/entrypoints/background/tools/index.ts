@@ -1,6 +1,6 @@
 import { createErrorResponse } from '@/common/tool-handler';
 import { ERROR_MESSAGES } from '@/common/constants';
-import { formatErrorForAgent, TOOL_SCHEMAS } from 'chrome-mcp-shared';
+import { formatErrorForAgent, normalizeIncomingToolName, TOOL_SCHEMAS } from 'chrome-mcp-shared';
 import * as browserTools from './browser';
 import { tabFaviconManager } from './browser/tab-favicon';
 
@@ -44,7 +44,8 @@ export const handleCallTool = async (param: ToolCallParam) => {
     // If storage.session is unavailable (e.g. test environment), proceed normally
   }
 
-  const tool = toolsMap.get(param.name);
+  const normalized = normalizeIncomingToolName(param.name);
+  const tool = toolsMap.get(normalized.canonicalBackendName) || toolsMap.get(param.name);
   if (!tool) {
     return createErrorResponse(`Tool ${param.name} not found`);
   }

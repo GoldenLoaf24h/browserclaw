@@ -1,6 +1,6 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
-import { TOOL_NAMES } from 'chrome-mcp-shared';
+import { TOOL_NAMES, resolveToolName } from 'chrome-mcp-shared';
 import { TOOL_MESSAGE_TYPES } from '@/common/message-types';
 import { TIMEOUTS, ERROR_MESSAGES } from '@/common/constants';
 import { resolveTargetLocation } from './unified-locator';
@@ -261,7 +261,7 @@ class ClickTool extends BaseBrowserToolExecutor {
                   ...(clickAffinityWarning ? { affinityWarning: clickAffinityWarning } : {}),
                   ...(deliveryVerified === undefined ? {} : { deliveryVerified }),
                   ...(loc.warning ? { warning: loc.warning } : {}),
-                  _canonicalRecommendation: "For 10x higher reliability and native Shadow DOM support, prefer 'chrome_interact_index'.",
+                  _canonicalRecommendation: `For 10x higher reliability and native Shadow DOM support, prefer '${resolveToolName('interact_index')}'.`,
                 }),
               },
             ],
@@ -313,7 +313,7 @@ class ClickTool extends BaseBrowserToolExecutor {
               elementInfo: result.elementInfo,
               navigationOccurred: result.navigationOccurred,
               clickMethod,
-              _canonicalRecommendation: "For 10x higher reliability and native Shadow DOM support, prefer 'chrome_interact_index'.",
+              _canonicalRecommendation: `For 10x higher reliability and native Shadow DOM support, prefer '${resolveToolName('interact_index')}'.`,
             }),
           },
         ],

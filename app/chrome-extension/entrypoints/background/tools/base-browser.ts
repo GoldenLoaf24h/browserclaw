@@ -1,3 +1,4 @@
+import { resolveToolName } from 'chrome-mcp-shared';
 import { ToolExecutor } from '../../../common/tool-handler';
 import type { ToolResult } from '../../../common/tool-handler';
 import { TIMEOUTS, ERROR_MESSAGES } from '../../../common/constants';
@@ -38,7 +39,7 @@ async function raceInjection<T>(p: Promise<T>, ms = INJECTION_TIMEOUT_MS): Promi
           () =>
             reject(
               new Error(
-                'executeScript timeout: renderer not acking - a native dialog may be open, call chrome_handle_dialog first',
+                `executeScript timeout: renderer not acking - a native dialog may be open, call ${resolveToolName('handle_dialog')} first`,
               ),
             ),
           ms,

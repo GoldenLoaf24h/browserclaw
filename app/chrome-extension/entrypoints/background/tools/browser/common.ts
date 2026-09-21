@@ -507,7 +507,7 @@ class NavigateTool extends BaseBrowserToolExecutor {
                 message: 'Activated existing tab',
                 tabId: updatedTab.id,
                 windowId: updatedTab.windowId,
-                url: updatedTab.url,
+                url: updatedTab.url || (updatedTab as any).pendingUrl || url,
               }),
             },
           ],
@@ -582,7 +582,7 @@ class NavigateTool extends BaseBrowserToolExecutor {
                   tabs: newWindow.tabs
                     ? newWindow.tabs.map((tab) => ({
                         tabId: tab.id,
-                        url: tab.url,
+                        url: tab.url || (tab as any).pendingUrl || url,
                       }))
                     : [],
                 }),
@@ -645,6 +645,15 @@ class NavigateTool extends BaseBrowserToolExecutor {
             `URL opened in new Tab ID: ${newTab.id} in existing Window ID: ${targetWindow.id}`,
           );
 
+          let resolvedTabUrl = newTab.url || (newTab as any).pendingUrl;
+          if (!resolvedTabUrl && newTab.id !== undefined) {
+            try {
+              const freshTab = await chrome.tabs.get(newTab.id);
+              resolvedTabUrl = freshTab?.url || freshTab?.pendingUrl;
+            } catch {}
+          }
+          const finalUrl = resolvedTabUrl || url;
+
           return {
             content: [
               {
@@ -654,7 +663,7 @@ class NavigateTool extends BaseBrowserToolExecutor {
                   message: 'Opened URL in new tab in existing window',
                   tabId: newTab.id,
                   windowId: targetWindow.id,
-                  url: newTab.url,
+                  url: finalUrl,
                 }),
               },
             ],
@@ -686,7 +695,7 @@ class NavigateTool extends BaseBrowserToolExecutor {
                     tabs: fallbackWindow.tabs
                       ? fallbackWindow.tabs.map((tab) => ({
                           tabId: tab.id,
-                          url: tab.url,
+                          url: tab.url || (tab as any).pendingUrl || url,
                         }))
                       : [],
                   }),

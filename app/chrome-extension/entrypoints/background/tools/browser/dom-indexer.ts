@@ -1,10 +1,10 @@
-import type { IndexedElement, PageAsset, PrunedDOMTreeResult } from 'chrome-mcp-shared';
+import { resolveToolName, type IndexedElement, type PageAsset, type PrunedDOMTreeResult } from 'chrome-mcp-shared';
 
 /**
  * Standard structured self-healing guidance when an element is not found or expired
  */
 export const DIAGNOSTIC_REFRESH_GUIDANCE =
-  "ACTION REQUIRED: Please call 'chrome_read_dom' to refresh the index tree before re-attempting interaction";
+  `ACTION REQUIRED: Please call '${resolveToolName('read_dom')}' to refresh the index tree before re-attempting interaction`;
 
 /**
  * Isolated symbol to store element index map in the extension's execution context.
@@ -3091,7 +3091,7 @@ export function inPageDOMPruner(options?: {
 
   if (pages_down > 0 || pages_up > 0) {
     treeString =
-      `[Scroll Guidance: ${pages_up} pages above, ${pages_down} pages below. Use chrome_interact_index / scroll to reveal more content.]\n` +
+      `[Scroll Guidance: ${pages_up} pages above, ${pages_down} pages below. Use ${resolveToolName('interact_index')} / scroll to reveal more content.]\n` +
       treeString;
   }
 
@@ -7048,7 +7048,7 @@ export async function inPageGetAssetImage(assetIndex: number): Promise<{
   const assets = (globalThis as any)[MAP_KEY];
   const entry = assets && assets[assetIndex - 1];
   if (!entry)
-    return { success: false, reason: `asset ${assetIndex} not found (run chrome_read_dom first)` };
+    return { success: false, reason: `asset ${assetIndex} not found (run ${resolveToolName('read_dom')} first)` };
   const rect = entry.el.getBoundingClientRect().toJSON();
   const out: any = {
     success: false,

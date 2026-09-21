@@ -17,6 +17,9 @@ import {
   TOOL_CATEGORIES,
   TOOL_NAME_TO_CATEGORY,
   agentUpdateNotifier,
+  normalizeIncomingToolName,
+  alignToolReferences,
+  getActiveToolPrefix,
 } from 'chrome-mcp-shared';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -139,14 +142,19 @@ const handleToolCallInner = async (
 ): Promise<CallToolResult> => {
   try {
     const effectiveSessionId = sessionId || 'default';
+    const normalized = normalizeIncomingToolName(name);
+    const backendName = normalized.canonicalBackendName;
+    const requestedPrefix = normalized.prefix || getActiveToolPrefix();
+
     const extra = sessionExtraTools.get(effectiveSessionId);
-    let isAllowed = EXPOSED_TOOLS.some((t) => t.name === name) || (extra && extra.has(name));
+    let isAllowed =
+      EXPOSED_TOOLS.some((t) => t.name === backendName) || (extra && extra.has(backendName));
     let autoActivatedCategory: string | undefined;
 
     if (!isAllowed) {
-      const known = TOOL_SCHEMAS.some((t) => t.name === name);
+      const known = TOOL_SCHEMAS.some((t) => t.name === backendName);
       if (known) {
-        const cat = TOOL_NAME_TO_CATEGORY[name];
+        const cat = TOOL_NAME_TO_CATEGORY[backendName];
         if (cat) {
           const catList = TOOL_CATEGORIES[cat] ? TOOL_CATEGORIES[cat].split(' ') : [];
           const set = sessionExtraTools.get(effectiveSessionId) || new Set<string>();
@@ -166,7 +174,7 @@ const handleToolCallInner = async (
             {
               type: 'text',
               text: known
-                ? profileBlockedMessage(name, TOOL_PROFILE)
+                ? profileBlockedMessage(backendName, TOOL_PROFILE)
                 : `Tool "${name}" is not a BrowserClaw tool. Call tools/list to see the ${EXPOSED_TOOLS.length} available tools.`,
             },
           ],
@@ -186,8 +194,18 @@ const handleToolCallInner = async (
       };
     }
 
+    const alignResult = (res: CallToolResult): CallToolResult => {
+      if (!res || !Array.isArray(res.content)) return res;
+      for (const item of res.content) {
+        if (item && item.type === 'text' && typeof item.text === 'string') {
+          item.text = alignToolReferences(item.text, requestedPrefix);
+        }
+      }
+      return res;
+    };
+
     // Autonomous semantic micro-loop tool runs locally on Native Server
-    if (name === 'chrome_act_toward_goal') {
+    if (backendName === 'chrome_act_toward_goal') {
       const actResult = await fastDecisionEngine.run(
         args,
         async (toolName: string, toolArgs: any) => {
@@ -210,11 +228,11 @@ const handleToolCallInner = async (
           text: `[System Note: Tool category "${autoActivatedCategory}" has been dynamically unlocked for this session.]`,
         });
       }
-      return result;
+      return alignResult(result);
     }
 
     // Dynamic activation hook for chrome_tool_docs
-    if (name === 'chrome_tool_docs' && args?.activateForSession && args?.category) {
+    if (backendName === 'chrome_tool_docs' && args?.activateForSession && args?.category) {
       const catList = TOOL_CATEGORIES[args.category]
         ? TOOL_CATEGORIES[args.category].split(' ')
         : [];
@@ -228,11 +246,11 @@ const handleToolCallInner = async (
       }
     }
 
-    await prepareMediaArgsIfNeeded(name, args);
+    await prepareMediaArgsIfNeeded(backendName, args);
 
     const response = await nativeMessagingHostInstance.sendRequestToExtensionAndWait(
       {
-        name,
+        name: backendName,
         args,
         sessionId,
       },
@@ -247,13 +265,13 @@ const handleToolCallInner = async (
           text: `[System Note: Tool category "${autoActivatedCategory}" has been dynamically unlocked for this session.]`,
         });
       }
-      return result;
+      return alignResult(result);
     } else {
       return {
         content: [
           {
             type: 'text',
-            text: `Error calling tool: ${response.error}`,
+            text: alignToolReferences(`Error calling tool: ${response.error}`, requestedPrefix),
           },
         ],
         isError: true,
@@ -264,7 +282,7 @@ const handleToolCallInner = async (
       content: [
         {
           type: 'text',
-          text: formatErrorForAgent(error, { context: 'Error calling tool' }),
+          text: alignToolReferences(formatErrorForAgent(error, { context: 'Error calling tool' })),
         },
       ],
       isError: true,

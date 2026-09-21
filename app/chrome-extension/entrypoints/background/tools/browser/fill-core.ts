@@ -7,6 +7,7 @@ import { getSubframeViewportOffset } from './interact-index';
 import { computeHumanizedPoints } from '@/utils/mouse-trajectory';
 import { resolveTargetLocation } from './unified-locator';
 import { sessionTabAffinity, type TabHandoverInfo } from '@/utils/session-tab-affinity';
+import { resolveToolName } from 'chrome-mcp-shared';
 export { getNativeValueSetter, getNativeCheckedSetter } from './fast-snapshot';
 
 export class FocusVerificationError extends Error {
@@ -398,7 +399,7 @@ export async function performPhysicalFill(
     /(http|#|@|tweet|post|reply|thread)/i.test(textToFill);
 
   if (isSearchTarget && isMultiLineOrPostText) {
-    disambiguationWarning = `[Input Disambiguation Notice] Targeted element [${target}] appears to be a search input (searchbox), but the filled text looks like a multi-line post or comment. If you intended to post or reply, verify with chrome_read_dom to target the [composer] element instead.`;
+    disambiguationWarning = `[Input Disambiguation Notice] Targeted element [${target}] appears to be a search input (searchbox), but the filled text looks like a multi-line post or comment. If you intended to post or reply, verify with ${resolveToolName('read_dom')} to target the [composer] element instead.`;
     console.warn(`[performPhysicalFill] ${disambiguationWarning}`);
   }
 
