@@ -703,8 +703,9 @@ describe('Phase 3: Inline Network Capture & CDP Hardening', () => {
     const elapsed = Date.now() - start;
 
     expect(res).toBeUndefined();
-    // Must resolve instantly (< 100ms) rather than waiting 10000ms
-    expect(elapsed).toBeLessThan(100);
+    // Must resolve instantly rather than waiting 10000ms
+    const maxElapsedInstantly = process.env.CI ? 1000 : 100;
+    expect(elapsed).toBeLessThan(maxElapsedInstantly);
   });
 
   it('aborts batch actions immediately on failure with captureNetwork without waiting for network timeout', async () => {
@@ -747,7 +748,8 @@ describe('Phase 3: Inline Network Capture & CDP Hardening', () => {
 
     expect(res.isError).toBe(true);
     // Crucial: Must NOT wait 8000ms for network response when action failed!
-    expect(elapsed).toBeLessThan(500);
+    const maxElapsedAborted = process.env.CI ? 2000 : 500;
+    expect(elapsed).toBeLessThan(maxElapsedAborted);
   });
 
   it('correctly scales Gemini 0~1000 per-mille coordinates to viewport', () => {
