@@ -26,7 +26,7 @@ BrowserClaw takes a different route: a Chrome MV3 extension plus a local Native 
 
 ---
 
-## What is BrowserClaw?
+## ⚡ What is BrowserClaw?
 
 BrowserClaw is a Chrome extension + local MCP server that lets AI agents operate your real browser. It exposes 49 tools across 7 categories (navigation, perception, action, observation, management, diagnostics, network), with a minimal 14-tool core profile for everyday sessions.
 
@@ -37,7 +37,7 @@ Two execution paths are available:
 
 ---
 
-## Key capabilities
+## 🎯 Key capabilities
 
 - **Session continuity** – Runs inside your existing Chrome. Google, GitHub, and SSO logins are already there; no profile copying, no re-authentication.
 - **Pruned, indexed DOM** – `chrome_read_dom` strips non-interactive and occluded nodes and assigns 1-based indices. On 1,000+ node pages this reduces node count by over 85% (test-validated), keeping snapshots small. A fast snapshot mode returns a viewport summary in ≤30 ms and ≤15 KB.
@@ -53,7 +53,7 @@ Two execution paths are available:
 
 ---
 
-## Dual-brain execution
+## 🧠 Dual-brain execution
 
 ```text
 ┌─ Macro Planner (your reasoning LLM) ───────────────────┐
@@ -85,7 +85,7 @@ The micro-loop is bounded: at most 60 steps in Jev mode (default 10), truncated 
 
 ---
 
-## Quick start
+## 🚀 Quick start
 
 ### Option 1: Prebuilt release (no build)
 
@@ -116,7 +116,7 @@ Full onboarding (native host registration, MCP client setup, Jev key, health che
 
 ---
 
-## Tool catalog
+## 🛠️ Tool catalog
 
 All 49 tools are grouped below. For machine-readable schemas and parameter details, see [docs/TOOLS.md](./docs/TOOLS.md).
 
@@ -185,7 +185,7 @@ All 49 tools are grouped below. For machine-readable schemas and parameter detai
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 ```text
 AI Client (any MCP-capable agent)
@@ -206,7 +206,7 @@ For details, see [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ---
 
-## Documentation
+## 📚 Documentation
 
 - [Project Map](./docs/MAP.md) – Navigation hub and reading paths.
 - [Tool Reference](./docs/TOOLS.md) – Schemas for all 49 tools.
@@ -217,7 +217,7 @@ For details, see [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ---
 
-## Acknowledgments
+## 💡 Acknowledgments
 
 - [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome) – MV3 extension and Native Messaging bridge foundation.
 - [browser-use/browser-use](https://github.com/browser-use/browser-use) – DOM-first indexing principles.
@@ -226,7 +226,7 @@ For details, see [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ---
 
-## License
+## 📄 License
 
 [AGPL-3.0](./LICENSE). Modifications and SaaS deployments must remain open-source.
 
