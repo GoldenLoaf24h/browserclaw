@@ -52,9 +52,9 @@ describe('formatErrorForAgent', () => {
     const err = makeError('timeout');
     err.name = 'TimeoutError';
 
-    const text = formatErrorForAgent(err, { context: 'Tool chrome_scroll failed' });
+    const text = formatErrorForAgent(err, { context: 'Tool chrome_smart_scroll failed' });
 
-    expect(text.startsWith('Tool chrome_scroll failed: TimeoutError: timeout')).toBe(true);
+    expect(text.startsWith('Tool chrome_smart_scroll failed: TimeoutError: timeout')).toBe(true);
   });
 
   it('omits the redundant "Error:" name and survives a missing stack', () => {

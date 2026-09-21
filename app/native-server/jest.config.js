@@ -17,4 +17,5 @@ module.exports = {
     ],
   },
   collectCoverage: false,
+  maxWorkers: 1,
 };

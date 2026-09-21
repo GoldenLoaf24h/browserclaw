@@ -24,6 +24,8 @@ Executes sequential browser interactions atomically inside a single MCP turn, el
 | `assert`       | `selector` or `index` + `condition`   | `expectedText`, `timeoutMs`, `abortOnFailure`     | Validates DOM state mid-pipeline                      |
 | `extract`      | `selector` or `index` + `property`    | `variableName`, `attributeName`                   | Extracts data directly to response payload            |
 
+> **Note**: `fill_form` and `scroll` are batch sub-actions only. There are no top-level `chrome_fill_form`, `chrome_scroll`, or `chrome_scroll_to_text` tools — use `chrome_form_pipeline`, `chrome_smart_scroll`, or `chrome_grep` instead.
+
 ### Complete Example Pipeline
 
 ```json

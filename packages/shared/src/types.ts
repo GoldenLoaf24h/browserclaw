@@ -100,6 +100,12 @@ export interface PrunedDOMTreeResult {
   selectorMatched?: boolean;
   /** True if DOM indexing was scoped to an active modal and its whitelisted containers */
   modalIsolated?: boolean;
+  /** Total number of repetitive off-viewport nodes pruned/folded into virtualized summaries */
+  virtualizedCount?: number;
+  /** Summary of virtualized clusters folded during viewport pruning */
+  virtualizedSummary?: Array<{ selector: string; count: number }>;
+  /** Total number of composite cards flattened into single structured summaries */
+  flattenedCardCount?: number;
 }
 
 export interface PageSettleResult {
@@ -227,13 +233,55 @@ export interface ReadDOMParams {
   limit?: number;
   deltaOnly?: boolean;
   maxTextLength?: number;
-  format?: 'compact' | 'html';
+  format?: 'compact' | 'html' | 'fast';
+  fast?: boolean;
+  legacyVisibility?: boolean;
   viewportOnly?: boolean;
   selector?: string;
   scope?: string;
   exclude?: string | string[];
   includeDetails?: boolean;
   isolateModal?: boolean;
+  dismissOverlays?: boolean;
+}
+
+export interface NavigateParams {
+  url?: string;
+  tabId?: number;
+  windowId?: number;
+  newWindow?: boolean;
+  background?: boolean;
+  refresh?: boolean;
+  sessionId?: string;
+  sessionContext?: string;
+  groupTitle?: string;
+  groupColor?: 'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange';
+  autoGroup?: boolean;
+  dismissOverlays?: boolean;
+}
+
+export interface DismissOverlayParams {
+  tabId?: number;
+  windowId?: number;
+  maxOverlays?: number;
+  waitForSettle?: boolean;
+  sessionId?: string;
+  sessionContext?: string;
+}
+
+export interface DismissOverlaysResult {
+  dismissedCount: number;
+  overlays: Array<{
+    id?: string;
+    className?: string;
+    role?: string;
+    title?: string;
+    buttonText?: string;
+    buttonSelector?: string;
+    action: 'clicked_close_button' | 'dispatched_escape';
+    x?: number;
+    y?: number;
+  }>;
 }
 
 export interface AttachTabParams {

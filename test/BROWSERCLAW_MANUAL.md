@@ -131,7 +131,7 @@ BrowserClaw exposes 48 canonical MCP tools organized into 8 functional categorie
 1. **Autonomous Micro-Loop (1)**: `chrome_act_toward_goal` (local fast-decision loop at ~200-400ms/step).
 2. **Navigation & Tabs (7)**: `chrome_navigate`, `chrome_switch_tab`, `chrome_close_tabs`, `chrome_move_tab`, `get_windows_and_tabs`, `chrome_attach_tab`, `chrome_detach_tab`.
 3. **Perception & Content (5)**: `chrome_read_dom`, `chrome_grep`, `chrome_get_markdown`, `chrome_inspect_media`, `chrome_get_dropdown_options`.
-4. **Interaction & Forms (13)**: `chrome_interact_index`, `chrome_fill_index`, `chrome_batch_actions`, `chrome_form_pipeline`, `chrome_smart_scroll`, `chrome_keyboard`, `chrome_upload_file`, `chrome_insert_media`, `chrome_click_coordinate`, `chrome_burst_interact`, `chrome_undo_last_action`, `chrome_scroll_at`, `chrome_handle_dialog`.
+4. **Interaction & Forms (13)**: `chrome_interact_index`, `chrome_fill_index`, `chrome_batch_actions`, `chrome_form_pipeline`, `chrome_smart_scroll`, `chrome_keyboard`, `chrome_upload_file`, `chrome_insert_media`, `chrome_click_coordinate`, `chrome_burst_interact`, `chrome_undo_last_action`, `chrome_computer`, `chrome_handle_dialog`.
 5. **Observation & Vision (4)**: `chrome_screenshot`, `chrome_take_screenshot`, `chrome_visual_diff`, `chrome_visual_viewport`.
 6. **Data & Tabs (7)**: `chrome_tab_group_create`, `chrome_tab_group_update`, `chrome_tab_group_list`, `chrome_tab_group_ungroup`, `chrome_tab_group_close`, `chrome_history`, `chrome_bookmark_search`.
 7. **Diagnostics & Scripting (4)**: `chrome_javascript`, `chrome_tool_docs`, `chrome_doctor`, `chrome_intercept_api`.

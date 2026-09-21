@@ -528,19 +528,19 @@ export class Server {
   }
 
   public async stop(): Promise<void> {
-    if (!this.isRunning) {
-      return;
-    }
-
     try {
       await mcpSessionManager.closeAllSessions();
-      if (
-        this.fastify.server &&
-        typeof (this.fastify.server as any).closeAllConnections === 'function'
-      ) {
-        (this.fastify.server as any).closeAllConnections();
+      if (this.fastify.server) {
+        if (typeof (this.fastify.server as any).closeAllConnections === 'function') {
+          (this.fastify.server as any).closeAllConnections();
+        }
+        if (typeof (this.fastify.server as any).closeIdleConnections === 'function') {
+          (this.fastify.server as any).closeIdleConnections();
+        }
       }
-      await this.fastify.close();
+      if (this.isRunning || (this.fastify.server && (this.fastify.server as any).listening)) {
+        await this.fastify.close();
+      }
       this.isRunning = false;
     } catch (err) {
       this.isRunning = false;

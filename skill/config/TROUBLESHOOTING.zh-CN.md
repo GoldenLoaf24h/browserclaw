@@ -2,7 +2,7 @@
 
 [English Version](./TROUBLESHOOTING.md)
 
-本文档汇总了 BrowserClaw 在实际接入各大 AI Agent 平台（Claude Desktop, Cursor, Windsurf, Cline, Roo Code, Antigravity）过程中可能遇到的典型问题、深层根因及标准修复方案。
+本文档汇总了 BrowserClaw 在接入各类 MCP Agent 客户端过程中可能遇到的典型问题、深层根因及标准修复方案。
 
 ---
 
@@ -72,7 +72,7 @@ Windows 用户亦可直接双击运行 [`skill/config/repair.bat`](./repair.bat)
      # Windows PowerShell
      Get-Content "$HOME\.chrome-mcp\bridge-token"
      ```
-  2. 打开客户端配置文件（如 Cursor 的 `mcp.json` 或 Claude Desktop 的 `claude_desktop_config.json`），将请求头中的 `x-mcp-token` 或 `Authorization: Bearer <token>` 更新为上述实际值：
+  2. 打开所用客户端的 MCP 配置文件，将请求头中的 `x-mcp-token` 或 `Authorization: Bearer <token>` 更新为上述实际值：
      ```json
      "headers": {
        "x-mcp-token": "粘贴上方读取到的Token",

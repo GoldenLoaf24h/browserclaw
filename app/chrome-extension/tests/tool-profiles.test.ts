@@ -90,9 +90,7 @@ describe('tool profiles', () => {
     expect(core.has('chrome_console')).toBe(false);
     expect(core.has('chrome_click_element')).toBe(false);
     expect(core.has('chrome_fill_or_select')).toBe(false);
-    expect(core.has('chrome_fill_form')).toBe(false);
     expect(core.has('chrome_burst_interact')).toBe(false);
-    expect(core.has('chrome_scroll')).toBe(false);
     expect(core.has('chrome_cdp_execute')).toBe(false);
   });
 

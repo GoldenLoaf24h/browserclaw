@@ -387,6 +387,48 @@ export function cancelFileOperation(requestId: string): void {
 }
 
 /**
+ * Sends a Jev semantic matching request to Native Server with timeout and fallback.
+ */
+export async function sendJevMatchToNative(
+  payload: any,
+  timeoutMs = 1500,
+): Promise<{ success: boolean; matchedId?: string | number; confidence?: number; engine?: string } | null> {
+  if (!nativePort) {
+    const connected = await ensureNativeConnected('jev_match').catch(() => false);
+    if (!connected || !nativePort) return null;
+  }
+  const requestId = `jev_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      fileOperationCallbacks.delete(requestId);
+      resolve(null);
+    }, timeoutMs);
+
+    const ok = sendFileOperationToNative(
+      {
+        type: 'jev_semantic_match',
+        requestId,
+        payload,
+      },
+      (response: any) => {
+        clearTimeout(timer);
+        if (response?.payload?.success) {
+          resolve(response.payload);
+        } else {
+          resolve(null);
+        }
+      },
+    );
+
+    if (!ok) {
+      clearTimeout(timer);
+      fileOperationCallbacks.delete(requestId);
+      resolve(null);
+    }
+  });
+}
+
+/**
  * Connect to the native messaging host
  * @returns Whether the connection was initiated successfully
  */

@@ -502,14 +502,12 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
     it('secondary interaction tools contain sessionId for session affinity', () => {
       const secondaryTools = [
         TOOL_NAMES.BROWSER.KEYBOARD,
-        TOOL_NAMES.BROWSER.SCROLL_TO_TEXT,
         TOOL_NAMES.BROWSER.GET_DROPDOWN_OPTIONS,
         TOOL_NAMES.BROWSER.FILE_UPLOAD,
         TOOL_NAMES.BROWSER.GET_MARKDOWN,
         TOOL_NAMES.BROWSER.HANDLE_DIALOG,
         TOOL_NAMES.BROWSER.CLICK,
         TOOL_NAMES.BROWSER.FILL,
-        TOOL_NAMES.BROWSER.SCROLL,
       ];
 
       for (const toolName of secondaryTools) {
@@ -1695,20 +1693,6 @@ describe('Phase 2 Architecture Upgrades: Boost Features Test Suite', () => {
 
         assert.strictEqual(mockSessions.has(777), false);
         assert.strictEqual(mockLastResults.has(777), false);
-      });
-    });
-
-    describe('P1: Physical Page Scroll Tool Integration', () => {
-      it('verifies chrome_scroll is registered in TOOL_NAMES and TOOL_SCHEMAS', () => {
-        assert.strictEqual(TOOL_NAMES.BROWSER.SCROLL, 'chrome_scroll');
-        const scrollSchema = (RAW_TOOL_SCHEMAS || TOOL_SCHEMAS).find((t: any) => t.name === 'chrome_scroll');
-        assert.ok(scrollSchema, 'chrome_scroll must exist in TOOL_SCHEMAS');
-        assert.deepStrictEqual(scrollSchema.inputSchema.properties.direction.enum, [
-          'up',
-          'down',
-          'left',
-          'right',
-        ]);
       });
     });
 

@@ -5,6 +5,8 @@ import { NativeMessageType } from 'chrome-mcp-shared';
 import { TIMEOUTS } from './constant';
 import fileHandler from './file-handler';
 import { getBridgeToken } from './server/token';
+import { choice } from '@typesafe-ai/sdk';
+import { JevClientWrapper, buildState, isSessionKeyInvalid, HeuristicEngine } from './jev';
 
 interface PendingRequest {
   resolve: (value: any) => void;
@@ -153,6 +155,9 @@ export class NativeMessagingHost {
         case 'file_operation':
           await this.handleFileOperation(message);
           break;
+        case 'jev_semantic_match':
+          await this.handleJevSemanticMatch(message);
+          break;
         case 'get_server_info':
         case 'get_token':
           this.sendMessage({
@@ -215,6 +220,108 @@ export class NativeMessagingHost {
         this.sendError(`File operation failed: ${errorResponse.error}`);
       }
     }
+  }
+
+  /**
+   * Handle Jev semantic matching requests from the extension (for form pipeline)
+   */
+  private async handleJevSemanticMatch(message: any): Promise<void> {
+    const payload = message.payload;
+    const query = String(payload?.query || '');
+    const value = payload?.value ? String(payload.value) : '';
+    const matchType = payload?.type || 'field';
+    const candidates: Array<{ id: string | number; text: string }> = Array.isArray(
+      payload?.candidates,
+    )
+      ? payload.candidates
+      : [];
+
+    const sendResponse = (data: any) => {
+      this.sendMessage({
+        type: 'file_operation_response',
+        responseToRequestId: message.requestId,
+        payload: data,
+      });
+    };
+
+    if (candidates.length === 0) {
+      sendResponse({ success: false, reason: 'no_candidates' });
+      return;
+    }
+
+    // 1. Try TypeSafe Jev System One
+    try {
+      const jevClient = new JevClientWrapper();
+      if (jevClient.isAvailable()) {
+          const targetCriteria: Record<string, string | null> = {};
+          for (const cand of candidates) {
+            targetCriteria[String(cand.id)] = cand.text;
+          }
+          targetCriteria['none'] = 'None of the above candidates match';
+
+          const prompt =
+            matchType === 'choice'
+              ? `Which candidate option best matches the desired choice "${value}" for query "${query}"?`
+              : matchType === 'input'
+                ? `Which input element best corresponds to the field "${query}"?`
+                : `Which field best corresponds to the current screen question: "${query}"?`;
+
+          const questions = {
+            matched_target: choice(prompt, targetCriteria),
+          };
+
+          const state = buildState(
+            `Match form field or option: ${query}`,
+            '',
+            '',
+            candidates.map((c) => `[${c.id}] ${c.text}`),
+            [],
+          );
+
+          const { result } = await jevClient.query(state, questions);
+          const answer = (result?.answers as any)?.matched_target;
+          if (answer && answer.choice && answer.choice !== 'none') {
+            const originalCand = candidates.find((c) => String(c.id) === String(answer.choice));
+            sendResponse({
+              success: true,
+              engine: 'jev',
+              matchedId: originalCand ? originalCand.id : answer.choice,
+              confidence: answer.confidence || 0.85,
+              probabilities: answer.probabilities,
+            });
+            return;
+          }
+        }
+      } catch (err) {
+      console.warn('[NativeHost] Jev semantic evaluation error:', err);
+    }
+
+    // 2. Fallback to Heuristic Engine
+    try {
+      const heuristicEngine = new HeuristicEngine();
+      const targetQuery = matchType === 'choice' && value ? value : query;
+      const elements = candidates.map(
+        (cand, idx) => `[${idx}] button "${cand.text}"`,
+      );
+      const decision = heuristicEngine.evaluate(targetQuery, elements, []);
+
+      if (decision && decision.targetIndex !== undefined && decision.confidence >= 0.3) {
+        const matched = candidates[decision.targetIndex];
+        if (matched) {
+          sendResponse({
+            success: true,
+            engine: 'heuristic',
+            matchedId: matched.id,
+            confidence: decision.confidence,
+          });
+          return;
+        }
+      }
+    } catch (heurErr) {
+      console.warn('[NativeHost] Heuristic evaluation error:', heurErr);
+    }
+
+    sendResponse({ success: false, engine: 'none' });
   }
 
   /**

@@ -56,15 +56,24 @@ export class HumanInterventionTool extends BaseBrowserToolExecutor {
         timeoutMs,
       });
 
+      let timer: ReturnType<typeof setTimeout> | null = null;
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
+        timer = setTimeout(() => {
           // Tell content script to dismiss banner
           try { Promise.resolve(chrome.tabs.sendMessage(tabId, { type: 'HUMAN_INTERVENTION_CANCEL' })).catch(() => {}); } catch {}
           reject(new Error(`Human intervention timed out after ${timeoutMs / 1000}s`));
         }, timeoutMs);
       });
 
-      const response = (await Promise.race([requestPromise, timeoutPromise])) as any;
+      let response: any;
+      try {
+        response = (await Promise.race([requestPromise, timeoutPromise])) as any;
+      } finally {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      }
       const durationMs = Date.now() - startTime;
 
       return {

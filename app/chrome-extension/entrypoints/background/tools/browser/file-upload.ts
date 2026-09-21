@@ -81,6 +81,35 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
           fileName: fileName || 'uploaded-file',
         });
         if (!prepResult.filePath) {
+          if (base64Data && !hasClickTarget) {
+            console.warn(
+              'Native messaging host unavailable to create temp file for CDP, falling back directly to HTML5 DataTransfer:',
+              prepResult.error,
+            );
+            const dtRes = await this.uploadViaDataTransfer(tabId, {
+              index,
+              selector: targetSelector,
+              files: [{ name: fileName || 'uploaded-file', base64: base64Data }],
+            });
+            if (dtRes.success) {
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      success: true,
+                      message: 'File(s) uploaded successfully',
+                      mode: 'html5_datatransfer_fallback',
+                      selector: targetSelector,
+                      index,
+                      fileCount: dtRes.fileCount,
+                    }),
+                  },
+                ],
+                isError: false,
+              };
+            }
+          }
           return createErrorResponse(prepResult.error || 'Failed to prepare file for upload');
         }
         createdTempFiles.push(prepResult.filePath);
@@ -232,9 +261,11 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
       }
 
       // Mode 2: Standard file input element (CDP DOM query + DOM.setFileInputFiles)
+      let uploadMode = 'cdp_set_file_input_files';
 
-      // Use shared CDP session manager to attach/do work/detach safely
-      await cdpSessionManager.withSession(tabId, 'file-upload', async () => {
+      try {
+        // Use shared CDP session manager to attach/do work/detach safely
+        await cdpSessionManager.withSession(tabId, 'file-upload', async () => {
         // Enable necessary CDP domains
         await cdpSessionManager.sendCommand(tabId, 'DOM.enable', {});
         await cdpSessionManager.sendCommand(tabId, 'Runtime.enable', {});
@@ -403,6 +434,31 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
           console.warn('Failed to dispatch input/change events on file input:', evErr);
         }
       });
+      } catch (cdpErr) {
+        console.warn(
+          'CDP file upload failed or debugger unavailable, falling back to HTML5 DataTransfer:',
+          cdpErr,
+        );
+        const dtFiles: Array<{ name: string; type?: string; base64?: string; content?: string }> = [];
+        if (base64Data) {
+          dtFiles.push({ name: fileName || 'uploaded-file', base64: base64Data });
+        } else {
+          for (const f of files) {
+            dtFiles.push({ name: f.split(/[\\/]/).pop() || 'uploaded-file' });
+          }
+        }
+        const dtRes = await this.uploadViaDataTransfer(tabId, {
+          index,
+          selector: targetSelector,
+          files: dtFiles,
+        });
+        if (!dtRes.success) {
+          throw new Error(
+            `CDP upload failed (${cdpErr instanceof Error ? cdpErr.message : String(cdpErr)}) and DataTransfer fallback failed (${dtRes.error})`,
+          );
+        }
+        uploadMode = 'html5_datatransfer_fallback';
+      }
 
       return {
         content: [
@@ -411,6 +467,7 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
             text: JSON.stringify({
               success: true,
               message: 'File(s) uploaded successfully',
+              mode: uploadMode,
               files: files,
               selector: targetSelector,
               index: index,
@@ -522,6 +579,146 @@ export class FileUploadTool extends BaseBrowserToolExecutor {
         resolve();
       }
     });
+  }
+
+  /**
+   * Unprivileged HTML5 DataTransfer File Upload Fallback Channel (Phase M3)
+   * When chrome.debugger is unavailable or target page restricts CDP, provides
+   * synthetic file upload using browser native DataTransfer API.
+   */
+  async uploadViaDataTransfer(
+    tabId: number,
+    options: {
+      index?: number | string;
+      selector?: string;
+      files: Array<{ name: string; type?: string; base64?: string; content?: string }>;
+    },
+  ): Promise<{ success: boolean; error?: string; fileCount?: number }> {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (
+          idx: number | string | undefined,
+          sel: string | undefined,
+          fileList: Array<{ name: string; type?: string; base64?: string; content?: string }>,
+        ) => {
+          const findFileInputInSubtree = (root: Element | DocumentFragment | Document): HTMLInputElement | null => {
+            const direct = root.querySelector('input[type="file"]') as HTMLInputElement | null;
+            if (direct) return direct;
+            const elements = root.querySelectorAll('*');
+            for (let i = 0; i < elements.length; i++) {
+              const node = elements[i];
+              if (node.shadowRoot) {
+                const shadowChild = findFileInputInSubtree(node.shadowRoot);
+                if (shadowChild) return shadowChild;
+              }
+            }
+            return null;
+          };
+
+          let el: Element | null = null;
+          if (idx !== undefined && idx !== null) {
+            const g = window as any;
+            const isolatedMap = g[Symbol.for('__browser_use_isolated_index_map__')];
+            el =
+              g.__clawFast?.actionElements?.get(idx) ||
+              g.__clawFast?.actionElements?.get(Number(idx)) ||
+              g.__clawFast?.nodes?.get(idx) ||
+              g.__clawFast?.nodes?.get(Number(idx)) ||
+              isolatedMap?.get(Number(idx)) ||
+              isolatedMap?.get(String(idx)) ||
+              (document.querySelector(`[data-mcp-idx="${idx}"]`) as Element) ||
+              null;
+          }
+          if (!el && sel) {
+            el = document.querySelector(sel);
+          }
+          if (!el) {
+            el = findFileInputInSubtree(document);
+          }
+          if (!el) return { success: false, error: 'File input element not found' };
+
+          // If wrapper element, find nested input[type="file"] including in shadowRoot
+          if (el.tagName !== 'INPUT' || el.getAttribute('type') !== 'file') {
+            const child = findFileInputInSubtree(el) || (el.shadowRoot ? findFileInputInSubtree(el.shadowRoot) : null);
+            if (child) el = child;
+          }
+
+          if (
+            el.tagName !== 'INPUT' ||
+            (el.getAttribute('type') !== 'file' && (el as HTMLInputElement).type !== 'file')
+          ) {
+            return {
+              success: false,
+              error: `Target element <${el.tagName}> is not an input[type="file"]`,
+            };
+          }
+
+          try {
+            let dt: any;
+            if (typeof DataTransfer !== 'undefined') {
+              dt = new DataTransfer();
+            } else {
+              dt = { items: { add: (f: any) => { dt.files.push(f); } }, files: [] };
+            }
+            for (const f of fileList) {
+              let blob: Blob;
+              if (f.base64) {
+                const rawBase64 = f.base64.includes(',') ? f.base64.split(',')[1] : f.base64;
+                const binaryStr = atob(rawBase64);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) {
+                  bytes[i] = binaryStr.charCodeAt(i);
+                }
+                blob = new Blob([bytes], { type: f.type || 'application/octet-stream' });
+              } else if (f.content) {
+                blob = new Blob([f.content], { type: f.type || 'text/plain' });
+              } else {
+                blob = new Blob([], { type: f.type || 'application/octet-stream' });
+              }
+              let fileObj: any;
+              if (typeof File !== 'undefined') {
+                fileObj = new File([blob], f.name || 'uploaded-file', {
+                  type: f.type || blob.type,
+                  lastModified: Date.now(),
+                });
+              } else {
+                fileObj = Object.assign(blob, {
+                  name: f.name || 'uploaded-file',
+                  lastModified: Date.now(),
+                });
+              }
+              dt.items.add(fileObj);
+            }
+
+            try {
+              (el as HTMLInputElement).files = dt.files;
+            } catch {
+              Object.defineProperty(el, 'files', {
+                value: dt.files,
+                configurable: true,
+                writable: true,
+              });
+            }
+            el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            return { success: true, fileCount: dt.files.length };
+          } catch (err) {
+            return {
+              success: false,
+              error: `DataTransfer synthesis failed: ${err instanceof Error ? err.message : String(err)}`,
+            };
+          }
+        },
+        args: [options.index, options.selector, options.files],
+      });
+      return results?.[0]?.result || { success: false, error: 'Script injection returned no result' };
+    } catch (injErr) {
+      return {
+        success: false,
+        error: `Failed to inject DataTransfer upload script: ${injErr instanceof Error ? injErr.message : String(injErr)}`,
+      };
+    }
   }
 }
 

@@ -80,7 +80,7 @@ export class FastDecisionEngine {
     internalCaller: (toolName: string, args: any) => Promise<any>,
     server?: Server,
   ): Promise<ActTowardGoalResult> {
-    const hasKey = Boolean(process.env.TYPESAFE_API_KEY && process.env.TYPESAFE_API_KEY.trim());
+    const hasKey = Boolean(this.jevClient.getClient());
     let engine: DecisionEngineType = hasKey && !isSessionKeyInvalid() ? 'jev' : 'heuristic';
     let fallbackReason: FallbackReason = hasKey
       ? isSessionKeyInvalid()
@@ -202,7 +202,8 @@ export class FastDecisionEngine {
       if (engine === 'heuristic' && step > 1) {
         const lastOutcome = history.length > 0 ? history[history.length - 1].outcome : '';
         const urlChangedInLastStep = /urlChanged:true/i.test(lastOutcome);
-        if (this.heuristicEngine.isGoalDone(params.goal, currentElements, urlChangedInLastStep)) {
+        const mutatedInLastStep = /mutated:true/i.test(lastOutcome);
+        if (this.heuristicEngine.isGoalDone(params.goal, currentElements, urlChangedInLastStep, mutatedInLastStep)) {
           return this.formatResult(
             'done',
             engine,
@@ -608,6 +609,7 @@ export class FastDecisionEngine {
           outcome = this.parseOutcome(scrollRes);
         } else if (actionToTake === 'back') {
           const navRes = await internalCaller('chrome_navigate', {
+            url: 'back',
             action: 'back',
             tabId: params.tabId,
             sessionId: params.sessionId || params.sessionContext,

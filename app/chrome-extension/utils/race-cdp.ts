@@ -90,3 +90,37 @@ export async function raceCdp<T>(tabId: number, method: string, params: object, 
   }
 }
 
+export class StalePageError extends Error {
+  code: string;
+  retry: boolean;
+  constructor(message = 'target_occluded', code = 'target_occluded', retry = true) {
+    super(message);
+    this.name = 'StalePageError';
+    this.code = code;
+    this.retry = retry;
+  }
+}
+
+export function createTargetOccludedResponse(err?: StalePageError | Error | string) {
+  const msg =
+    typeof err === 'string'
+      ? err
+      : err instanceof Error
+        ? err.message
+        : 'Target element is occluded by an overlay, out of viewport, or detached from DOM.';
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({
+          success: false,
+          error: 'target_occluded',
+          retry: true,
+          message: msg,
+        }),
+      },
+    ],
+    isError: true,
+  };
+}
+

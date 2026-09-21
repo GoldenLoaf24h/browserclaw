@@ -419,9 +419,9 @@ export class JevClientWrapper {
       };
     }
 
-    // When options exceed 10 (Score primitive capacity), shortlist candidates based on relevance to goal
+    // When options exceed 20 (Choice primitive optimal budget), shortlist candidates based on relevance to goal
     let candidateOptions = options;
-    if (options.length > 10) {
+    if (options.length > 20) {
       const goalLower = goal.toLowerCase();
       const scored = options.map((opt, idx) => {
         const text = `${opt.text} ${opt.value}`.toLowerCase();
@@ -433,16 +433,17 @@ export class JevClientWrapper {
         return { opt, idx, scoreVal };
       });
       scored.sort((a, b) => b.scoreVal - a.scoreVal);
-      candidateOptions = scored.slice(0, 10).map((s) => s.opt);
+      candidateOptions = scored.slice(0, 20).map((s) => s.opt);
     }
 
-    const criteria = candidateOptions.map(
-      (opt) => `${opt.text || opt.value || ''}`.trim() || 'Option',
-    ) as [string, string, ...string[]];
+    const choiceCriteria: Record<string, string> = {};
+    candidateOptions.forEach((opt, idx) => {
+      choiceCriteria[String(idx)] = `${opt.text || opt.value || ''}`.trim() || `Option ${idx}`;
+    });
 
-    const scoreQuestion = score(
-      `Rate how closely each option satisfies the selection goal: "${goal}"`,
-      criteria,
+    const selectQuestion = choice(
+      `Select the option index that best satisfies the selection goal: "${goal}"`,
+      choiceCriteria,
     );
 
     const response = await this.query(
@@ -452,7 +453,7 @@ export class JevClientWrapper {
         elements: candidateOptions.map((o, i) => `[${i}] ${o.text} (${o.value})`),
         history: [],
       },
-      { select_option: scoreQuestion },
+      { select_option: selectQuestion },
     );
 
     if (!response.result?.answers?.select_option) {
@@ -460,16 +461,36 @@ export class JevClientWrapper {
     }
 
     const answer = (response.result.answers as Record<string, any>).select_option;
-    let maxProb = -1;
     let bestCandidateIndex = 0;
+    let confidence = 0;
+    let scoreVal = 0;
     const probs = answer.probabilities || {};
 
-    for (let i = 0; i < candidateOptions.length; i++) {
-      const p = probs[String(i)] ?? probs[i] ?? 0;
-      if (p > maxProb) {
-        maxProb = p;
-        bestCandidateIndex = i;
+    if (answer.type === 'choice') {
+      const chosenKey = String(answer.choice ?? '');
+      const parsedIdx = parseInt(chosenKey, 10);
+      if (!isNaN(parsedIdx) && parsedIdx >= 0 && parsedIdx < candidateOptions.length) {
+        bestCandidateIndex = parsedIdx;
+      } else {
+        const found = candidateOptions.findIndex(
+          (opt) => opt.text === chosenKey || opt.value === chosenKey,
+        );
+        if (found >= 0) bestCandidateIndex = found;
       }
+      confidence = typeof answer.confidence === 'number' ? answer.confidence : (probs[chosenKey] ?? 1.0);
+      scoreVal = bestCandidateIndex;
+    } else {
+      // type === 'score' or legacy rubric response
+      let maxProb = -1;
+      for (let i = 0; i < candidateOptions.length; i++) {
+        const p = probs[String(i)] ?? probs[i] ?? 0;
+        if (p > maxProb) {
+          maxProb = p;
+          bestCandidateIndex = i;
+        }
+      }
+      confidence = typeof answer.confidence === 'number' ? answer.confidence : maxProb;
+      scoreVal = typeof answer.score === 'number' ? answer.score : bestCandidateIndex;
     }
 
     const bestOption = candidateOptions[bestCandidateIndex];
@@ -478,8 +499,8 @@ export class JevClientWrapper {
     return {
       bestIndex: originalIndex >= 0 ? originalIndex : bestCandidateIndex,
       bestOption,
-      confidence: answer.confidence ?? maxProb,
-      score: answer.score ?? bestCandidateIndex,
+      confidence,
+      score: scoreVal,
       usage: {
         inputTokens: response.result.usage?.input_tokens || 0,
       },

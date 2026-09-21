@@ -6,6 +6,8 @@ import {
   raceCdp,
   DialogOpenedError,
   createDialogInterruptResponse,
+  StalePageError,
+  createTargetOccludedResponse,
 } from '../../../../utils/race-cdp';
 import { executeInPage } from './in-page-engine';
 import { waitForPageSettle, waitForNetworkQuiescence } from '../../../../utils/action-watchdog';
@@ -439,6 +441,17 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           }
         };
 
+        // Start Child Tab Affinity Handover tracking for click actions
+        const isClickAction = action === 'click' || action === 'double_click';
+        const handoverTracker =
+          isClickAction || hasPoints
+            ? sessionTabAffinity.startHandoverTracking(
+                tabId,
+                args.sessionId || args.sessionContext,
+                { windowId: args.windowId },
+              )
+            : null;
+
         // Click sequence: CDP-dispatch a rapid burst of full clicks at the given
         // viewport points. One MCP round-trip, page-side interval down to ~35ms —
         // the only way to hit fast-moving canvas targets (rAF-animated hitboxes).
@@ -504,6 +517,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
               burstDelivery = {};
             }
           }
+          const tabHandover = handoverTracker ? await handoverTracker.waitForHandover(800) : null;
           return {
             content: [
               {
@@ -514,6 +528,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                     action: 'click_sequence',
                     pointsDispatched: dispatched,
                     coordinates: scaledPoints,
+                    ...(tabHandover ? { tabHandover } : {}),
                     ...(affinityWarning ? { affinityWarning } : {}),
                     ...burstDelivery,
                   },
@@ -640,8 +655,10 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                 };
               } else {
                 netCapture.dispose();
-                return createErrorResponse(
-                  `Element [${args.index}] click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first. Hint: If this is an open modal, interact with its buttons to dismiss. If it is a captcha or human verification, call chrome_request_human_intervention.`,
+                return createTargetOccludedResponse(
+                  new StalePageError(
+                    `Element [${args.index}] click intercepted by ${interceptRes.description}. Please dismiss or interact with the overlay/dialog first. Hint: If this is an open modal, interact with its buttons to dismiss. If it is a captcha or human verification, call chrome_request_human_intervention.`,
+                  ),
                 );
               }
             }
@@ -854,6 +871,26 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         } else {
           // Primary path: Native CDP Mouse Event Dispatch (isTrusted=true)
           try {
+            // Phase M1: 1ms Instantaneous Occlusion Circuit Breaker
+            if (args.index !== undefined && !isFallback && action !== 'hover') {
+              const occResult = (
+                await executeInPage(targetScope, 'inPageCheckOcclusion', [
+                  { node: args.index, kind: action },
+                ])
+              )?.[0];
+
+              if (occResult && !occResult.result) {
+                throw new StalePageError(
+                  `Element [${args.index}] is occluded by an overlay, out of viewport, or detached from DOM.`,
+                );
+              }
+              const occRes = occResult?.result;
+              if (occRes && typeof occRes.x === 'number' && typeof occRes.y === 'number') {
+                x = occRes.x;
+                y = occRes.y;
+              }
+            }
+
             await armProbe(targetScope);
             await executeInPage({ tabId }, 'inPageLockScroll', [true]).catch(() => {});
             try {
@@ -990,6 +1027,10 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             if (cdpErr instanceof DialogOpenedError) {
               throw cdpErr;
             }
+            if (cdpErr instanceof StalePageError) {
+              netCapture.dispose();
+              return createTargetOccludedResponse(cdpErr);
+            }
             if (String((cdpErr as Error)?.message || '').startsWith('CDP_DISPATCH_TIMEOUT')) {
               let isCaptcha = false;
               try {
@@ -1040,7 +1081,10 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         }
 
         if (args.waitForSettle) {
-          settleResult = await waitForPageSettle(tabId, { timeoutMs: args.settleTimeoutMs });
+          settleResult = await waitForPageSettle(tabId, {
+            timeoutMs: args.settleTimeoutMs,
+            action: { kind: action, node: args.index },
+          });
         }
 
         // D1: read back the delivery probe. Only meaningful when armed and the
@@ -1124,6 +1168,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           .catch(() => null);
         const perceptiveDelta = computePerceptiveDelta(preSignature, postSignature);
 
+        const tabHandover = handoverTracker ? await handoverTracker.waitForHandover(800) : null;
+
         return {
           content: [
             {
@@ -1142,6 +1188,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                   isTrusted: usedNativeCDP,
                   coordinates: { x, y },
                   fallbackTriggered,
+                  ...(tabHandover ? { tabHandover } : {}),
                   ...(maskPierced ? { piercedOverlay: maskPierced } : {}),
                   mode: isFallback
                     ? 'hybrid_visual_fallback'

@@ -5,6 +5,7 @@ import { TOOL_NAMES, type PrunedDOMTreeResult, type IndexedElement } from 'chrom
 import { executeInPage } from './in-page-engine';
 import { snapshotCacheManager } from '@/utils/snapshot-cache-manager';
 import { renderCompactElementLine } from './dom-indexer';
+import { waitForPageSettle } from '@/utils/action-watchdog';
 
 export interface ReadDOMParams {
   viewportThreshold?: number;
@@ -17,7 +18,9 @@ export interface ReadDOMParams {
   limit?: number;
   deltaOnly?: boolean;
   maxTextLength?: number;
-  format?: 'compact' | 'html';
+  format?: 'compact' | 'html' | 'fast';
+  fast?: boolean;
+  legacyVisibility?: boolean;
   viewportOnly?: boolean;
   activeViewportOnly?: boolean;
   /**
@@ -47,6 +50,21 @@ export interface ReadDOMParams {
    * and scopes indexing to the active modal while protecting portals, dropdowns, and alerts.
    */
   isolateModal?: boolean;
+  /**
+   * When true, automatically detects and dismisses visible marketing popups, coupon modals,
+   * and promotional overlays before indexing DOM nodes (default: false).
+   */
+  dismissOverlays?: boolean;
+  /**
+   * When true (default on long/feed/waterfall pages without selector), virtualizes and folds
+   * repetitive offscreen subtrees into concise summaries to slash token overhead.
+   */
+  virtualizeViewport?: boolean;
+  /**
+   * When true (default: true), identifies composite card containers (article, [role="article"],
+   * [role="listitem"], li) and aggregates fragmented leaf text nodes into unified structured card summaries.
+   */
+  flattenCards?: boolean;
 }
 
 export class ReadDOMTool extends BaseBrowserToolExecutor {
@@ -64,6 +82,61 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
       }
       tabFaviconManager.markTabActive(tab.id);
 
+      if (args.dismissOverlays) {
+        try {
+          const dismissRes = await executeInPage({ tabId: tab.id }, 'inPageDismissOverlays', []);
+          const count = dismissRes?.[0]?.result?.dismissedCount ?? 0;
+          if (count > 0) {
+            await waitForPageSettle(tab.id, { timeoutMs: 500 }).catch(() => {});
+          } else {
+            await new Promise((r) => setTimeout(r, 100));
+          }
+        } catch {}
+      }
+
+      // Fast Snapshot Engine branch (Phase F1: 10-30ms, <=15KB, WeakMap caching)
+      if (args.fast || args.format === 'fast') {
+        const snapRes = await executeInPage({ tabId: tab.id }, 'inPageFastSnapshot', [
+          { legacyVisibility: args.legacyVisibility },
+        ]);
+        const fastData = snapRes?.[0]?.result as any;
+        if (!fastData) {
+          return createErrorResponse('Failed to execute fast DOM snapshot');
+        }
+
+        const snapshotElements = (fastData.actions || []).map((a: any, idx: number) => ({
+          index: idx + 1,
+          tagName: a.role || a.kind || 'element',
+          isInteractive: true,
+          attributes: {
+            role: a.role,
+            name: a.name,
+            id: a.id,
+          },
+          text: a.name || '',
+          rect: a.rect || { x: 0, y: 0, width: 0, height: 0 },
+        }));
+
+        const snapshot = snapshotCacheManager.setSnapshot(tab.id, {
+          url: tab.url || fastData.url,
+          elementCount: snapshotElements.length,
+          elements: snapshotElements,
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                ...fastData,
+                snapshotId: snapshot.snapshotId,
+              }),
+            },
+          ],
+          isError: false,
+        };
+      }
+
       const effectiveSelector = args.scope || args.selector;
       const prunerOpts = {
         viewportThreshold: args.viewportThreshold ?? 1000,
@@ -76,6 +149,8 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         scope: args.scope,
         exclude: args.exclude,
         isolateModal: args.isolateModal,
+        virtualizeViewport: args.virtualizeViewport,
+        flattenCards: args.flattenCards,
       };
 
       let results: chrome.scripting.InjectionResult<PrunedDOMTreeResult>[] = [];
@@ -117,6 +192,9 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         focusTrapped: mainData.focusTrapped,
         isConfirmationTrap: mainData.isConfirmationTrap,
         modalIsolated: mainData.modalIsolated,
+        virtualizedCount: mainData.virtualizedCount,
+        virtualizedSummary: mainData.virtualizedSummary,
+        flattenedCardCount: mainData.flattenedCardCount,
         selectorMatched:
           mainData.selectorMatched ?? (results.some((r) => r.result?.selectorMatched) || false),
       };
@@ -129,6 +207,19 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         if (r === mainFrame || !r.result) continue;
         const subData = r.result;
         mergedData.elementCount += subData.elementCount;
+
+        if (typeof subData.virtualizedCount === 'number' && subData.virtualizedCount > 0) {
+          mergedData.virtualizedCount = (mergedData.virtualizedCount || 0) + subData.virtualizedCount;
+        }
+        if (Array.isArray(subData.virtualizedSummary) && subData.virtualizedSummary.length > 0) {
+          if (!mergedData.virtualizedSummary) mergedData.virtualizedSummary = [];
+          for (const s of subData.virtualizedSummary) {
+            mergedData.virtualizedSummary.push({
+              selector: `iframe[${r.frameId}] ${s.selector}`,
+              count: s.count,
+            });
+          }
+        }
 
         if (subData.indexedElements && subData.indexedElements.length > 0) {
           const startingIndexForFrame = currentIndex;
@@ -187,6 +278,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
             });
           }
         }
+
       }
 
       // Count the interactive subset, not every indexed element: informational
@@ -325,8 +417,21 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
               selector: effectiveSelector,
               ...(args.scope ? { scope: args.scope } : {}),
               selectorMatched: Boolean(mergedData.selectorMatched),
-              ...(!mergedData.selectorMatched
-                ? { message: `No elements matching selector "${effectiveSelector}" found on page.` }
+              ...(!mergedData.selectorMatched || (mergedData.elementCount === 0 && effectiveSelector.trim().toLowerCase() === 'form')
+                ? {
+                    message:
+                      effectiveSelector.trim().toLowerCase() === 'form'
+                        ? 'No elements matching selector "form" found on page. Modern div-based SPAs often do not use native <form> tags; consider targeting \'[role="form"]\' or omitting selector to scan the full container.'
+                        : `No elements matching selector "${effectiveSelector}" found on page.`,
+                    ...(effectiveSelector.trim().toLowerCase() === 'form'
+                      ? {
+                          suggestion:
+                            'Modern div-based SPAs often do not use native <form> tags. Try targeting \'[role="form"]\' or omitting selector to scan the full container.',
+                          diagnostic:
+                            'Selector "form" matched 0 elements. Modern SPAs often wrap inputs in <div> structures rather than <form>. Consider targeting \'[role="form"]\' or omitting selector.',
+                        }
+                      : {}),
+                  }
                 : {}),
             }
           : {}),

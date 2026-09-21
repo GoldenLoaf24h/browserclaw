@@ -1,6 +1,5 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
-import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { NETWORK_FILTERS } from '@/common/constants';
 import { isPopupUrl } from '@/utils/popup-guard';
@@ -91,7 +90,7 @@ function wsFrameType(opcode: number): WebSocketFrameInfo['type'] {
  * Network capture start tool - uses Chrome Debugger API to start capturing network requests
  */
 class NetworkDebuggerStartTool extends BaseBrowserToolExecutor {
-  name = TOOL_NAMES.BROWSER.NETWORK_DEBUGGER_START;
+  name = 'chrome_network_debugger_start';
   private captureData: Map<number, any> = new Map(); // tabId -> capture data
   private captureTimers: Map<number, NodeJS.Timeout> = new Map(); // tabId -> max capture timer
   private inactivityTimers: Map<number, NodeJS.Timeout> = new Map(); // tabId -> inactivity timer
@@ -1002,7 +1001,7 @@ class NetworkDebuggerStartTool extends BaseBrowserToolExecutor {
  * Network capture stop tool - stops capture and returns results for the active tab
  */
 class NetworkDebuggerStopTool extends BaseBrowserToolExecutor {
-  name = TOOL_NAMES.BROWSER.NETWORK_DEBUGGER_STOP;
+  name = 'chrome_network_debugger_stop';
   public static instance: NetworkDebuggerStopTool | null = null;
 
   constructor() {

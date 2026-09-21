@@ -12,7 +12,7 @@ app/chrome-extension/
 │   ├── background/             # MV3 Service Worker & 48 Tool Executors
 │   │   ├── native-host.ts      # Native Messaging pipe listener & sender authentication guard
 │   │   ├── index.ts            # Extension initialization, keepalive, and error reporting
-│   │   └── tools/browser/      # Executors for all 48 BrowserClaw tools
+│   │   └── tools/browser/      # Executors for all 48 BrowserClaw extension tools (49 total with Native loop)
 │   ├── agent-cursor.content.ts # Closed Shadow DOM virtual mouse overlay with spring physics
 │   ├── inpage-engine.ts        # Isolated-world DOM indexing, 1-based indexing, WeakRef mapping
 │   └── popup/                  # Extension popup UI (agent toggle and connection monitor)

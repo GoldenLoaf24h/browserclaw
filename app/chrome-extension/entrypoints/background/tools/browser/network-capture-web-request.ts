@@ -1,6 +1,5 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
-import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { LIMITS, NETWORK_FILTERS } from '@/common/constants';
 import { isPopupUrl } from '@/utils/popup-guard';
 
@@ -91,7 +90,7 @@ interface CaptureInfo {
  * Network Capture Start Tool V2 - Uses Chrome webRequest API to start capturing network requests
  */
 class NetworkCaptureStartTool extends BaseBrowserToolExecutor {
-  name = TOOL_NAMES.BROWSER.NETWORK_CAPTURE_START;
+  name = 'chrome_network_capture_start';
   public static instance: NetworkCaptureStartTool | null = null;
   public captureData: Map<number, CaptureInfo> = new Map(); // tabId -> capture data
   private captureTimers: Map<number, NodeJS.Timeout> = new Map(); // tabId -> max capture timer
@@ -879,7 +878,7 @@ class NetworkCaptureStartTool extends BaseBrowserToolExecutor {
  * Network capture stop tool V2 - Stop webRequest API capture and return results
  */
 class NetworkCaptureStopTool extends BaseBrowserToolExecutor {
-  name = TOOL_NAMES.BROWSER.NETWORK_CAPTURE_STOP;
+  name = 'chrome_network_capture_stop';
   public static instance: NetworkCaptureStopTool | null = null;
 
   constructor() {

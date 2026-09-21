@@ -1,34 +1,61 @@
 import type { PageSettleResult } from 'chrome-mcp-shared';
 
+export interface WaitForPageSettleOptions {
+  timeoutMs?: number;
+  quietPeriodMs?: number;
+  adaptiveMs?: number;
+  hasActiveRequests?: boolean;
+  action?: {
+    kind?: string;
+    node?: number | string;
+    role?: string;
+  };
+}
+
 /**
  * In-page MutationObserver watchdog that waits for DOM mutations to settle.
- * Debounces mutations with quietPeriodMs (default 150ms).
- * Terminates smoothly if quietPeriodMs elapses with no DOM activity or if timeoutMs is reached.
+ * Features 2-rAF micro-wait + ARIA combobox candidate option listener + MutationObserver.
+ * - Standard click/mutation settles in <=50ms (2 rAF frames + debounce).
+ * - Combobox autocomplete options settle in <=200ms as soon as options appear.
  */
 export function inPageWaitForDOMSettle(
-  timeoutMs = 1500,
+  timeoutMsOrOptions: number | WaitForPageSettleOptions = 1500,
   quietPeriodMs = 150,
   adaptiveMs?: number,
   hasActiveRequests = false,
-): Promise<{ settled: boolean; durationMs: number; mutationsObserved: number }> {
+  action?: { kind?: string; node?: number | string; role?: string },
+): Promise<{
+  settled: boolean;
+  durationMs: number;
+  mutationsObserved: number;
+  autocompleteSettled?: boolean;
+}> {
+  let timeoutMs = 1500;
+  if (typeof timeoutMsOrOptions === 'object' && timeoutMsOrOptions !== null) {
+    timeoutMs = timeoutMsOrOptions.timeoutMs ?? 1500;
+    quietPeriodMs = timeoutMsOrOptions.quietPeriodMs ?? 150;
+    adaptiveMs = timeoutMsOrOptions.adaptiveMs ?? adaptiveMs;
+    hasActiveRequests = timeoutMsOrOptions.hasActiveRequests ?? false;
+    action = timeoutMsOrOptions.action ?? action;
+  } else if (typeof timeoutMsOrOptions === 'number') {
+    timeoutMs = timeoutMsOrOptions;
+  }
+
   return new Promise((resolve) => {
     const startTime = performance.now();
     let mutationCount = 0;
     let quietTimer: any = null;
     let timeoutTimer: any = null;
     let observer: MutationObserver | null = null;
-
-    // Use 100% accurate in-flight network detection backed by CDP Network domain,
-    // permanently eliminating invalid reliance on performance.getEntriesByType('resource').
-    const initialQuietMs =
-      !hasActiveRequests && typeof adaptiveMs === 'number' && adaptiveMs > 0
-        ? adaptiveMs
-        : quietPeriodMs;
-
     let isDone = false;
+    let rAFId: number | null = null;
+
     const cleanup = () => {
       if (quietTimer) clearTimeout(quietTimer);
       if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (rAFId !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(rAFId);
+      }
       if (observer) {
         try {
           observer.disconnect();
@@ -37,35 +64,116 @@ export function inPageWaitForDOMSettle(
       }
     };
 
-    const done = (settled: boolean) => {
+    const done = (settled: boolean, autocompleteSettled = false) => {
       if (isDone) return;
       isDone = true;
       cleanup();
       const durationMs = Math.round(performance.now() - startTime);
-      resolve({ settled, durationMs, mutationsObserved: mutationCount });
+      resolve({ settled, durationMs, mutationsObserved: mutationCount, autocompleteSettled });
     };
 
-    // Wait for modern framework hydration (React/Vue/Angular) & idle callback
-    const checkHydrationAndIdle = () => {
-      try {
-        const win = window as any;
-        // React 18/19 root hydration check
-        const hasPendingReact =
-          !!document.querySelector('[data-reactroot], #root, #app, body') &&
-          typeof win.requestIdleCallback === 'function';
-        if (hasPendingReact) {
-          win.requestIdleCallback(() => {}, { timeout: Math.min(timeoutMs, 100) });
-        }
-      } catch {}
-    };
-    checkHydrationAndIdle();
+    // 1. Check for Combobox autocomplete candidate options (browser.py:46-65 pattern)
+    let field: Element | null = null;
+    if (action?.node !== undefined) {
+      const g = globalThis as any;
+      const isolatedMap = g[Symbol.for('__browser_use_isolated_index_map__')];
+      const targetId =
+        typeof action.node === 'string' && action.node.startsWith('e')
+          ? parseInt(action.node.slice(1), 10)
+          : action.node;
+      field =
+        g.__clawFast?.actionElements?.get(action.node) ||
+        g.__clawFast?.actionElements?.get(targetId) ||
+        g.__clawFast?.nodes?.get(action.node) ||
+        g.__clawFast?.nodes?.get(targetId) ||
+        isolatedMap?.get(targetId) ||
+        isolatedMap?.get(action.node) ||
+        (document.querySelector(`[data-mcp-idx="${action.node}"]`) as Element) ||
+        (document.querySelector(`[data-mcp-idx="${targetId}"]`) as Element) ||
+        null;
+    }
+
+    const isCombobox =
+      action?.role === 'combobox' ||
+      field?.getAttribute('role') === 'combobox' ||
+      (field?.tagName?.toUpperCase() === 'INPUT' && field?.getAttribute('aria-autocomplete') !== null) ||
+      (field?.tagName?.toUpperCase() === 'INPUT' &&
+        (field?.getAttribute('aria-controls') !== null || field?.getAttribute('aria-owns') !== null));
+
+    const isAutocomplete = action?.kind === 'fill' && isCombobox;
+
+    // 2. Hybrid rAF + MutationObserver Micro-Wait
+    let frames = 0;
+    const maxTimeout = isAutocomplete ? Math.min(timeoutMs, 200) : timeoutMs;
+    const initialQuietMs =
+      !hasActiveRequests && typeof adaptiveMs === 'number' && adaptiveMs > 0
+        ? adaptiveMs
+        : quietPeriodMs;
 
     timeoutTimer = setTimeout(() => {
-      done(false); // Reached max settle timeout
-    }, timeoutMs);
+      done(false);
+    }, maxTimeout);
+
+    // Combobox option discovery loop
+    if (isAutocomplete && typeof requestAnimationFrame === 'function') {
+      const checkCandidateOptions = () => {
+        if (isDone) return;
+        const ids = (
+          field?.getAttribute('aria-controls') ||
+          field?.getAttribute('aria-owns') ||
+          ''
+        )
+          .split(/\s+/)
+          .filter(Boolean);
+
+        const roots = ids.length
+          ? (ids.map((id) => document.getElementById(id)).filter(Boolean) as Element[])
+          : [document.body || document.documentElement];
+
+        const options = roots.flatMap((root) => [
+          ...root.querySelectorAll('[role="option"], [role="listbox"] > *'),
+        ]);
+
+        frames++;
+        const hasVisibleOption = options.some((e) => {
+          const r = e.getBoundingClientRect();
+          return (
+            r.width > 0 &&
+            r.height > 0 &&
+            r.bottom > 0 &&
+            r.top < window.innerHeight &&
+            (typeof (e as any).checkVisibility !== 'function' ||
+              (e as any).checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))
+          );
+        });
+
+        if (frames >= 2 && hasVisibleOption) {
+          done(true, true);
+        } else {
+          rAFId = requestAnimationFrame(checkCandidateOptions);
+        }
+      };
+      rAFId = requestAnimationFrame(checkCandidateOptions);
+    } else if (typeof requestAnimationFrame === 'function') {
+      // Regular action: wait for 2 rAF frames (≈32ms) to allow layout/render cycle
+      const rafLoop = () => {
+        if (isDone) return;
+        frames++;
+        if (frames >= 2) {
+          if (mutationCount === 0 || !observer) {
+            done(true);
+            return;
+          }
+        }
+        rAFId = requestAnimationFrame(rafLoop);
+      };
+      rAFId = requestAnimationFrame(rafLoop);
+    }
 
     quietTimer = setTimeout(() => {
-      done(true); // Initial quiet period without mutations passed
+      if (frames >= 2 || typeof requestAnimationFrame !== 'function') {
+        done(true);
+      }
     }, initialQuietMs);
 
     try {
@@ -74,7 +182,9 @@ export function inPageWaitForDOMSettle(
         mutationCount += mutations.length;
         if (quietTimer) clearTimeout(quietTimer);
         quietTimer = setTimeout(() => {
-          done(true); // DOM mutations paused for quietPeriodMs
+          if (frames >= 2 || typeof requestAnimationFrame !== 'function') {
+            done(true);
+          }
         }, quietPeriodMs);
       });
 
@@ -101,15 +211,10 @@ export function inPageWaitForDOMSettle(
  */
 export async function waitForPageSettle(
   tabId: number,
-  options?: {
-    timeoutMs?: number;
-    quietPeriodMs?: number;
-    adaptiveMs?: number;
-    hasActiveRequests?: boolean;
-  },
+  options?: WaitForPageSettleOptions,
 ): Promise<PageSettleResult> {
   const timeoutMs = Math.max(200, Math.min(options?.timeoutMs ?? 1500, 10000));
-  const quietPeriodMs = Math.max(50, Math.min(options?.quietPeriodMs ?? 150, 2000));
+  const quietPeriodMs = Math.max(35, Math.min(options?.quietPeriodMs ?? 100, 2000));
   const adaptiveMs = options?.adaptiveMs !== undefined ? options.adaptiveMs : 30;
 
   // Retrieve 100% accurate in-flight request status via CDP session manager Network tracking
@@ -141,6 +246,7 @@ export async function waitForPageSettle(
       quietPeriodMs,
       adaptiveMs,
       hasActiveNet,
+      options?.action,
     ]);
     const settleRes = results?.[0]?.result ?? { settled: true, durationMs: 0, mutationsObserved: 0 };
     settleRes.networkSettled = !hasActiveNet;

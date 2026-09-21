@@ -290,13 +290,14 @@ export class HeuristicEngine {
     goal: string,
     elements: string[],
     urlChangedInLastStep = false,
+    mutatedInLastStep = false,
   ): boolean {
     const goalTokens = tokenizeGoal(goal);
     if (goalTokens.length === 0) return false;
     // Static keyword coverage alone false-positives on pages that already
     // contain the goal words ("点击用户登录" on a login page). Require at
-    // least one navigation/mutation signal before declaring victory.
-    if (!urlChangedInLastStep) return false;
+    // least one navigation or DOM mutation signal before declaring victory.
+    if (!urlChangedInLastStep && !mutatedInLastStep) return false;
 
     const allPageText = elements.join(' ').toLowerCase();
     let hitCount = 0;

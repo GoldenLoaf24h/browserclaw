@@ -46,7 +46,7 @@
         },
         "groupTitle": {
           "type": "string",
-          "description": "Task-aligned title for the Chrome tab group in user language (e.g. \"GitHub 搜索\", \"Flight Tracker\"). Fallback: \"Agent\""
+          "description": "Concise, task-aligned title for the Chrome tab group reflecting user intent in user language (e.g. \"京东显示器销量前十\", \"GitHub PR Review\"). If omitted, the extension derives a smart title dynamically from the destination domain and page title instead of generic fallback."
         },
         "groupColor": {
           "type": "string",
@@ -333,6 +333,10 @@
         "deltaOnly": {
           "type": "boolean",
           "description": "When true, returns only changed/added/removed diffs compared to the previous snapshot, saving 90%+ tokens on repeated reads."
+        },
+        "flattenCards": {
+          "type": "boolean",
+          "description": "When true (default: true), identifies composite card containers (article, [role=\"article\"], [role=\"listitem\"], li) and aggregates fragmented leaf nodes into unified structured card summaries while preserving actionable link/click indices. Slashes token usage by 60%+ on eCommerce, search feeds, and news listings."
         }
       },
       "required": []

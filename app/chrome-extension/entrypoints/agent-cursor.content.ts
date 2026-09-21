@@ -790,7 +790,7 @@ function initAgentCursor() {
         'font-weight: 500; max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
       const labelSpan = document.createElement('span');
       labelSpan.style.cssText = 'color: #93c5fd; font-weight: 600;';
-      labelSpan.textContent = 'Agent 需人工协助：';
+      labelSpan.textContent = 'Human Assistance Required: ';
       textContainer.appendChild(labelSpan);
       textContainer.appendChild(document.createTextNode(reason));
       banner.appendChild(textContainer);
@@ -809,7 +809,7 @@ function initAgentCursor() {
         'transition: all 0.2s',
         'outline: none',
       ].join('; ');
-      continueBtn.textContent = '完成并继续 (Enter)';
+      continueBtn.textContent = 'Complete & Resume (Enter)';
       banner.appendChild(continueBtn);
 
       shadow.appendChild(banner);

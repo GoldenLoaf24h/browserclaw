@@ -21,7 +21,6 @@ import {
   inPageReindexFrame,
   inPageRealignHighlights,
   inPageScrollToIndex,
-  inPageScrollByIndex,
   inPageGetElementCoordinates,
   inPageArmDeliveryProbe,
   inPageReadDeliveryProbe,
@@ -48,6 +47,7 @@ import {
   inPageDeepResetElement,
   inPageVerifyInputCommitment,
   inPageDetectPerceptiveSignature,
+  inPageQueryChoiceCandidates,
   inPageInsertMedia,
   inPageGetScrollState,
   inPageInstantScrollTo,
@@ -56,8 +56,17 @@ import {
   deepElementFromPoint,
   querySelectorAllDeep,
   querySelectorDeep,
+  inPageDismissOverlays,
+  inPageVerifyActiveElement,
+  inPageSelectCustomCombobox,
 } from './background/tools/browser/dom-indexer';
 import { inPageWaitForDOMSettle } from '../utils/action-watchdog';
+import {
+  fastSnapshot,
+  inPageCheckOcclusion,
+  getNativeValueSetter,
+  getClawFastCache,
+} from './background/tools/browser/fast-snapshot';
 
 export default defineUnlistedScript(() => {
   // Versioned idempotency guard. executeInPage re-injects this 81KB bundle on
@@ -69,18 +78,22 @@ export default defineUnlistedScript(() => {
   // namespace only when the version string differs, so a stale page-side
   // engine (surviving extension reloads in the same tab) would otherwise keep
   // missing newly registered entrypoints.
-  const ENGINE_VERSION = '2026-09-20.2';
+  const ENGINE_VERSION = '2026-09-21.3';
   const g = globalThis as any;
   if (g.__MCP_INPAGE__ && g.__MCP_INPAGE_VERSION__ === ENGINE_VERSION) {
     return;
   }
   g.__MCP_INPAGE_VERSION__ = ENGINE_VERSION;
+
+  // Initialize single-point global window.__clawFast
+  const clawFast = getClawFastCache();
+  clawFast.snapshot = fastSnapshot;
+
   (globalThis as any).__MCP_INPAGE__ = {
     inPageDOMPruner,
     inPageReindexFrame,
     inPageRealignHighlights,
     inPageScrollToIndex,
-    inPageScrollByIndex,
     inPageGetElementCoordinates,
     inPageArmDeliveryProbe,
     inPageReadDeliveryProbe,
@@ -108,6 +121,7 @@ export default defineUnlistedScript(() => {
     inPageDeepResetElement,
     inPageVerifyInputCommitment,
     inPageDetectPerceptiveSignature,
+    inPageQueryChoiceCandidates,
     inPageInsertMedia,
     inPageGetScrollState,
     inPageInstantScrollTo,
@@ -116,5 +130,12 @@ export default defineUnlistedScript(() => {
     deepElementFromPoint,
     querySelectorAllDeep,
     querySelectorDeep,
+    inPageDismissOverlays,
+    inPageVerifyActiveElement,
+    inPageSelectCustomCombobox,
+    inPageFastSnapshot: fastSnapshot,
+    snapshot: fastSnapshot,
+    inPageCheckOcclusion,
+    getNativeValueSetter,
   };
 });

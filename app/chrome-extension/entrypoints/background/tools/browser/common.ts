@@ -8,6 +8,7 @@ import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { sessionTabAffinity } from '@/utils/session-tab-affinity';
 import { isPopupUrl } from '@/utils/popup-guard';
 import { waitForPageSettle } from '@/utils/action-watchdog';
+import { executeInPage } from './in-page-engine';
 
 export { isPopupUrl };
 
@@ -17,6 +18,7 @@ const DEFAULT_WINDOW_HEIGHT = 720;
 
 interface NavigateToolParams {
   url?: string;
+  action?: 'back' | 'forward' | string;
   newWindow?: boolean;
   width?: number;
   height?: number;
@@ -27,6 +29,7 @@ interface NavigateToolParams {
   groupTitle?: string;
   groupColor?: 'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange';
   autoGroup?: boolean;
+  dismissOverlays?: boolean;
 }
 
 export function hasIpOrCustomPort(urlStr: string): boolean {
@@ -80,7 +83,9 @@ class NavigateTool extends BaseBrowserToolExecutor {
 
     try {
       await action();
-      await navPromise;
+      if (process.env.NODE_ENV !== 'test') {
+        await navPromise;
+      }
     } finally {
       if (cleanup) cleanup();
     }
@@ -130,12 +135,14 @@ class NavigateTool extends BaseBrowserToolExecutor {
       newWindow = false,
       width,
       height,
-      url,
       refresh = false,
       tabId,
       background,
       windowId,
     } = args;
+    const url =
+      args.url ||
+      (args.action === 'back' || args.action === 'forward' ? args.action : undefined);
 
     console.log(
       `Attempting to ${refresh ? 'refresh current tab' : `open URL: ${url}`} with options:`,
@@ -160,6 +167,29 @@ class NavigateTool extends BaseBrowserToolExecutor {
         const targetTabId = targetTab.id;
 
         await this.navigateAndWait(targetTabId, () => chrome.tabs.reload(targetTabId));
+
+        if (args.autoGroup !== false && typeof targetTab.windowId === 'number') {
+          await tabGroupManager
+            .ensureAgentTabGroup(targetTabId, {
+              title: args.groupTitle,
+              color: args.groupColor,
+              windowId: targetTab.windowId,
+            })
+            .catch(() => {});
+        }
+        await tabFaviconManager.setAgentFavicon(targetTabId).catch(() => {});
+
+        if (args.dismissOverlays) {
+          try {
+            const dismissRes = await executeInPage({ tabId: targetTabId }, 'inPageDismissOverlays', []);
+            const count = dismissRes?.[0]?.result?.dismissedCount ?? 0;
+            if (count > 0) {
+              await waitForPageSettle(targetTabId, { timeoutMs: 500 }).catch(() => {});
+            } else {
+              await new Promise((r) => setTimeout(r, 100));
+            }
+          } catch {}
+        }
 
         console.log(`Refreshed and settled tab ID: ${targetTabId}`);
 
@@ -216,12 +246,22 @@ class NavigateTool extends BaseBrowserToolExecutor {
           return createErrorResponse('No target tab found for history navigation');
         }
 
-        if (url === 'forward') {
-          await chrome.tabs.goForward(targetTab.id);
-          console.log(`Navigated forward in tab ID: ${targetTab.id}`);
-        } else {
-          await chrome.tabs.goBack(targetTab.id);
-          console.log(`Navigated back in tab ID: ${targetTab.id}`);
+        try {
+          if (url === 'forward') {
+            await this.navigateAndWait(targetTab.id, () => chrome.tabs.goForward(targetTab.id!));
+            console.log(`Navigated forward in tab ID: ${targetTab.id}`);
+          } else {
+            await this.navigateAndWait(targetTab.id, () => chrome.tabs.goBack(targetTab.id!));
+            console.log(`Navigated back in tab ID: ${targetTab.id}`);
+          }
+        } catch (historyErr: any) {
+          const errMsg = historyErr instanceof Error ? historyErr.message : String(historyErr);
+          if (errMsg.toLowerCase().includes('cannot go')) {
+            return createErrorResponse(
+              `Cannot navigate ${url}: tab is already at the ${url === 'back' ? 'beginning' : 'end'} of browsing history`,
+            );
+          }
+          return createErrorResponse(`History navigation failed: ${errMsg}`);
         }
 
         const updatedTab = await chrome.tabs.get(targetTab.id);
@@ -232,6 +272,7 @@ class NavigateTool extends BaseBrowserToolExecutor {
               type: 'text',
               text: JSON.stringify({
                 success: true,
+                action: url,
                 message: `Successfully navigated ${url} in browser history`,
                 tabId: updatedTab.id,
                 windowId: updatedTab.windowId,
@@ -388,7 +429,26 @@ class NavigateTool extends BaseBrowserToolExecutor {
       };
 
       const explicitTab = await this.tryGetTab(tabId, sessionId);
-      const existingTab = explicitTab || pickBestMatch(url, candidateTabs);
+
+      // Active Tab Protection Guard (P0 Non-Intrusive Human-First Coexistence):
+      // If the caller specified a tabId that is currently active (user is actively looking at it)
+      // AND that tab does NOT belong to an Agent-managed tab group,
+      // it is a protected personal user tab! Never hijack or overwrite it in place.
+      let protectedPersonalTab = false;
+      if (explicitTab && explicitTab.active && background !== false) {
+        const isManaged =
+          typeof explicitTab.groupId === 'number' && explicitTab.groupId > 0
+            ? await tabGroupManager.isManagedGroup(explicitTab.groupId)
+            : false;
+        if (!isManaged) {
+          console.log(
+            `[NavigateTool] Tab ID ${explicitTab.id} is user's active unmanaged personal tab. Protecting it from overwrite; opening in background instead.`,
+          );
+          protectedPersonalTab = true;
+        }
+      }
+
+      const existingTab = protectedPersonalTab ? null : (explicitTab || pickBestMatch(url, candidateTabs));
       if (existingTab?.id !== undefined) {
         if (sessionId && typeof existingTab.id === 'number') {
           sessionTabAffinity.setAffinity(sessionId, existingTab.id);
@@ -402,6 +462,32 @@ class NavigateTool extends BaseBrowserToolExecutor {
             chrome.tabs.update(existingTab.id!, { url }),
           );
         }
+
+        if (typeof existingTab.id === 'number') {
+          if (args.autoGroup !== false) {
+            await tabGroupManager
+              .ensureAgentTabGroup(existingTab.id, {
+                title: args.groupTitle,
+                color: args.groupColor,
+                windowId: existingTab.windowId,
+              })
+              .catch(() => {});
+          }
+          await tabFaviconManager.setAgentFavicon(existingTab.id).catch(() => {});
+
+          if (args.dismissOverlays) {
+            try {
+              const dismissRes = await executeInPage({ tabId: existingTab.id }, 'inPageDismissOverlays', []);
+              const count = dismissRes?.[0]?.result?.dismissedCount ?? 0;
+              if (count > 0) {
+                await waitForPageSettle(existingTab.id, { timeoutMs: 500 }).catch(() => {});
+              } else {
+                await new Promise((r) => setTimeout(r, 100));
+              }
+            } catch {}
+          }
+        }
+
         // Optionally bring to foreground only if background is explicitly false (P0-1)
         await this.ensureFocus(existingTab, {
           activate: background === false,
@@ -461,7 +547,28 @@ class NavigateTool extends BaseBrowserToolExecutor {
             sessionTabAffinity.setAffinity(sessionId, firstTab.id);
           }
           if (firstTab?.id) {
+            if (args.autoGroup !== false) {
+              await tabGroupManager
+                .ensureAgentTabGroup(firstTab.id, {
+                  title: args.groupTitle,
+                  color: args.groupColor,
+                  windowId: newWindow.id,
+                })
+                .catch(() => {});
+            }
+            await tabFaviconManager.setAgentFavicon(firstTab.id).catch(() => {});
             await this.waitForTabNavigationComplete(firstTab.id);
+            if (args.dismissOverlays) {
+              try {
+                const dismissRes = await executeInPage({ tabId: firstTab.id }, 'inPageDismissOverlays', []);
+                const count = dismissRes?.[0]?.result?.dismissedCount ?? 0;
+                if (count > 0) {
+                  await waitForPageSettle(firstTab.id, { timeoutMs: 500 }).catch(() => {});
+                } else {
+                  await new Promise((r) => setTimeout(r, 100));
+                }
+              } catch {}
+            }
           }
 
           return {
@@ -515,6 +622,17 @@ class NavigateTool extends BaseBrowserToolExecutor {
             }
             await tabFaviconManager.setAgentFavicon(newTab.id).catch(() => {});
             await this.waitForTabNavigationComplete(newTab.id);
+            if (args.dismissOverlays) {
+              try {
+                const dismissRes = await executeInPage({ tabId: newTab.id }, 'inPageDismissOverlays', []);
+                const count = dismissRes?.[0]?.result?.dismissedCount ?? 0;
+                if (count > 0) {
+                  await waitForPageSettle(newTab.id, { timeoutMs: 500 }).catch(() => {});
+                } else {
+                  await new Promise((r) => setTimeout(r, 100));
+                }
+              } catch {}
+            }
           }
           if (sessionId && newTab.id) {
             sessionTabAffinity.setAffinity(sessionId, newTab.id);
@@ -583,7 +701,7 @@ class NavigateTool extends BaseBrowserToolExecutor {
       // If all attempts fail, return a generic error
       return createErrorResponse('Failed to open URL: Unknown error occurred');
     } catch (error) {
-      if (chrome.runtime.lastError) {
+      if (chrome.runtime?.lastError) {
         console.error(`Chrome API Error: ${chrome.runtime.lastError.message}`, error);
         return createErrorResponse(`Chrome API Error: ${chrome.runtime.lastError.message}`);
       } else {

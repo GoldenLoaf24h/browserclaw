@@ -9,6 +9,8 @@ import { raceCdp, DialogOpenedError, createDialogInterruptResponse } from '@/uti
 import { computePerceptiveDelta, type PerceptiveSignature } from './dom-indexer';
 import { tabFaviconManager } from './tab-favicon';
 import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
+import { performPhysicalFill } from './fill-core';
+import { matchSemantically } from '@/utils/form-semantic-matcher';
 
 export interface FormPipelineField {
   query: string;
@@ -66,123 +68,6 @@ export class FormPipelineTool extends BaseBrowserToolExecutor {
 
     const fallbackRes = await executeInPage({ tabId }, 'inPageInteractIndex', [index, 'click']);
     return Boolean(fallbackRes?.[0]?.result?.success);
-  }
-
-  /**
-   * Fills an input element using native CDP click, cross-platform deep reset,
-   * Input.insertText, True Input Commitment verification, and key-by-key fallback.
-   */
-  private async dispatchNativeFill(
-    tabId: number,
-    index: number,
-    text: string,
-  ): Promise<{ success: boolean; committed: boolean; diagnostics?: string }> {
-    try {
-      const coordRes = await executeInPage({ tabId }, 'inPageGetElementCoordinates', [index]);
-      const coords = coordRes?.[0]?.result;
-
-      if (coords?.success && typeof coords.x === 'number' && typeof coords.y === 'number') {
-        void animateAgentCursor(tabId, coords.x, coords.y);
-        void animateAgentCursorClick(tabId, coords.x, coords.y);
-
-        let verification: any = null;
-
-        await cdpSessionManager.withSession(tabId, 'form-pipeline-fill', async () => {
-          await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-            type: 'mousePressed',
-            x: coords.x,
-            y: coords.y,
-            button: 'left',
-            buttons: 1,
-            clickCount: 1,
-          });
-          await new Promise((r) => setTimeout(r, 35));
-          await raceCdp(tabId, 'Input.dispatchMouseEvent', {
-            type: 'mouseReleased',
-            x: coords.x,
-            y: coords.y,
-            button: 'left',
-            buttons: 0,
-            clickCount: 1,
-          });
-
-          await new Promise((r) => setTimeout(r, 50));
-
-          try {
-            await executeInPage({ tabId }, 'inPageDeepResetElement', [index]);
-          } catch {}
-
-          await raceCdp(tabId, 'Input.dispatchKeyEvent', {
-            type: 'rawKeyDown',
-            windowsVirtualKeyCode: 8,
-            key: 'Backspace',
-            code: 'Backspace',
-          });
-          await raceCdp(tabId, 'Input.dispatchKeyEvent', {
-            type: 'keyUp',
-            windowsVirtualKeyCode: 8,
-            key: 'Backspace',
-            code: 'Backspace',
-          });
-
-          if (text) {
-            await raceCdp(tabId, 'Input.insertText', { text: String(text) });
-          }
-
-          await new Promise((r) => setTimeout(r, 40));
-
-          try {
-            const vRes = await executeInPage({ tabId }, 'inPageVerifyInputCommitment', [index, text]);
-            verification = vRes?.[0]?.result;
-          } catch {}
-
-          if (text && verification && verification.committed === false) {
-            await new Promise((r) => setTimeout(r, 60));
-            try {
-              const retryRes = await executeInPage({ tabId }, 'inPageVerifyInputCommitment', [index, text]);
-              if (retryRes?.[0]?.result?.committed) {
-                verification = retryRes[0].result;
-              }
-            } catch {}
-          }
-
-          if (text && verification && verification.committed === false) {
-            for (const char of text) {
-              await raceCdp(tabId, 'Input.dispatchKeyEvent', {
-                type: 'keyDown',
-                text: char,
-                unmodifiedText: char,
-                key: char,
-              });
-              await raceCdp(tabId, 'Input.dispatchKeyEvent', {
-                type: 'keyUp',
-                key: char,
-              });
-              await new Promise((r) => setTimeout(r, 8));
-            }
-
-            await new Promise((r) => setTimeout(r, 50));
-
-            try {
-              const vRes2 = await executeInPage({ tabId }, 'inPageVerifyInputCommitment', [index, text]);
-              verification = vRes2?.[0]?.result;
-            } catch {}
-          }
-        });
-
-        if (verification && verification.committed !== false) {
-          return { success: true, committed: true };
-        }
-      }
-    } catch {}
-
-    const fallbackRes = await executeInPage({ tabId }, 'inPageFillIndex', [index, text, true, false]);
-    const outcome = fallbackRes?.[0]?.result;
-    return {
-      success: Boolean(outcome?.success),
-      committed: outcome?.committed ?? Boolean(outcome?.success),
-      diagnostics: outcome?.diagnostics || outcome?.error,
-    };
   }
 
   async execute(args: FormPipelineParams): Promise<ToolResult> {
@@ -266,6 +151,19 @@ export class FormPipelineTool extends BaseBrowserToolExecutor {
             }
           }
 
+          // Candidate 1.5: Jev / heuristic semantic match between question and uncompleted fields
+          if (matchedIndex === -1 && preSig?.question) {
+            const uncompletedCandidates = args.fields
+              .map((f, i) => ({ id: i, text: f.query, details: f.value }))
+              .filter((c) => !completedIndices.has(Number(c.id)));
+            if (uncompletedCandidates.length > 0) {
+              const semMatch = await matchSemantically('field', preSig.question, uncompletedCandidates);
+              if (semMatch) {
+                matchedIndex = Number(semMatch.matchedId);
+              }
+            }
+          }
+
           // Candidate 2: match by active inputs in current viewport
           if (matchedIndex === -1 && preSig?.activeInputs?.length) {
             for (const inp of preSig.activeInputs) {
@@ -283,6 +181,24 @@ export class FormPipelineTool extends BaseBrowserToolExecutor {
                 }
               }
               if (matchedIndex !== -1) break;
+            }
+          }
+
+          // Candidate 2.5: Jev / heuristic semantic match between active inputs and uncompleted fields
+          if (matchedIndex === -1 && preSig?.activeInputs?.length) {
+            const uncompletedCandidates = args.fields
+              .map((f, i) => ({ id: i, text: f.query, details: f.value }))
+              .filter((c) => !completedIndices.has(Number(c.id)));
+
+            for (const inp of preSig.activeInputs) {
+              const inpDescriptor = [inp.name, inp.placeholder, inp.ariaLabel].filter(Boolean).join(' ');
+              if (!inpDescriptor) continue;
+              const semMatch = await matchSemantically('input', inpDescriptor, uncompletedCandidates);
+              if (semMatch) {
+                matchedIndex = Number(semMatch.matchedId);
+                matchedInputIndex = inp.index;
+                break;
+              }
             }
           }
 
@@ -313,6 +229,7 @@ export class FormPipelineTool extends BaseBrowserToolExecutor {
 
           // 5. Execute action using native CDP events
           if (fieldType === 'choice') {
+            let choiceTargetIndex: number | undefined;
             const loc = (
               await executeInPage({ tabId }, 'inPageLocateByText', [
                 currentField.value,
@@ -321,7 +238,36 @@ export class FormPipelineTool extends BaseBrowserToolExecutor {
             )?.[0]?.result;
 
             if (loc && typeof loc.index === 'number') {
-              const clicked = await this.dispatchNativeClick(tabId, loc.index);
+              choiceTargetIndex = loc.index;
+            } else {
+              // Semantic search for choice among interactive options or visible elements on page
+              try {
+                const domItems = (
+                  await executeInPage({ tabId }, 'inPageQueryChoiceCandidates', [])
+                )?.[0]?.result;
+                if (Array.isArray(domItems) && domItems.length > 0) {
+                  const choiceCandidates = domItems
+                    .filter((item: any) => typeof item.index === 'number' && (item.text || item.ariaLabel || item.value))
+                    .map((item: any) => ({
+                      id: item.index,
+                      text: String(item.text || item.ariaLabel || item.value || '').trim(),
+                      details: item.ariaLabel || item.value || '',
+                    }));
+                  const semChoice = await matchSemantically(
+                    'choice',
+                    currentField.query,
+                    choiceCandidates,
+                    currentField.value,
+                  );
+                  if (semChoice) {
+                    choiceTargetIndex = Number(semChoice.matchedId);
+                  }
+                }
+              } catch {}
+            }
+
+            if (typeof choiceTargetIndex === 'number') {
+              const clicked = await this.dispatchNativeClick(tabId, choiceTargetIndex);
               if (!clicked) {
                 status = 'interrupted';
                 reason = 'choice_click_failed';
@@ -367,15 +313,39 @@ export class FormPipelineTool extends BaseBrowserToolExecutor {
               )?.[0]?.result;
               if (loc && typeof loc.index === 'number') {
                 finalTargetIndex = loc.index;
+              } else if (preSig?.activeInputs && preSig.activeInputs.length > 0) {
+                // Semantic match field query against active inputs
+                const inputCandidates = preSig.activeInputs
+                  .filter((inp) => typeof inp.index === 'number')
+                  .map((inp) => ({
+                    id: inp.index!,
+                    text: [inp.name, inp.placeholder, inp.ariaLabel].filter(Boolean).join(' ') || `input-${inp.index}`,
+                  }));
+                const semInput = await matchSemantically('input', currentField.query, inputCandidates, currentField.value);
+                if (semInput) {
+                  finalTargetIndex = Number(semInput.matchedId);
+                }
               }
             }
 
             if (typeof finalTargetIndex === 'number') {
-              const fillResult = await this.dispatchNativeFill(tabId, finalTargetIndex, currentField.value);
+              const fillResult = await performPhysicalFill({
+                tabId,
+                target: finalTargetIndex,
+                text: currentField.value,
+                clear: true,
+                pressEnter: false,
+                preferComposer: true,
+                sessionId: args.sessionId,
+                sessionContext: args.sessionContext,
+              });
               if (!fillResult.success || fillResult.committed === false) {
                 status = 'interrupted';
                 reason = 'fill_failed';
-                interruptDetails = { fieldQuery: currentField.query, error: fillResult.diagnostics };
+                interruptDetails = {
+                  fieldQuery: currentField.query,
+                  error: fillResult.diagnostics || fillResult.error,
+                };
                 break;
               }
             } else {

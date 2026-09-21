@@ -1,6 +1,6 @@
 # BrowserClaw (mcp-chrome) Architecture & System Design 🏗️
 
-> **Version**: 2.9.3 (Hardened Release)  
+> **Version**: 3.0.0 (Production Stable Release)  
 > **Target Runtime**: Chrome Extension Manifest V3, Chrome DevTools Protocol (CDP 1.3), Model Context Protocol (MCP 2024-11-05), Fastify HTTP/SSE, Chrome Native Messaging.
 
 ---
@@ -316,7 +316,7 @@ Below is a systematic comparison between **BrowserClaw**, **browser-use**, and *
 ### ADR-014: Dynamic Profile Layering & Session-Level Tool Activation across Transports
 
 - **Status**: Implemented & Verified
-- **Context**: Different AI agent models have vastly different token window budgets. Standard monolithic MCP server exposing all 48 tools consumes ~16.8k tokens on `tools/list`, which overwhelms smaller or faster reasoning models. At the same time, hardcoding static profiles (e.g. `core` with 14 tools or `crawl` with 12 tools) prevented agents from dynamically discovering and invoking advanced debugging or network inspection capabilities when encountering complex edge cases.
+- **Context**: Different AI agent models have vastly different token window budgets. Standard monolithic MCP server exposing all 49 tools consumes ~19.5k tokens on `tools/list`, which overwhelms smaller or faster reasoning models. At the same time, hardcoding static profiles (e.g. `core` with 14 tools or `crawl` with 12 tools) prevented agents from dynamically discovering and invoking advanced debugging or network inspection capabilities when encountering complex edge cases.
 - **Decision**:
   1. Define 8 comprehensive tool categories in `TOOL_CATEGORIES` across `packages/shared`: `navigate`, `perceive`, `act`, `observe`, `manage`, `diagnose`, `network`, and `crawl`.
   2. Retain `chrome_tool_docs` as an omni-present introspection tool across all profiles.
@@ -398,7 +398,7 @@ Below is a systematic comparison between **BrowserClaw**, **browser-use**, and *
 ### ADR-021: Strict Polymorphic Coordinate JSON-Schema Disjunction & Ajv 8+ Strictness (v2.3.8)
 
 - **Status**: Implemented & Verified
-- **Context**: Across 7 tools (`chrome_computer`, `chrome_click_element`, `chrome_interact_index`, `chrome_scroll`, `chrome_smart_scroll`, `chrome_burst_interact`, and `chrome_batch_actions`), coordinate parameters were declared with a top-level `type: 'object'` and top-level `required: ['x', 'y']`, with an inner `oneOf` attempting to permit array coordinates `[x, y]`. In strict JSON Schema validators (Ajv in strict mode, as used by Claude Desktop, Cursor, and Windsurf), this triggered schema compilation warnings and outright validation failures whenever an agent supplied an array coordinate.
+- **Context**: Across coordinate tools (`chrome_computer`, `chrome_interact_index`, `chrome_smart_scroll`, `chrome_burst_interact`, and `chrome_batch_actions`), coordinate parameters were declared with a top-level `type: 'object'` and top-level `required: ['x', 'y']`, with an inner `oneOf` attempting to permit array coordinates `[x, y]`. In strict JSON Schema validators (Ajv in strict mode, as used by Claude Desktop, Cursor, and Windsurf), this triggered schema compilation warnings and outright validation failures whenever an agent supplied an array coordinate.
 - **Decision**:
   1. Strip top-level `type: 'object'` and top-level `required: ['x', 'y']` from the outer property definition.
   2. Encapsulate validation constraints cleanly within `oneOf`: Branch 1 enforces `{ type: 'object', properties: { x, y }, required: ['x', 'y'] }`, while Branch 2 enforces `{ type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 }`.
@@ -410,7 +410,7 @@ Below is a systematic comparison between **BrowserClaw**, **browser-use**, and *
 - **Status**: Implemented & Verified
 - **Context**: When targeting non-active/background tabs (`active: false`), Chromium suspends compositor frame generation. CDP `Input.dispatchMouseEvent(mouseWheel)` commands do not acknowledge frame commits and block execution for up to 3000ms before timing out. Furthermore, a 60-second cooldown cache remained sticky even when the human user focused the tab or navigated to a new URL.
 - **Decision**:
-  1. In both `smart-scroll.ts` and `scroll.ts`, detect background tab status (`isBackground = !tab.active`). For background tabs, immediately bypass CDP mouseWheel and invoke in-page JavaScript smooth scrolling.
+  1. In `smart-scroll.ts`, detect background tab status (`isBackground = !tab.active`). For background tabs, immediately bypass CDP mouseWheel and invoke in-page JavaScript smooth scrolling.
   2. Implement a cooldown circuit-breaker: if a CDP wheel dispatch times out, skip CDP for 60 seconds.
   3. Register tab lifecycle listeners on `chrome.tabs.onActivated`, `chrome.tabs.onUpdated`, and `chrome.tabs.onRemoved` to invalidate the cooldown cache immediately upon user focus or page reload.
 - **Consequences**: Elimination of 3000ms latency stalls on background scrolling, seamless transition to hardware-accelerated CDP wheel dispatch when tabs are focused, and zero memory leaks.

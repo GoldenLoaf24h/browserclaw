@@ -1,10 +1,26 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 
+import { CURRENT_VERSION } from 'chrome-mcp-shared';
+import { checkExtensionVersionUpdate } from '@/utils/version-checker';
+
 const agentEnabled = ref(true);
 const serverConnected = ref(false);
 const cursorMode = ref<'off' | 'auto' | 'always'>('always');
 const windowMode = ref<'tab' | 'window'>('tab');
+const currentVersion = ref(CURRENT_VERSION);
+const versionChecked = ref(false);
+const hasUpdate = ref(false);
+const latestReleaseUrl = ref('https://github.com/GoldenLoaf24h/browserclaw/releases/latest');
+
+const openRelease = (url?: string) => {
+  const target = url || latestReleaseUrl.value;
+  if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+    chrome.tabs.create({ url: target });
+  } else if (typeof window !== 'undefined') {
+    window.open(target, '_blank', 'noopener,noreferrer');
+  }
+};
 
 const windowModeLabel = computed(() => {
   return windowMode.value === 'window' ? 'Window' : 'Tab';
@@ -101,6 +117,28 @@ onMounted(async () => {
   }
 
   await checkServerStatus();
+
+  try {
+    if (typeof chrome !== 'undefined' && chrome.runtime?.getManifest) {
+      const manifest = chrome.runtime.getManifest();
+      if (manifest?.version) {
+        currentVersion.value = manifest.version;
+      }
+    }
+  } catch {}
+
+  checkExtensionVersionUpdate()
+    .then((res) => {
+      versionChecked.value = true;
+      hasUpdate.value = res.hasUpdate;
+      if (res.releaseUrl) {
+        latestReleaseUrl.value = res.releaseUrl;
+      }
+    })
+    .catch(() => {
+      versionChecked.value = true;
+      hasUpdate.value = false;
+    });
 });
 </script>
 
@@ -195,6 +233,22 @@ onMounted(async () => {
         >
           Window
         </button>
+      </div>
+    </div>
+
+    <!-- Row 5: Version & Update Status (Bottom Row) -->
+    <div class="version-row">
+      <span class="version-text">v{{ currentVersion }}</span>
+      <span v-if="versionChecked && !hasUpdate" class="status-latest">latest</span>
+      <div v-if="versionChecked && hasUpdate" class="update-info">
+        <span class="update-text">new version</span>
+        <a
+          class="view-link"
+          :href="latestReleaseUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          @click.prevent="openRelease(latestReleaseUrl)"
+        >view</a>
       </div>
     </div>
   </div>
@@ -407,5 +461,53 @@ onMounted(async () => {
 .segment-btn.active {
   color: #111827;
   font-weight: 600;
+}
+
+.version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid #f3f4f6;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.version-text {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 400;
+  user-select: text;
+}
+
+.status-latest {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 400;
+}
+
+.update-info {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.update-text {
+  font-size: 11px;
+  color: #ea580c;
+  font-weight: 500;
+}
+
+.view-link {
+  font-size: 11px;
+  color: #2563eb;
+  text-decoration: underline;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.view-link:hover {
+  color: #1d4ed8;
 }
 </style>

@@ -11,12 +11,7 @@ export const TOOL_NAMES = {
     CLICK: 'chrome_click_element',
     FILL: 'chrome_fill_or_select',
     NETWORK_CAPTURE: 'chrome_network_capture',
-    // Legacy tool names (kept for internal use, not exposed in TOOL_SCHEMAS)
-    NETWORK_CAPTURE_START: 'chrome_network_capture_start',
-    NETWORK_CAPTURE_STOP: 'chrome_network_capture_stop',
     NETWORK_REQUEST: 'chrome_network_request',
-    NETWORK_DEBUGGER_START: 'chrome_network_debugger_start',
-    NETWORK_DEBUGGER_STOP: 'chrome_network_debugger_stop',
     KEYBOARD: 'chrome_keyboard',
     HISTORY: 'chrome_history',
     BOOKMARK_SEARCH: 'chrome_bookmark_search',
@@ -36,7 +31,6 @@ export const TOOL_NAMES = {
     FILL_INDEX: 'chrome_fill_index',
     BATCH_ACTIONS: 'chrome_batch_actions',
     GET_MARKDOWN: 'chrome_get_markdown',
-    SCROLL_TO_TEXT: 'chrome_scroll_to_text',
     GET_DROPDOWN_OPTIONS: 'chrome_get_dropdown_options',
     MOVE_TAB: 'chrome_move_tab',
     TAB_GROUP_CREATE: 'chrome_tab_group_create',
@@ -44,10 +38,8 @@ export const TOOL_NAMES = {
     TAB_GROUP_LIST: 'chrome_tab_group_list',
     TAB_GROUP_UNGROUP: 'chrome_tab_group_ungroup',
     TAB_GROUP_CLOSE: 'chrome_tab_group_close',
-    SCROLL: 'chrome_scroll',
     ATTACH_TAB: 'chrome_attach_tab',
     DETACH_TAB: 'chrome_detach_tab',
-    FILL_FORM: 'chrome_fill_form',
     BURST_INTERACT: 'chrome_burst_interact',
     SMART_SCROLL: 'chrome_smart_scroll',
     STORAGE: 'chrome_storage',
@@ -62,6 +54,7 @@ export const TOOL_NAMES = {
     GREP: 'chrome_grep',
     FORM_PIPELINE: 'chrome_form_pipeline',
     INSERT_MEDIA: 'chrome_insert_media',
+    DISMISS_OVERLAY: 'chrome_dismiss_overlay',
   },
   NATIVE: {
     ACT_TOWARD_GOAL: 'chrome_act_toward_goal',
@@ -442,6 +435,12 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           description:
             'URL to navigate to. Special values: "back" or "forward" to navigate browser history in the target tab.',
         },
+        action: {
+          type: 'string',
+          enum: ['back', 'forward'],
+          description:
+            'Alternative to url="back"|"forward": navigate browser history backward or forward.',
+        },
         newWindow: {
           type: 'boolean',
           description: 'Create a new window to navigate to the URL or not. Defaults to false',
@@ -479,7 +478,7 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         groupTitle: {
           type: 'string',
           description:
-            'Task-aligned title for the Chrome tab group in user language (e.g. "GitHub Search", "Flight Tracker"). Fallback: "Agent"',
+            'Concise, task-aligned title for the Chrome tab group reflecting user intent in user language (e.g. "Best 4K Monitors on Amazon", "GitHub PR Review"). If omitted, the extension derives a smart title dynamically from the destination domain and page title instead of generic fallback.',
         },
         groupColor: {
           type: 'string',
@@ -490,6 +489,11 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           type: 'boolean',
           description:
             'Automatically place newly opened tab into an Agent-managed tab group with dedicated title and color. Default: true',
+        },
+        dismissOverlays: {
+          type: 'boolean',
+          description:
+            'Automatically detect and dismiss visible marketing popups, coupon modals, and promotional overlays after navigation completes (default: false)',
         },
       },
       required: [],
@@ -1586,14 +1590,39 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         },
         format: {
           type: 'string',
-          enum: ['compact', 'html'],
+          enum: ['compact', 'html', 'fast'],
           description:
-            'Output format for treeString. "compact" (default) produces a concise, accessibility-tree-inspired representation without closing tags, slashing token usage by 60%+. "html" returns legacy pseudo-HTML tags.',
+            'Output format for treeString. "compact" (default) produces a concise, accessibility-tree-inspired representation without closing tags, slashing token usage by 60%+. "html" returns legacy pseudo-HTML tags. "fast" activates ultrafast atomic snapshot mode (10-30ms, <=15KB).',
+        },
+        fast: {
+          type: 'boolean',
+          description:
+            'When true, activates the ultrafast atomic DOM snapshot engine (10-30ms, <=15KB payload) with WeakMap caching and native checkVisibility.',
+        },
+        legacyVisibility: {
+          type: 'boolean',
+          description:
+            'When true, uses legacy visibility fallback (computedStyle display/visibility/opacity) instead of element.checkVisibility.',
         },
         deltaOnly: {
           type: 'boolean',
           description:
             'When true, returns only changed/added/removed diffs compared to the previous snapshot, saving 90%+ tokens on repeated reads.',
+        },
+        dismissOverlays: {
+          type: 'boolean',
+          description:
+            'When true, automatically detects and dismisses visible marketing popups, coupon modals, and promotional overlays before indexing DOM nodes, preventing modal overlays from polluting the DOM tree (default: false)',
+        },
+        virtualizeViewport: {
+          type: 'boolean',
+          description:
+            'When true (enabled by default on infinite scroll, long feeds, and waterfall pages when selector/scope is omitted), intelligently virtualizes and folds repetitive offscreen subtrees into compact summaries, drastically slashing token usage while strictly preserving visible viewport elements and key navigation.',
+        },
+        flattenCards: {
+          type: 'boolean',
+          description:
+            'When true (default: true), identifies composite card containers (article, [role="article"], [role="listitem"], li) and aggregates fragmented leaf nodes into unified structured card summaries while preserving actionable link/click indices. Slashes token usage by 60%+ on eCommerce, search feeds, and news listings.',
         },
       },
       required: [],
@@ -2183,31 +2212,6 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
     },
   },
   {
-    name: TOOL_NAMES.BROWSER.SCROLL_TO_TEXT,
-    annotations: {
-      title: 'Scroll To Text',
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
-    },
-    description:
-      'Scroll the page using CDP and TreeWalker semantic search to bring specific text into the center of the viewport.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        text: { type: 'string', description: 'Target text string to search and scroll into view' },
-        tabId: { type: 'number', description: 'Target tab ID (optional)' },
-        windowId: { type: 'number', description: 'Target window ID (optional)' },
-        sessionId: {
-          type: 'string',
-          description: 'Optional session identifier to bind affinity to a specific tab context',
-        },
-      },
-      required: ['text'],
-    },
-  },
-  {
     name: TOOL_NAMES.BROWSER.GET_DROPDOWN_OPTIONS,
     annotations: {
       title: 'Get Dropdown Options',
@@ -2386,76 +2390,6 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
     },
   },
   {
-    name: TOOL_NAMES.BROWSER.SCROLL,
-    annotations: {
-      title: 'Physical Page Scroll',
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: false,
-    },
-    description:
-      'Physically scroll the page using CDP mouse wheel dispatch. Supports directional scrolling (up, down, left, right) by pixel distance or full/fractional pages.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        direction: {
-          type: 'string',
-          enum: ['up', 'down', 'left', 'right'],
-          description: 'Direction to scroll (default: "down")',
-        },
-        amount: {
-          type: 'number',
-          description:
-            'Number of pixels to scroll (e.g. 500). Takes precedence over pages if both are provided.',
-        },
-        pages: {
-          type: 'number',
-          description:
-            'Number of viewport pages to scroll (e.g. 1 for full page, 0.5 for half page). Default is 1 if amount is omitted.',
-        },
-        index: {
-          type: 'integer',
-          description:
-            'Target element index (from chrome_read_dom) to scroll. When provided, moves cursor to element and scrolls its container.',
-        },
-        coordinate: {
-          oneOf: [
-            {
-              type: 'object',
-              properties: {
-                x: { type: 'number', description: 'X coordinate' },
-                y: { type: 'number', description: 'Y coordinate' },
-              },
-              required: ['x', 'y'],
-              description: '{ x, y } coordinate object',
-            },
-            {
-              type: 'array',
-              items: { type: 'number' },
-              description: 'Point [x, y] or bounding box [ymin, xmin, ymax, xmax]',
-            },
-          ],
-          description:
-            'Target coordinates to dispatch wheel event at: { x, y } object, [x, y] point, or [ymin, xmin, ymax, xmax] bounding box (defaults to center of viewport).',
-        },
-        tabId: {
-          type: 'number',
-          description: 'Target tab ID (optional, defaults to active tab)',
-        },
-        windowId: {
-          type: 'number',
-          description: 'Target window ID (optional)',
-        },
-        sessionId: {
-          type: 'string',
-          description: 'Session identifier for tab affinity',
-        },
-      },
-      required: [],
-    },
-  },
-  {
     name: TOOL_NAMES.BROWSER.ATTACH_TAB,
     annotations: {
       title: 'Attach Tab',
@@ -2506,78 +2440,6 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
         },
       },
       required: [],
-    },
-  },
-  {
-    name: TOOL_NAMES.BROWSER.FILL_FORM,
-    annotations: {
-      title: 'Fill Form (Batch)',
-      readOnlyHint: false,
-      destructiveHint: true,
-      idempotentHint: false,
-      openWorldHint: true,
-    },
-    description:
-      'Fill multiple form fields in a single MCP call to reduce roundtrips. Supports filling by ref (1-based index), selector, or field name.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        fields: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              ref: {
-                type: ['string', 'number'],
-                description: 'Target element numeric index or ref from chrome_read_dom',
-              },
-              index: {
-                type: 'number',
-                description: 'Alias for ref',
-              },
-              selector: {
-                type: 'string',
-                description: 'CSS selector or XPath for target field',
-              },
-              value: {
-                type: ['string', 'number', 'boolean'],
-                description: 'Value to fill or select',
-              },
-              text: {
-                type: 'string',
-                description: 'Alias for value',
-              },
-              clear: {
-                type: 'boolean',
-                description: 'Clear field before typing (default: true)',
-              },
-            },
-            required: [],
-          },
-          description: 'Array of field descriptors to fill sequentially',
-        },
-        tabId: {
-          type: 'number',
-          description: 'Target tab ID (optional)',
-        },
-        windowId: {
-          type: 'number',
-          description: 'Target window ID (optional)',
-        },
-        waitForSettle: {
-          type: 'boolean',
-          description: 'Wait for DOM mutations to settle after form is filled (default: false)',
-        },
-        settleTimeoutMs: {
-          type: 'number',
-          description: 'Maximum settle timeout in ms (default: 1500)',
-        },
-        sessionId: {
-          type: 'string',
-          description: 'Session identifier for tab affinity',
-        },
-      },
-      required: ['fields'],
     },
   },
   {
@@ -3248,15 +3110,42 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
       required: [],
     },
   },
+  {
+    name: TOOL_NAMES.BROWSER.DISMISS_OVERLAY,
+    annotations: {
+      title: 'Dismiss Overlay',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    description:
+      'Fast 1-step dismissal for visible high-z-index marketing popups, coupon dialogs, promotional banners, and cookie consent overlays (e.g. promotional banners, modals with "Close", "Skip", "Cancel", "×"). Locates close buttons and dismisses top-level dialogs without dumping hundreds of DOM nodes or wasting roundtrips.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tabId: { type: 'number', description: 'Target tab ID (optional)' },
+        windowId: { type: 'number', description: 'Target window ID (optional)' },
+        maxOverlays: {
+          type: 'number',
+          description: 'Maximum number of stacked overlays to dismiss (default: 5)',
+        },
+        waitForSettle: {
+          type: 'boolean',
+          description: 'Wait for DOM settle after dismissal (default: true)',
+        },
+        sessionId: { type: 'string', description: 'Session ID for tab affinity routing' },
+        sessionContext: { type: 'string', description: 'Session context alias' },
+      },
+      required: [],
+    },
+  },
 ];
 
 export const PURGED_TOOL_NAMES = new Set([
   'chrome_click_element',
   'chrome_burst_interact',
   'chrome_fill_or_select',
-  'chrome_fill_form',
-  'chrome_scroll',
-  'chrome_scroll_to_text',
   'chrome_get_web_content',
   'chrome_get_links',
 ]);

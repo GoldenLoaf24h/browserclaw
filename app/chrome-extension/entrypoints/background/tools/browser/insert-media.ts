@@ -20,6 +20,16 @@ export interface InsertMediaParams {
   sessionContext?: string;
 }
 
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 32768;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+  }
+  return btoa(binary);
+}
+
 export class InsertMediaTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.INSERT_MEDIA;
 
@@ -56,16 +66,7 @@ export class InsertMediaTool extends BaseBrowserToolExecutor {
               mimeType = resp.headers.get('content-type') || undefined;
             }
             const arrayBuffer = await resp.arrayBuffer();
-            const bytes = new Uint8Array(arrayBuffer);
-            let binary = '';
-            const chunkSize = 8192;
-            for (let i = 0; i < bytes.length; i += chunkSize) {
-              binary += String.fromCharCode.apply(
-                null,
-                Array.from(bytes.subarray(i, i + chunkSize)),
-              );
-            }
-            base64 = btoa(binary);
+            base64 = uint8ArrayToBase64(new Uint8Array(arrayBuffer));
             if (!fileName) {
               const urlPath = new URL(fetchTargetUrl, 'http://localhost').pathname;
               fileName = urlPath.split('/').pop() || 'downloaded-media.png';
@@ -107,16 +108,7 @@ export class InsertMediaTool extends BaseBrowserToolExecutor {
                 mimeType = resp.headers.get('content-type') || nativeRes.mimeType;
               }
               const arrayBuffer = await resp.arrayBuffer();
-              const bytes = new Uint8Array(arrayBuffer);
-              let binary = '';
-              const chunkSize = 8192;
-              for (let i = 0; i < bytes.length; i += chunkSize) {
-                binary += String.fromCharCode.apply(
-                  null,
-                  Array.from(bytes.subarray(i, i + chunkSize)),
-                );
-              }
-              base64 = btoa(binary);
+              base64 = uint8ArrayToBase64(new Uint8Array(arrayBuffer));
             } catch (streamErr: any) {
               return createErrorResponse(
                 `Failed to fetch streamed media from server: ${streamErr?.message || streamErr}`,

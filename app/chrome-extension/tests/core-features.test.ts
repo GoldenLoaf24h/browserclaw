@@ -5,7 +5,6 @@ import {
   isKeepaliveActive,
   getKeepaliveRefCount,
 } from '../entrypoints/background/keepalive-manager';
-import { ScrollTool } from '../entrypoints/background/tools/browser/scroll';
 
 describe('Extension Core Features', () => {
   describe('hasIpOrCustomPort', () => {
@@ -56,21 +55,6 @@ describe('Extension Core Features', () => {
       release2();
       expect(getKeepaliveRefCount()).toBe(0);
       expect(isKeepaliveActive()).toBe(false);
-    });
-  });
-
-  describe('ScrollTool', () => {
-    it('instantiates properly and declares name', () => {
-      const tool = new ScrollTool();
-      expect(tool.name).toBe('chrome_scroll');
-    });
-
-    it('returns error response when no active tab is found', async () => {
-      const tool = new ScrollTool();
-      // resolveAffinityTab will return tab with id undefined from mock
-      const result = await tool.execute({ direction: 'down', amount: 300 });
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Active tab not found');
     });
   });
 

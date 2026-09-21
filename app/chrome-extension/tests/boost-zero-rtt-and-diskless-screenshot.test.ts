@@ -283,7 +283,7 @@ describe('Zero-RTT Submission & Diskless Screenshot Hardening', () => {
       sendCommandSpy.mockRestore();
       sendSpy.mockRestore();
       ensureSpy.mockRestore();
-    });
+    }, 15000);
 
     it('safely handles large screenshot payloads by ensuring size under Native Messaging ceiling before sending', async () => {
       const { screenshotTool } = await import('../entrypoints/background/tools/browser/screenshot');

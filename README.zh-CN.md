@@ -4,7 +4,7 @@
   <p><b>控制你自己的浏览器的一切。</b></p>
   <p>
     <a href="./docs/MAP.md">🗺️ 项目地图</a> ·
-    <a href="./docs/TOOLS.md">工具参考 (48)</a> ·
+    <a href="./docs/TOOLS.md">工具参考 (49)</a> ·
     <a href="./AGENT_CONFIG_GUIDE.md">客户端配置</a> ·
     <a href="./README.md">📖 English</a> ·
     <a href="https://github.com/GoldenLoaf24h/browserclaw/releases">Releases</a>
@@ -30,13 +30,14 @@
 
 - 🧠 **分层双脑协同架构 (`chrome_act_toward_goal`)**：本地语义微循环以 200~400ms/步极速自主完成“感知 → 决策 → 交互”，**零中间 MCP 网络往返**。内置 TypeSafe Jev System One 并支持平滑降级至启发式规则打分与结构化交接。
 - 🔑 **日常会话与登录态无缝复用**：直接运行在日常 Chrome 浏览器中，完整继承 Google、GitHub、企业 SSO 登录凭证，杜绝文件锁冲突与登录丢失。
-- 🌲 **1-based 剪枝 DOM 与紧凑 AX 树**：剔除装饰性 DOM 噪点与多余闭合标签，输出高结构化紧凑可交互节点树，相较原生 HTML 缩减 85%+ Token 消耗。
+- 🌲 **1-based 剪枝 DOM 与紧凑 AX 树**：剔除装饰性 DOM 噪点与多余闭合标签，输出高结构化紧凑可交互节点树。支持电商/信息流复合卡片扁平化 (`flattenCards`) 与长列表视口虚拟化 (`virtualizeViewport`)，相较原生 HTML 缩减 85%+ Token 消耗。
 - ⚡ **代码驱动流水线与原子批处理**：通过 `chrome_batch_actions` 或页内 `mcp.*` 脚本，在单次往返中串联表单填写、点击、断言与数据提取闭环。
 - 🛡️ **Deep Shadow DOM 深度穿透**：Composed 树多层穿透 Web Components（如 Reddit Shreddit 架构），语义提取纯图标按钮的 `aria-label`/`title`/内嵌 SVG 标题，并支持闭合 Shadow Host 的 Composed 事件捕获与冒泡。
 - 🎯 **视觉回退漂移实时补偿**：整页截图真实文档空间坐标映射（`isDocumentSpace`），动态计算滚动位移差（`alignVisualCoordinate`），自动平滑居中并于点击派发期间锁定滚动，消除视口竞态漂移。
 - 🔄 **自驱增量 Diff 与定向 Grep 检索**：`includeDelta: true` 在操作完成后直接携带页面局部变动；`chrome_grep` 实现多层 Shadow 树下毫秒级低 Token 正则检索。
-- 🖱️ **真人级防打扰交互共存**：具备 1:1 弹簧动力学虚拟光标悬浮层、专属彩色标签组生命周期管理、可选独立窗口隔离，以及在 2FA/滑块验证时柔和礼让用户的毛玻璃介入横幅。
-- 🧭 **本地浏览器全维能力治理**：超越常规网页爬取，通过 48 项规范 MCP 工具全面管理标签页、窗口、Cookie、存储、浏览历史及书签。
+- 🚫 **一键浮层与营销弹窗关闭 (`chrome_dismiss_overlay`)**：极速清理淘宝/京东消费券弹窗、广告模态框与 Cookie 授权条，无需往返倾倒数百个 DOM 节点。
+- 🖱️ **真人级防打扰交互共存**：具备 1:1 弹簧动力学虚拟光标悬浮层、专属智能意图命名标签组生命周期管理、可选独立窗口隔离，以及在 2FA/滑块验证时柔和礼让用户的毛玻璃介入横幅。
+- 🧭 **本地浏览器全维能力治理**：超越常规网页爬取，通过 49 项规范 MCP 工具全面管理标签页、窗口、Cookie、存储、浏览历史及书签。
 
 ---
 
@@ -55,7 +56,7 @@
 └───────────────────────────┬────────────────────────────┘
                             │ Native Messaging 内部管道
                             ▼
-┌─ Tier 0 · 确定性原子工具群 (47 个确定性工具 + 1 循环 = 48 项) ─┐
+┌─ Tier 0 · 确定性原子工具群 (48 个确定性工具 + 1 循环 = 49 项) ─┐
 │  batch_actions / form_pipeline / interact_index / ...    │
 │  Chrome MV3 扩展底层驱动 · 硬件级 CDP 物理事件           │
 └──────────────────────────────────────────────────────────┘
@@ -91,7 +92,7 @@
 
 > _“帮我配置 BrowserClaw：https://github.com/GoldenLoaf24h/browserclaw ，阅读仓库中的 `INSTALL.md` 并按步骤自动安装。”_
 
-AI 将自动完成本地服务的编译与注册。随后你只需从 **[Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** 下载最新的 **`browserclaw-extension-v*.zip`** 资产（例如 `browserclaw-extension-v2.9.3.zip`），解压到本地固定目录，打开 `chrome://extensions` 开启“开发者模式”，将该解压文件夹拖入即可。
+AI 将自动完成本地服务的编译与注册。随后你只需从 **[Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** 下载最新的 **`browserclaw-extension-v*.zip`** 资产（例如 `browserclaw-extension-v3.0.0.zip`），解压到本地固定目录，打开 `chrome://extensions` 开启“开发者模式”，将该解压文件夹拖入即可。
 
 ### 方案二：通过 ChatGPT / Codex 插件市场添加
 
@@ -124,13 +125,13 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 ---
 
-## 🛠️ 全量工具分类全览 (48 个核心规范 MCP 工具)
+## 🛠️ 全量工具分类全览 (49 个核心规范 MCP 工具)
 
-全量 48 个核心规范 Schema 校验的工具按功能归纳为以下 7 个大类别。**点击对应分类即可展开查看工具清单。**
+全量 49 个核心规范 Schema 校验的工具（48 个确定性浏览器原子工具 + 1 个目标自驱微闭环）归纳为以下 8 个大类别。**点击对应分类即可展开查看工具清单。**
 完整 JSON Schema 与入参定义请参阅 **[docs/TOOLS.md](./docs/TOOLS.md)**。
 
 <details>
-<summary><b>🧠 0. 目标自驱微闭环 (1 个工具) — v2.8 重磅新增</b></summary>
+<summary><b>🧠 0. 目标自驱微闭环 (1 个工具)</b></summary>
 
 <br/>
 
@@ -239,7 +240,7 @@ AI 智能体 (Cursor / Claude / Codex)
          ▼
 本地原生网桥 (Fastify + Stdio 宿主)
          ├── 极速决策引擎 (Jev 客户端 + 零依赖启发式降级 + 语义微循环)
-         ├── 47 个确定性原子工具 + 1 个自主微循环（共 48 项工具穿透直通）
+         ├── 48 个确定性原子工具 + 1 个自主微循环（共 49 项工具穿透直通）
          │  Chrome Native Messaging 本地双向管道 (1MB 物理截断保护)
          ▼
 Chrome MV3 扩展 (Service Worker + WXT + Vue 3)
@@ -255,7 +256,7 @@ Chrome MV3 扩展 (Service Worker + WXT + Vue 3)
 ## 📚 项目全景文档库
 
 - **[项目地图导览](./docs/MAP.md)**：🗺️ 快速按角色导航、全工程 Monorepo 代码拓扑树与文档矩阵。
-- **[全量工具字典](./docs/TOOLS.md)**：自动化生成的 48 个工具完整参数输入输出参考手册。
+- **[全量工具字典](./docs/TOOLS.md)**：自动化生成的 49 个工具完整参数输入输出参考手册。
 - **[Agent 交互实操心法](./AGENT_CONFIG_GUIDE.md)**：面向大模型的六大高能交互准则与主流客户端配置样例。
 - **[深度系统架构](./docs/ARCHITECTURE.md)**：多进程拓扑、IPC 安全边界与设计决策记录 (ADR)。
 - **[故障排查指南](./docs/TROUBLESHOOTING.zh-CN.md)**：常见报错代码与连接异常秒级诊断排查。

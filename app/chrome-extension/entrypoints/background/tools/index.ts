@@ -74,7 +74,9 @@ export const handleCallTool = async (param: ToolCallParam) => {
             key === 'pressEnter' ||
             key === 'savePng' ||
             key === 'saveToDisk' ||
-            key === 'waitForSettle') &&
+            key === 'waitForSettle' ||
+            key === 'dismissOverlays' ||
+            key === 'autoGroup') &&
           (trimmed === 'true' || trimmed === 'false')
         ) {
           args[key] = trimmed === 'true';

@@ -2,7 +2,7 @@
 
 [Chinese Version (zh-CN)](./TROUBLESHOOTING.zh-CN.md)
 
-This manual compiles typical connectivity, state, and permission issues encountered across major AI Agent platforms (Claude Desktop, Cursor, Windsurf, Cline, Roo Code, Codex, Antigravity), detailing root causes and standard recovery workflows.
+This manual compiles typical connectivity, state, and permission issues encountered when MCP-capable agents connect to BrowserClaw, detailing root causes and standard recovery workflows.
 
 ---
 
@@ -71,7 +71,7 @@ Windows users can also double-click [`skill/config/repair.bat`](./repair.bat) or
      # Windows PowerShell
      Get-Content "$HOME\.chrome-mcp\bridge-token"
      ```
-  2. Update your agent config headers (e.g. Cursor's `mcp.json` or Claude's config). Both `x-mcp-token` and `Authorization: Bearer <token>` are supported:
+  2. Update your agent's MCP config headers. Both `x-mcp-token` and `Authorization: Bearer <token>` are supported:
      ```json
      "headers": {
        "x-mcp-token": "<TOKEN>",

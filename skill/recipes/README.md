@@ -47,6 +47,6 @@ When creating a new site recipe (e.g. `recipes/my-service.md`), follow this stan
 ### 3. Site Gotchas & Workarounds
 
 - _Gotcha_: Has a full-screen cookie consent modal on first visit.
-  - _Fix_: Call `chrome_read_dom` and dismiss modal first if `activeModal` is detected.
+  - _Fix_: Call `chrome_dismiss_overlay` (or pass `dismissOverlays: true` to `chrome_navigate` / `chrome_read_dom`) — no DOM dump needed.
 - _Gotcha_: Search input is debounced by 300ms.
   - _Fix_: Settle automatically waits for network quiescence.

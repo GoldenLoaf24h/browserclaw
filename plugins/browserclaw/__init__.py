@@ -9,10 +9,20 @@ import json
 import logging
 import os
 from pathlib import Path
+import sys
 import threading
 from typing import Any, Callable, Dict, List, Optional
 import urllib.error
 import urllib.request
+
+# Ensure UTF-8 output encoding across Windows consoles to eliminate GBK UnicodeEncodeError
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +42,7 @@ SESSION_ID_ENV_VARS = ('BROWSERCLAW_MCP_SESSION_ID', 'CHROME_MCP_SESSION_ID')
 MCP_PROTOCOL_VERSION = '2024-11-05'
 CLIENT_INFO = {
     'name': 'browserclaw-python-plugin',
-    'version': '2.9.3',
+    'version': '3.0.0',
 }
 
 _AUTH_HELP = (

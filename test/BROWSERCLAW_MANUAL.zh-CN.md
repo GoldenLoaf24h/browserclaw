@@ -146,13 +146,13 @@ console.log(r.content[0].text);
 
 - `chrome_navigate` —— URL 导航;特殊值 `"back"`/`"forward"`;`newWindow`/`width`/`height`/`background`/`refresh`(refresh=true 时忽略 url)
 - `chrome_read_page` —— **已移除**，页面读取统一走 `chrome_read_dom`（`ref_` 引用改由 interact/fill/computer 内部解析）
-- `chrome_get_web_content`、`chrome_get_markdown`、`chrome_scroll_to_text`、`chrome_get_dropdown_options`
+- `chrome_get_web_content`、`chrome_get_markdown`、`chrome_get_dropdown_options`
 - `chrome_javascript` —— 在页面注入执行任意 JS
 
 **索引操控体系(chrome_read_dom 系列,5)**
 
 - `chrome_read_dom` —— 核心:生成 1-based 索引树(详见 2.4.1)
-- `chrome_interact_index`、`chrome_fill_index`、`chrome_scroll`、`chrome_batch_actions`
+- `chrome_interact_index`、`chrome_fill_index`、`chrome_smart_scroll`、`chrome_batch_actions`
 
 **选择器体系(chrome_read_dom 的 ref/selector 系列,3)**
 
@@ -287,23 +287,10 @@ CLICK VECTOR"</button>
 - 必填 `index`;`text`(或别名 `value`)要填的文本;`clear` 默认 true(先清空);`waitForSettle`/`settleTimeoutMs` 同上。
 - 实现:CDP 坐标点击聚焦 → Ctrl/Meta+A + Backspace 清空 → `Input.insertText`。失败降级页内合成事件(React 18 原生 value setter + input/change)。已知弱点见 4.6/4.7。
 
-#### 2.4.4 chrome_scroll
+#### 2.4.4 chrome_smart_scroll
 
-参数:`direction`(`up`/`down`/`left`/`right`)、`amount`(像素,优先于 pages)、`pages`(视口页数,默认 1)、`index`(滚到该元素容器)、`coordinate`(在该点滚)。
-返回(实测):
-
-```json
-{
-  "success": true,
-  "direction": "down",
-  "deltaX": 0,
-  "deltaY": 120,
-  "method": "cdp_mouse_wheel",
-  "tabId": 1581256628
-}
-```
-
-- 默认 800px 纵 / 1000px 横。给 `index` 时轮子在该元素中心触发 → 天然命中嵌套滚动容器(见 3.5)。
+参数:`direction`(`up`/`down`/`left`/`right`)、`amount`(像素,优先于 pages)、`pages`(视口页数,默认 1)、`index`(智能识别或聚焦目标容器)、`coordinate`(在该点滚)。
+智能探测目标滚动容器，CDP 滚轮派发结合页内平滑滚动回退。
 
 #### 2.4.5 chrome_batch_actions
 
@@ -380,7 +367,7 @@ CLICK VECTOR"</button>
 - 支持动作:`click` / `fill` / `hover` / `scroll` / `press_key` / `wait`。
 - **顺序执行、无回滚、无重试**;每步前 URL 漂移守卫:URL 与批次开始不同即中断(SPA pushState 也触发,见 4.8)。
 - 失败:`{success:false, actionIndex, error, interruptedReason, completedActions}`,之后动作不执行。
-- `scroll` + `index` 走 `inPageScrollToIndex`(scrollIntoView 语义,与 chrome_scroll 的 wheel 语义不同——batch 里滚嵌套容器请用 coordinate)。
+- `scroll` + `index` 走 `inPageScrollToIndex`(scrollIntoView 语义,与 chrome_smart_scroll 的 wheel 语义不同——batch 里滚嵌套容器请用 coordinate)。
 - press_key:KEY_ALIASES 表(enter/backspace/tab/escape/space/pageup/pagedown/home/end/arrow*/F1-F12);单字符走 `Input.insertText`,其余 `rawKeyDown`/`rawKeyUp`(**未带 windowsVirtualKeyCode**,见 4.9)。
 
 ### 3.7 dialog.ts —— 对话框自动化
@@ -433,7 +420,7 @@ const tabs = await mcpCall('get_windows_and_tabs', {});
 const dom = await mcpCall('chrome_read_dom', {}); // {treeString, indexedElements, ...}
 await mcpCall('chrome_interact_index', { index: 3, action: 'click', waitForSettle: true });
 await mcpCall('chrome_fill_index', { index: 12, text: 'hello' });
-await mcpCall('chrome_scroll', { direction: 'down', amount: 600 });
+await mcpCall('chrome_smart_scroll', { direction: 'down', amount: 600 });
 const shot = await mcpCall('chrome_screenshot', {
   storeBase64: true,
   savePng: false,
@@ -478,9 +465,9 @@ node test/mcp-client.mjs chrome_interact_index '{"index":3,"action":"click"}'
 ### 5.4 嵌套滚动容器
 
 ```
-chrome_scroll {index: <容器内元素索引>, direction: "down", amount: 300}   # 轮子在元素中心 → 命中最内层容器
+chrome_smart_scroll {index: <容器内元素索引>, direction: "down", amount: 300}   # 轮子在元素中心 → 命中最内层容器
 # 或坐标直发:
-chrome_scroll {coordinate: {x: 400, y: 300}, direction: "down"}
+chrome_smart_scroll {coordinate: {x: 400, y: 300}, direction: "down"}
 ```
 
 ### 5.5 微小目标 / 反爬靶(4px 按钮、fleeing target)

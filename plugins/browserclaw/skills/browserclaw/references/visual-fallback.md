@@ -11,11 +11,11 @@ This reference documents the secondary visual execution engine for canvas games,
 - **DOM Obfuscation**: Elements deliberately detached or hidden from accessibility trees.
 - **Visual Verification**: Checking visual styling, alignment, or screenshot-based evidence.
 
-_Rule: Never use visual fallback when a numeric index from `chrome_read_dom` is available. DOM interaction is 10x faster and 100% deterministic._
+_Rule: Never use visual fallback when a numeric index from `browserclaw_read_dom` is available. DOM interaction is 10x faster and 100% deterministic._
 
 ---
 
-## 2. DPR 1:1 Viewport Normalization (Zero Coordinate Drift)
+## 2. DPR 1:1 Viewport Normalization
 
 BrowserClaw automatically resamples all screenshots using `OffscreenCanvas` to exact CSS viewport dimensions ($W_{img} \equiv W_{viewport}, H_{img} \equiv H_{viewport}$):
 
@@ -24,7 +24,7 @@ BrowserClaw automatically resamples all screenshots using `OffscreenCanvas` to e
 
 ---
 
-## 3. Visual Perception Tools (`chrome_screenshot`)
+## 3. Visual Perception Tools (`browserclaw_screenshot`)
 
 ### A. Calibrated Coordinate Grid & Perimeter Rulers
 
@@ -50,7 +50,7 @@ BrowserClaw automatically resamples all screenshots using `OffscreenCanvas` to e
 - Labels interactive elements with high-contrast, compact numeric badges.
 - Incorporates frustum culling (pruning off-screen nodes) and 25px collision avoidance.
 
-### C. Industrial Full-Page Capture (`fullPage: true`)
+### C. Full-Page Capture (`fullPage: true`)
 
 ```json
 {
@@ -74,12 +74,12 @@ BrowserClaw automatically resamples all screenshots using `OffscreenCanvas` to e
 
 ---
 
-## 4. Multimodal Coordinate Actions (`chrome_computer`)
+## 4. Multimodal Coordinate Actions (`browserclaw_computer`)
 
 For visual clicks and typing, BrowserClaw supports Polymorphic Coordinate Input (PCIE):
 
 - **Object Format**: `{ "action": "left_click", "coordinates": { "x": 450, "y": 320 } }`
 - **Array Format**: `{ "action": "left_click", "coordinates": [450, 320] }`
-- **Supported Actions**: `left_click`, `right_click`, `double_click`, `triple_click`, `left_click_drag`, `scroll`, `type`, `key`, `hover`, `wait`, `fill`.
+- **Supported Actions** (16): `left_click`, `right_click`, `double_click`, `triple_click`, `left_click_drag`, `scroll`, `scroll_to`, `type`, `key`, `hover`, `wait`, `fill`, `fill_form`, `zoom`, `screenshot`, `resize_page`.
 - **Pre-flight Occlusion Inspection**: Automatically runs `DOM.getNodeForLocation` / `DOM.getBoxModel` to prevent clicking obscured elements.
 - **Natural Kinematics**: Enforces humanized deceleration trajectories within a 65px radius, 80-120ms physiological settling pauses, and supports hold durations up to 3000ms.

@@ -27,7 +27,7 @@ let callSequence = 0;
  * In Chrome MV3, repeated file injections of the 100KB bundle on every single sub-action
  * (coordinate resolution, occlusion probe, delivery probe) add 4-6 seconds of latency.
  */
-const injectedTabs = new Set<number>();
+export const injectedTabs = new Set<number>();
 if (typeof chrome !== 'undefined' && chrome.tabs?.onUpdated) {
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     if (changeInfo.status === 'loading') {
@@ -37,6 +37,25 @@ if (typeof chrome !== 'undefined' && chrome.tabs?.onUpdated) {
   chrome.tabs.onRemoved?.addListener((tabId) => {
     injectedTabs.delete(tabId);
   });
+}
+
+/**
+ * Detects whether an error represents page navigation, frame removal, or execution context destruction.
+ */
+export function isNavigationOrContextDestroyedError(error: unknown): boolean {
+  if (!error) return false;
+  const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return (
+    msg.includes('frame was removed') ||
+    msg.includes('frame with id') ||
+    msg.includes('context was destroyed') ||
+    msg.includes('execution context was destroyed') ||
+    msg.includes('receiving end does not exist') ||
+    msg.includes('could not establish connection') ||
+    msg.includes('tab was closed') ||
+    msg.includes('no tab with id') ||
+    msg.includes('cannot access contents of the page')
+  );
 }
 
 /**
@@ -84,59 +103,126 @@ export async function executeInPage<R = any>(
   const isAlreadyInjected =
     typeof target.tabId === 'number' && !target.allFrames && injectedTabs.has(target.tabId);
   if (!isAlreadyInjected) {
-    await raceInjection(
-      chrome.scripting.executeScript({ target, files: ['inpage-engine.js'] }),
-      'injection',
-    );
-    if (typeof target.tabId === 'number') {
-      injectedTabs.add(target.tabId);
+    try {
+      await raceInjection(
+        chrome.scripting.executeScript({ target, files: ['inpage-engine.js'] }),
+        'injection',
+      );
+      if (typeof target.tabId === 'number') {
+        injectedTabs.add(target.tabId);
+      }
+    } catch (err) {
+      if (typeof target.tabId === 'number' && isNavigationOrContextDestroyedError(err)) {
+        injectedTabs.delete(target.tabId);
+      }
+      throw err;
     }
   }
 
   const slot = `__MCP_CALL_${++callSequence}`;
 
-  // 1) Start: launch the entrypoint synchronously, stash its promise in a box.
-  const startResults = (await raceInjection(
-    chrome.scripting.executeScript({
-      target,
-      func: (ns: string, name: string, fnArgs: unknown[], slotKey: string) => {
-        const g = globalThis as any;
-        const engine = g[ns];
-        const fn = engine ? engine[name] : undefined;
-        const box: {
-          promise?: unknown;
-          settled: boolean;
-          listening?: boolean;
-          value?: unknown;
-          error?: string;
-        } = {
-          promise: undefined,
-          settled: false,
-          listening: false,
-          value: undefined,
-          error: undefined,
-        };
-        g[slotKey] = box;
-        try {
-          box.promise = typeof fn === 'function' ? fn.call(engine, ...fnArgs) : undefined;
-        } catch (err) {
-          box.settled = true;
-          box.error = String(err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : err);
-        }
-        return {
-          engineType: typeof engine,
-          fnType: typeof fn,
-          promiseType: typeof box.promise,
-        };
-      },
-      args: [INPAGE_NAMESPACE, fnName, args, slot],
-    }),
-    'start',
-  )) as unknown as chrome.scripting.InjectionResult<{
+  // 1) Evaluate entrypoint: Try Single-Turn Evaluation first.
+  // If the entrypoint function is synchronous or settled immediately, return its result in Turn 1.
+  // If it returns a Promise, stash it in globalThis[slot] for the poll/retrieve fallback.
+  let startResults: chrome.scripting.InjectionResult<{
     engineType: string;
     fnType: string;
-    promiseType: string;
+    singleTurn?: boolean;
+    status?: 'success' | 'error' | 'unavailable';
+    value?: unknown;
+    error?: string;
+    promiseType?: string;
   }>[];
+
+  try {
+    startResults = (await raceInjection(
+      chrome.scripting.executeScript({
+        target,
+        func: (ns: string, name: string, fnArgs: unknown[], slotKey: string) => {
+          const g = globalThis as any;
+          const engine = g[ns];
+          const fn = engine ? engine[name] : undefined;
+
+          if (typeof engine !== 'object' || typeof fn !== 'function') {
+            return {
+              engineType: typeof engine,
+              fnType: typeof fn,
+              singleTurn: false,
+              status: 'unavailable',
+            };
+          }
+
+          try {
+            // Clean up any stale slot box from a previous single-turn call
+            if (g.__mcp_last_slot && g[g.__mcp_last_slot]) {
+              delete g[g.__mcp_last_slot];
+            }
+            g.__mcp_last_slot = slotKey;
+
+            const raw = fn.call(engine, ...fnArgs);
+            const isAsync = Boolean(raw && typeof raw.then === 'function');
+
+            // Stash box for both sync and async so if some frames are sync and others async,
+            // the poll/retrieve fallback can safely retrieve values from ALL frames without data loss.
+            const box: {
+              promise?: unknown;
+              settled: boolean;
+              listening?: boolean;
+              value?: unknown;
+              error?: string;
+            } = {
+              promise: raw,
+              settled: !isAsync,
+              listening: false,
+              value: !isAsync ? (raw === undefined ? { __mcpInpageReturn: 'undefined' } : raw) : undefined,
+              error: undefined,
+            };
+            g[slotKey] = box;
+
+            if (!isAsync) {
+              return {
+                engineType: 'object',
+                fnType: 'function',
+                singleTurn: true,
+                status: 'success',
+                value: raw === undefined ? { __mcpInpageReturn: 'undefined' } : raw,
+              };
+            }
+
+            return {
+              engineType: 'object',
+              fnType: 'function',
+              singleTurn: false,
+              promiseType: typeof raw,
+            };
+          } catch (err) {
+            return {
+              engineType: 'object',
+              fnType: 'function',
+              singleTurn: true,
+              status: 'error',
+              error: String(err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : err),
+            };
+          }
+        },
+        args: [INPAGE_NAMESPACE, fnName, args, slot],
+      }),
+      'eval-or-start',
+    )) as unknown as chrome.scripting.InjectionResult<{
+      engineType: string;
+      fnType: string;
+      singleTurn?: boolean;
+      status?: 'success' | 'error' | 'unavailable';
+      value?: unknown;
+      error?: string;
+      promiseType?: string;
+    }>[];
+  } catch (err) {
+    if (typeof target.tabId === 'number' && isNavigationOrContextDestroyedError(err)) {
+      injectedTabs.delete(target.tabId);
+    }
+    throw err;
+  }
 
   const validFrames = (startResults ?? [])
     .filter((r) => r?.result?.engineType === 'object' && r?.result?.fnType === 'function')
@@ -163,81 +249,115 @@ export async function executeInPage<R = any>(
     }
   }
 
+  // Fast Path: Check if all valid frames resolved in Single-Turn Evaluation
+  const validResults = target.allFrames
+    ? (startResults ?? []).filter((r) => validFrames.includes(r.frameId))
+    : (startResults ?? []);
+
+  const allSingleTurn =
+    validResults.length > 0 &&
+    validResults.every((r) => r?.result?.singleTurn === true);
+
+  if (allSingleTurn) {
+    for (const r of validResults) {
+      if (r?.result?.status === 'error') {
+        throw new Error(`In-page engine ${fnName} failed: ${r.result.error}`);
+      }
+      const val = r?.result?.value as any;
+      if (val && typeof val === 'object' && val.__mcpInpageReturn === 'undefined') {
+        throw new Error(`In-page engine ${fnName} returned undefined`);
+      }
+    }
+
+    return validResults.map((r) => ({
+      documentId: r.documentId,
+      frameId: r.frameId,
+      result: r.result?.value as R,
+    }));
+  }
+
   const effectiveTarget: chrome.scripting.InjectionTarget =
     target.allFrames && typeof target.tabId === 'number' && validFrames.length > 0
       ? { tabId: target.tabId, frameIds: validFrames }
       : target;
 
-  // 2) Poll: attach settle callbacks; every dispatcher stays synchronous.
-  const deadline = Date.now() + EXECUTE_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const pollResults = (await raceInjection(
+  try {
+    // 2) Poll: attach settle callbacks; every dispatcher stays synchronous.
+    const deadline = Date.now() + EXECUTE_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const pollResults = (await raceInjection(
+        chrome.scripting.executeScript({
+          target: effectiveTarget,
+          func: (slotKey: string) => {
+            const box = (globalThis as any)[slotKey];
+            if (!box) return { done: true, missing: true };
+            if (box.settled) return { done: true };
+            const promise = box.promise;
+            if (promise && typeof promise.then === 'function') {
+              if (box.listening) return { done: false };
+              box.listening = true;
+              promise.then(
+                (value: unknown) => {
+                  box.value = value;
+                  box.settled = true;
+                },
+                (err: unknown) => {
+                  box.error = String(
+                    err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : err,
+                  );
+                  box.settled = true;
+                },
+              );
+              return { done: false };
+            }
+            box.value = promise;
+            box.settled = true;
+            return { done: true };
+          },
+          args: [slot],
+        }),
+        'poll',
+      )) as unknown as chrome.scripting.InjectionResult<{ done: boolean }>[];
+
+      if ((pollResults ?? []).every((r) => r?.result?.done)) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    // 3) Retrieve: collect settled values and clean the box up.
+    const results = (await raceInjection(
       chrome.scripting.executeScript({
         target: effectiveTarget,
-        func: (slotKey: string) => {
-          const box = (globalThis as any)[slotKey];
-          if (!box) return { done: true, missing: true };
-          if (box.settled) return { done: true };
-          const promise = box.promise;
-          if (promise && typeof promise.then === 'function') {
-            if (box.listening) return { done: false };
-            box.listening = true;
-            promise.then(
-              (value: unknown) => {
-                box.value = value;
-                box.settled = true;
-              },
-              (err: unknown) => {
-                box.error = String(
-                  err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : err,
-                );
-                box.settled = true;
-              },
-            );
-            return { done: false };
-          }
-          box.value = promise;
-          box.settled = true;
-          return { done: true };
+        func: (slotKey: string, timeoutMs: number) => {
+          const g = globalThis as any;
+          const box = g[slotKey];
+          delete g[slotKey];
+          // A frame can navigate away between start and retrieve - drop it
+          // silently; real engine-missing cases already fail at the start step.
+          if (!box) return undefined;
+          if (!box.settled) return { __mcpInpageError: `timeout: entrypoint did not settle in ${timeoutMs}ms` };
+          if (box.error !== undefined) return { __mcpInpageError: box.error };
+          return box.value === undefined ? { __mcpInpageReturn: 'undefined' } : box.value;
         },
-        args: [slot],
+        args: [slot, EXECUTE_TIMEOUT_MS],
       }),
-      'poll',
-    )) as unknown as chrome.scripting.InjectionResult<{ done: boolean }>[];
+      'retrieve',
+    )) as unknown as chrome.scripting.InjectionResult<R>[];
 
-    if ((pollResults ?? []).every((r) => r?.result?.done)) break;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-
-  // 3) Retrieve: collect settled values and clean the box up.
-  const results = (await raceInjection(
-    chrome.scripting.executeScript({
-      target: effectiveTarget,
-      func: (slotKey: string) => {
-        const g = globalThis as any;
-        const box = g[slotKey];
-        delete g[slotKey];
-        // A frame can navigate away between start and retrieve - drop it
-        // silently; real engine-missing cases already fail at the start step.
-        if (!box) return undefined;
-        if (!box.settled) return { __mcpInpageError: 'timeout: entrypoint did not settle in 15s' };
-        if (box.error !== undefined) return { __mcpInpageError: box.error };
-        return box.value === undefined ? { __mcpInpageReturn: 'undefined' } : box.value;
-      },
-      args: [slot],
-    }),
-    'retrieve',
-  )) as unknown as chrome.scripting.InjectionResult<R>[];
-
-  for (const r of results ?? []) {
-    const marker = r?.result as
-      { __mcpInpageError?: string; __mcpInpageReturn?: string } | null | undefined;
-    if (marker?.__mcpInpageError) {
-      throw new Error(`In-page engine ${fnName} failed: ${marker.__mcpInpageError}`);
+    for (const r of results ?? []) {
+      const marker = r?.result as
+        { __mcpInpageError?: string; __mcpInpageReturn?: string } | null | undefined;
+      if (marker?.__mcpInpageError) {
+        throw new Error(`In-page engine ${fnName} failed: ${marker.__mcpInpageError}`);
+      }
+      if (marker?.__mcpInpageReturn === 'undefined') {
+        throw new Error(`In-page engine ${fnName} returned undefined`);
+      }
     }
-    if (marker?.__mcpInpageReturn === 'undefined') {
-      throw new Error(`In-page engine ${fnName} returned undefined`);
+    return results;
+  } catch (err) {
+    if (typeof target.tabId === 'number' && isNavigationOrContextDestroyedError(err)) {
+      injectedTabs.delete(target.tabId);
     }
+    throw err;
   }
-  return results;
 }

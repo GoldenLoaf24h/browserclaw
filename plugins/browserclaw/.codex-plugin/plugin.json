@@ -1,6 +1,6 @@
 {
   "name": "browserclaw",
-  "version": "2.9.3",
+  "version": "3.0.0",
   "description": "Control your own browser with Agent. High-efficiency Chrome browser automation MCP server and AI agent skill.",
   "author": {
     "name": "BrowserClaw Team",

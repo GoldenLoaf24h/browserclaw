@@ -14,7 +14,7 @@ const targets = [
   { dir: 'C:/Users/Lenovo/.gemini/config/skills/mcp-chrome', name: 'mcp-chrome', managed: true },
 ];
 
-function copyDir(src, dest) {
+function copyDir(src, dest, isPlugin = false) {
   if (!fs.existsSync(dest)) {
     fs.mkdirSync(dest, { recursive: true });
   }
@@ -23,9 +23,17 @@ function copyDir(src, dest) {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
     if (entry.isDirectory()) {
-      copyDir(srcPath, destPath);
+      copyDir(srcPath, destPath, isPlugin);
     } else {
-      fs.copyFileSync(srcPath, destPath);
+      if (isPlugin && (entry.name.endsWith('.md') || entry.name.endsWith('.json'))) {
+        let text = fs.readFileSync(srcPath, 'utf-8');
+        text = text
+          .replace(/\bchrome_/g, 'browserclaw_')
+          .replace(/\bget_windows_and_tabs\b/g, 'browserclaw_get_windows_and_tabs');
+        fs.writeFileSync(destPath, text, 'utf-8');
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
     }
   }
 }
@@ -39,10 +47,16 @@ for (const target of targets) {
         continue;
       }
     }
-    copyDir(rootSkill, target.dir);
+    const isPlugin = target.dir.includes('plugins');
+    copyDir(rootSkill, target.dir, isPlugin);
     let content = canonicalSkillMd;
     if (target.name === 'mcp-chrome') {
       content = content.replace(/^name:\s*browserclaw/m, 'name: mcp-chrome');
+    }
+    if (isPlugin) {
+      content = content
+        .replace(/\bchrome_/g, 'browserclaw_')
+        .replace(/\bget_windows_and_tabs\b/g, 'browserclaw_get_windows_and_tabs');
     }
     const destSkillMd = path.join(target.dir, 'SKILL.md');
     fs.writeFileSync(destSkillMd, content, 'utf-8');

@@ -16,6 +16,7 @@ import {
   TOOL_SCHEMAS,
   TOOL_CATEGORIES,
   TOOL_NAME_TO_CATEGORY,
+  agentUpdateNotifier,
 } from 'chrome-mcp-shared';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -130,7 +131,7 @@ export const setupTools = (server: Server, serverSessionId?: string) => {
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({ prompts: [] }));
 };
 
-const handleToolCall = async (
+const handleToolCallInner = async (
   name: string,
   args: any,
   sessionId?: string,
@@ -236,7 +237,7 @@ const handleToolCall = async (
         sessionId,
       },
       NativeMessageType.CALL_TOOL,
-      120000, // 延长到 120 秒，避免性能分析等长任务超时
+      120000, // Extended to 120 seconds to prevent timeouts on long-running tasks like performance profiling
     );
     if (response.status === 'success') {
       const result = response.data;
@@ -269,6 +270,34 @@ const handleToolCall = async (
       isError: true,
     };
   }
+};
+
+export const handleToolCall = async (
+  name: string,
+  args: any,
+  sessionId?: string,
+  server?: Server,
+): Promise<CallToolResult> => {
+  // Concurrently initiate the single-turn update check to overlap latency with tool execution.
+  // In unit test environment, bypass unmocked remote network calls unless explicitly enabled.
+  const shouldCheckUpdate =
+    process.env.NODE_ENV !== 'test' || process.env.ENABLE_MCP_VERSION_CHECK === 'true';
+  const noticePromise = shouldCheckUpdate
+    ? agentUpdateNotifier.maybeGetFirstCallNotice().catch(() => null)
+    : Promise.resolve(null);
+  const result = await handleToolCallInner(name, args, sessionId, server);
+  try {
+    const notice = await noticePromise;
+    if (notice && result && Array.isArray(result.content)) {
+      result.content.unshift({
+        type: 'text',
+        text: notice,
+      });
+    }
+  } catch {
+    // Non-blocking fallback to ensure tool call never fails due to update check
+  }
+  return result;
 };
 
 export const callToolInternal = async (

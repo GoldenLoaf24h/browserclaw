@@ -24,6 +24,7 @@ import { animateAgentCursor, animateAgentCursorClick } from './agent-cursor';
 import { parseUnifiedCoordinate } from '@/utils/coordinate-parser';
 import { sessionTabAffinity } from '@/utils/session-tab-affinity';
 import { startActionNetworkCapture } from '@/utils/action-network-capture';
+import { performPhysicalFill } from './fill-core';
 
 export interface BatchActionsParams {
   actions: BatchActionItem[];
@@ -465,522 +466,59 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                   `Action ${i} of type 'fill' requires 'ref', 'index', or 'selector' parameter`,
                 );
               }
+              const targetRef = item.ref ?? item.index ?? item.selector;
               const text = item.text ?? item.value ?? '';
-              const isMultiLineOrPostText =
-                text.includes('\n') ||
-                text.length > 60 ||
-                /(http|#|@|tweet|post|reply|thread)/i.test(text);
-              let filledViaCdp = false;
-              let coords: any;
-              let isKnownEmpty = false;
-              let disambiguationWarning: string | undefined;
 
-              const targetRef = item.ref ?? item.index;
-              const targetIndex =
-                typeof targetRef === 'number'
-                  ? targetRef
-                  : typeof targetRef === 'string' && /^\d+$/.test(targetRef)
-                    ? parseInt(targetRef, 10)
-                    : undefined;
+              if (i > 0) {
+                // Dynamic settling: allow framework DOM mutations / re-render from preceding action to settle
+                await new Promise((r) => setTimeout(r, 60));
+              }
 
-              let targetFrameId = 0;
-              try {
-                const loc = await resolveTargetLocation(tabId, {
-                  ref: targetRef,
-                  selector: item.selector,
-                  preferComposer: item.preferComposer ?? isMultiLineOrPostText,
-                });
-                if (loc.success) {
-                  coords = {
-                    success: true,
-                    x: loc.x,
-                    y: loc.y,
-                    value: loc.value,
-                    tagName: loc.tagName,
-                    inputType: loc.inputType,
-                    isComposer: loc.isComposer,
-                    isEditor: loc.isEditor,
-                    isSearch: loc.isSearch,
-                    attributes: loc.attributes,
-                  };
-                  targetFrameId = loc.frameId ?? 0;
-                }
+              const fillRes = await performPhysicalFill({
+                tabId,
+                target: targetRef!,
+                text,
+                clear: item.clear,
+                pressEnter: item.pressEnter,
+                submit: item.submit,
+                preferComposer: item.preferComposer,
+                sessionId: args.sessionId,
+                sessionContext: args.sessionContext,
+              });
 
-                const isSearchTarget = Boolean(
-                  coords?.isSearch ||
-                  coords?.inputType === 'search' ||
-                  /(search|query|find|sousuo|搜索|查找)/i.test(
-                    `${coords?.attributes?.name || ''} ${coords?.attributes?.id || ''} ${coords?.attributes?.['aria-label'] || ''} ${coords?.attributes?.placeholder || ''}`,
-                  ),
-                );
-
-                if (isSearchTarget && isMultiLineOrPostText) {
-                  disambiguationWarning = `[Input Disambiguation Notice] Batch action ${i} targeted a search input (searchbox), but the filled text looks like a multi-line post or comment. Verify targeting the [composer] element instead.`;
-                  console.warn(`[BatchActionsTool] ${disambiguationWarning}`);
-                }
-
-                let isCrossOriginSubframe = false;
-                if (targetFrameId !== 0 && !coords?.frameOffsetX && !coords?.frameOffsetY) {
-                  try {
-                    const mainOrigin = (
-                      await executeInPage({ tabId }, 'inPageGetFrameOrigin', [])
-                    )?.[0]?.result;
-                    const frameOrigin = (
-                      await executeInPage(
-                        { tabId, frameIds: [targetFrameId] },
-                        'inPageGetFrameOrigin',
-                        [],
-                      )
-                    )?.[0]?.result;
-                    isCrossOriginSubframe =
-                      !mainOrigin || !frameOrigin || mainOrigin !== frameOrigin;
-                  } catch {
-                    isCrossOriginSubframe = true;
-                  }
-                }
-
-                const isSpecialWidget =
-                  loc.tagName === 'select' ||
-                  loc.inputType === 'color' ||
-                  loc.inputType === 'date' ||
-                  loc.inputType === 'range' ||
-                  loc.inputType === 'time' ||
-                  loc.inputType === 'datetime-local' ||
-                  loc.inputType === 'month' ||
-                  loc.inputType === 'week' ||
-                  loc.inputType === 'checkbox' ||
-                  loc.inputType === 'radio' ||
-                  loc.inputType === 'file';
-
-                if (
-                  !isCrossOriginSubframe &&
-                  !isSpecialWidget &&
-                  coords?.success &&
-                  typeof coords.x === 'number' &&
-                  typeof coords.y === 'number'
-                ) {
-                  let targetX = coords.x;
-                  let targetY = coords.y;
-                  if (targetFrameId !== 0) {
-                    const offset = await getSubframeViewportOffset(tabId, targetFrameId);
-                    const localX = loc.frameOffsetX || coords?.frameOffsetX || 0;
-                    const localY = loc.frameOffsetY || coords?.frameOffsetY || 0;
-                    targetX = targetX - localX + offset.offsetX;
-                    targetY = targetY - localY + offset.offsetY;
-                  }
-                  isKnownEmpty =
-                    (typeof coords.value === 'string' && coords.value === '') ||
-                    (coords.value === undefined && (!coords.text || coords.text.trim() === ''));
-
-                  let verification: any = null;
-                  let fillMethod = 'cdp_native';
-                  let submitExecuted = false;
-                  let submitResult: any = undefined;
-                  let submitMethod: string | undefined = undefined;
-
-                  await cdpSessionManager.withSession(tabId, 'batch-actions-fill', async () => {
-                    // Click to focus element
-                    await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                      type: 'mouseMoved',
-                      x: targetX,
-                      y: targetY,
-                    });
-                    await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                      type: 'mousePressed',
-                      x: targetX,
-                      y: targetY,
-                      button: 'left',
-                      buttons: 1,
-                      clickCount: 1,
-                    });
-                    await new Promise((r) => setTimeout(r, 35));
-                    await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                      type: 'mouseReleased',
-                      x: targetX,
-                      y: targetY,
-                      button: 'left',
-                      buttons: 0,
-                      clickCount: 1,
-                    });
-
-                    // Click settling pause (50ms) for dormant rich-text composers to mount and focus
-                    await new Promise((r) => setTimeout(r, 50));
-
-                    // Clear existing content if clear is not explicitly false
-                    if (item.clear === true || (item.clear !== false && !isKnownEmpty)) {
-                      // Cross-platform Deep Reset protocol (In-Page selection + beforeinput/execCommand delete)
-                      try {
-                        await executeInPage({ tabId }, 'inPageDeepResetElement', [targetRef ?? targetIndex]);
-                      } catch {}
-
-                      // Native CDP Backspace fallback (cross-platform)
-                      await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                        type: 'rawKeyDown',
-                        windowsVirtualKeyCode: 8,
-                        key: 'Backspace',
-                        code: 'Backspace',
-                      });
-                      await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                        type: 'keyUp',
-                        windowsVirtualKeyCode: 8,
-                        key: 'Backspace',
-                        code: 'Backspace',
-                      });
-                    }
-
-                    // Insert text via CDP Input.insertText (isTrusted: true)
-                    if (text) {
-                      await raceCdpBatch(tabId, 'Input.insertText', {
-                        text: String(text),
-                      });
-                    }
-
-                    // Allow React 18/19 concurrent event batching / microtasks to settle
-                    await new Promise((r) => setTimeout(r, 40));
-
-                    // True Input Commitment verification
-                    try {
-                      const vRes = await executeInPage(
-                        { tabId },
-                        'inPageVerifyInputCommitment',
-                        [targetRef ?? targetIndex, text],
-                      );
-                      verification = vRes?.[0]?.result;
-                    } catch {}
-
-                    // Micro-retry for asynchronous framework debounce (e.g. Draft.js state update)
-                    if (text && verification && verification.committed === false) {
-                      await new Promise((r) => setTimeout(r, 60));
-                      try {
-                        const retryRes = await executeInPage(
-                          { tabId },
-                          'inPageVerifyInputCommitment',
-                          [targetRef ?? targetIndex, text],
-                        );
-                        if (retryRes?.[0]?.result?.committed) {
-                          verification = retryRes[0].result;
-                        }
-                      } catch {}
-                    }
-
-                    if (text && verification && verification.committed === false) {
-                      console.warn(
-                        `[BatchActionsTool] Reactive state commitment verification failed after Input.insertText for target [${targetRef}]. Retrying with CDP key-by-key typing...`,
-                      );
-                      for (const char of text) {
-                        await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                          type: 'keyDown',
-                          text: char,
-                          unmodifiedText: char,
-                          key: char,
-                        });
-                        await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                          type: 'keyUp',
-                          key: char,
-                        });
-                        await new Promise((r) => setTimeout(r, 8));
-                      }
-                      fillMethod = 'cdp_key_by_key';
-
-                      // Settling pause after key-by-key typing
-                      await new Promise((r) => setTimeout(r, 50));
-
-                      try {
-                        const vRes2 = await executeInPage(
-                          { tabId },
-                          'inPageVerifyInputCommitment',
-                          [targetRef ?? targetIndex, text],
-                        );
-                        verification = vRes2?.[0]?.result;
-                      } catch {}
-                    }
-
-                    if (text && verification && verification.committed === false) {
-                      throw new Error(
-                        `True Input Commitment failed: ${verification.diagnostics || 'Framework reactive state did not update with filled text'}`,
-                      );
-                    }
-
-                    submitExecuted = false;
-                    submitResult = undefined;
-                    submitMethod = undefined;
-
-                    if (item.submit === true) {
-                      if (verification?.submitButtonState?.found && typeof verification.submitButtonState.index === 'number') {
-                        const btnIdx = verification.submitButtonState.index;
-                        try {
-                          const { interactIndexTool } = await import('./interact-index');
-                          const clickRes = await interactIndexTool.execute({
-                            index: btnIdx,
-                            action: 'click',
-                            tabId,
-                            waitForSettle: false,
-                          });
-                          let submitSummary: any = (clickRes?.content?.[0] as any)?.text;
-                          try {
-                            submitSummary = JSON.parse(submitSummary);
-                          } catch {}
-                          submitExecuted = true;
-                          submitMethod = 'click';
-                          submitResult = submitSummary || { success: true };
-                        } catch (clickErr) {
-                          console.warn('Batch fill auto-submit click failed, falling back to Enter:', clickErr);
-                          await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                            type: 'rawKeyDown',
-                            windowsVirtualKeyCode: 13,
-                            unmodifiedText: '\r',
-                            text: '\r',
-                            key: 'Enter',
-                            code: 'Enter',
-                          });
-                          await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                            type: 'keyUp',
-                            windowsVirtualKeyCode: 13,
-                            key: 'Enter',
-                            code: 'Enter',
-                          });
-                          submitExecuted = true;
-                          submitMethod = 'pressEnter';
-                        }
-                      } else {
-                        await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                          type: 'rawKeyDown',
-                          windowsVirtualKeyCode: 13,
-                          unmodifiedText: '\r',
-                          text: '\r',
-                          key: 'Enter',
-                          code: 'Enter',
-                        });
-                        await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                          type: 'keyUp',
-                          windowsVirtualKeyCode: 13,
-                          key: 'Enter',
-                          code: 'Enter',
-                        });
-                        submitExecuted = true;
-                        submitMethod = 'pressEnter';
-                      }
-                    } else if (item.pressEnter === true) {
-                      await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                        type: 'rawKeyDown',
-                        windowsVirtualKeyCode: 13,
-                        unmodifiedText: '\r',
-                        text: '\r',
-                        key: 'Enter',
-                        code: 'Enter',
-                      });
-                      await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                        type: 'keyUp',
-                        windowsVirtualKeyCode: 13,
-                        key: 'Enter',
-                        code: 'Enter',
-                      });
-                    }
-                  });
-
-                  stepOutput = {
-                    success: true,
-                    committed: true,
-                    index: typeof targetIndex === 'number' ? targetIndex : undefined,
-                    ref: targetRef,
-                    filledText: text,
-                    isTrusted: true,
-                    method: fillMethod,
-                    tagName: coords.tagName,
-                    isComposer: coords?.isComposer,
-                    isEditor: coords?.isEditor,
-                    isSearch: coords?.isSearch,
-                    submitButtonState: verification?.submitButtonState,
-                    ...(submitExecuted ? { submitted: true, submitMethod, submitResult } : {}),
-                    ...(disambiguationWarning ? { disambiguationWarning } : {}),
-                  };
-                  filledViaCdp = true;
-                }
-              } catch (cdpErr) {
-                if (cdpErr instanceof DialogOpenedError) {
-                  throw cdpErr;
-                }
-                console.warn(
-                  `CDP native fill failed on [${targetRef ?? item.selector}], falling back:`,
-                  cdpErr,
+              if (!fillRes.success || fillRes.committed === false) {
+                throw new Error(
+                  fillRes.error ||
+                    fillRes.diagnostics ||
+                    `Fill failed on [${targetRef}]. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
                 );
               }
 
-              if (!filledViaCdp) {
-                let outcome: any;
-                if (typeof targetIndex === 'number' && targetIndex > 0) {
-                  const frameTarget = targetFrameId
-                    ? { tabId, frameIds: [targetFrameId] }
-                    : { tabId };
-                  const shouldEnter = item.pressEnter === true || item.submit === true;
-                  const res = await executeInPage(frameTarget, 'inPageFillIndex', [
-                    targetIndex,
-                    text,
-                    item.clear !== false,
-                    shouldEnter,
-                  ]);
-                  outcome = res?.[0]?.result;
-                  if (!outcome?.success && !targetFrameId) {
-                    const frameResults = await executeInPage(
-                      { tabId, allFrames: true },
-                      'inPageFillIndex',
-                      [targetIndex, text, item.clear !== false, shouldEnter],
-                    );
-                    const match = frameResults.find((r) => r.result?.success);
-                    if (match?.result) outcome = match.result;
-                  }
-                  if (item.submit === true && outcome?.submitButtonState?.found && typeof outcome.submitButtonState.index === 'number') {
-                    try {
-                      const { interactIndexTool } = await import('./interact-index');
-                      await interactIndexTool.execute({
-                        index: outcome.submitButtonState.index,
-                        action: 'click',
-                        tabId,
-                        waitForSettle: false,
-                      });
-                      (outcome as any).submitted = true;
-                      (outcome as any).submitMethod = 'click';
-                    } catch {}
-                  }
-                } else if (item.selector) {
-                  const selRes = await this.safeExecuteScript(tabId, {
-                    target: targetFrameId ? { tabId, frameIds: [targetFrameId] } : { tabId },
-                    func: (sel: string, val: string, shouldClear: boolean, shouldEnter: boolean) => {
-                      const el = document.querySelector(sel);
-                      if (!el) return { success: false, error: `Selector "${sel}" not found` };
-                      if (typeof (el as HTMLElement).focus === 'function')
-                        (el as HTMLElement).focus();
-
-                      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                        window.HTMLInputElement?.prototype || {},
-                        'value',
-                      )?.set;
-                      const nativeCheckboxSetter = Object.getOwnPropertyDescriptor(
-                        window.HTMLInputElement?.prototype || {},
-                        'checked',
-                      )?.set;
-                      const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
-                        window.HTMLTextAreaElement?.prototype || {},
-                        'value',
-                      )?.set;
-
-                      if (
-                        el instanceof HTMLInputElement &&
-                        (el.type === 'checkbox' || el.type === 'radio')
-                      ) {
-                        const isTruthy =
-                          val === 'true' ||
-                          val === '1' ||
-                          val === 'checked' ||
-                          val === 'on' ||
-                          (val !== 'false' && val !== '0' && val !== 'off' && Boolean(val));
-                        if (nativeCheckboxSetter) {
-                          nativeCheckboxSetter.call(el, isTruthy);
-                        } else {
-                          el.checked = isTruthy;
-                        }
-                      } else if (el instanceof HTMLInputElement && nativeInputValueSetter) {
-                        if (shouldClear) nativeInputValueSetter.call(el, '');
-                        nativeInputValueSetter.call(el, val);
-                      } else if (el instanceof HTMLTextAreaElement && nativeTextAreaValueSetter) {
-                        if (shouldClear) nativeTextAreaValueSetter.call(el, '');
-                        nativeTextAreaValueSetter.call(el, val);
-                      } else if (el instanceof HTMLSelectElement) {
-                        let matched = false;
-                        for (const opt of Array.from(el.options)) {
-                          if (
-                            opt.value === val ||
-                            opt.text === val ||
-                            opt.text.trim() === val.trim()
-                          ) {
-                            el.value = opt.value;
-                            matched = true;
-                            break;
-                          }
-                        }
-                        if (!matched) el.value = val;
-                      } else if (
-                        el instanceof HTMLInputElement ||
-                        el instanceof HTMLTextAreaElement
-                      ) {
-                        if (shouldClear) el.value = '';
-                        el.value = val;
-                      } else if ((el as HTMLElement).isContentEditable) {
-                        if (shouldClear) (el as HTMLElement).innerText = '';
-                        (el as HTMLElement).innerText = val;
-                      } else {
-                        (el as any).value = val;
-                      }
-
-                      el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-                      el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-
-                      if (shouldEnter) {
-                        el.dispatchEvent(
-                          new KeyboardEvent('keydown', {
-                            key: 'Enter',
-                            code: 'Enter',
-                            keyCode: 13,
-                            which: 13,
-                            bubbles: true,
-                            composed: true,
-                          }),
-                        );
-                        el.dispatchEvent(
-                          new KeyboardEvent('keypress', {
-                            key: 'Enter',
-                            code: 'Enter',
-                            keyCode: 13,
-                            which: 13,
-                            bubbles: true,
-                            composed: true,
-                          }),
-                        );
-                        el.dispatchEvent(
-                          new KeyboardEvent('keyup', {
-                            key: 'Enter',
-                            code: 'Enter',
-                            keyCode: 13,
-                            which: 13,
-                            bubbles: true,
-                            composed: true,
-                          }),
-                        );
-                        if (el instanceof HTMLInputElement && el.form) {
-                          const submitBtn = el.form.querySelector(
-                            'button[type="submit"], input[type="submit"]',
-                          ) as HTMLElement | null;
-                          if (submitBtn) {
-                            submitBtn.click();
-                          } else if (typeof el.form.requestSubmit === 'function') {
-                            try {
-                              el.form.requestSubmit();
-                            } catch {}
-                          }
-                        }
-                      }
-                      return { success: true, filledText: val };
-                    },
-                    args: [item.selector, text, item.clear !== false, item.pressEnter === true || item.submit === true],
-                  });
-                  outcome = selRes?.[0]?.result;
-                }
-                if (!outcome?.success || outcome.committed === false) {
-                  throw new Error(
-                    outcome?.error ||
-                      outcome?.diagnostics ||
-                      `Fill failed on [${targetRef ?? item.selector}]. ${DIAGNOSTIC_REFRESH_GUIDANCE}`,
-                  );
-                }
-                if (outcome && typeof outcome === 'object') {
-                  outcome.committed = outcome.committed ?? true;
-                  if (coords?.isComposer) outcome.isComposer = true;
-                  if (coords?.isEditor) outcome.isEditor = true;
-                  if (coords?.isSearch) outcome.isSearch = true;
-                  if (disambiguationWarning) outcome.disambiguationWarning = disambiguationWarning;
-                }
-                stepOutput = outcome;
-              }
+              stepOutput = {
+                success: true,
+                committed: true,
+                index: fillRes.index,
+                ref: fillRes.ref,
+                selector: fillRes.selector,
+                filledText: text,
+                isTrusted: fillRes.isTrusted,
+                method: fillRes.method,
+                tagName: fillRes.tagName,
+                isComposer: fillRes.isComposer,
+                isEditor: fillRes.isEditor,
+                isSearch: fillRes.isSearch,
+                submitButtonState: fillRes.submitButtonState,
+                ...(fillRes.submitted
+                  ? {
+                      submitted: true,
+                      submitMethod: fillRes.submitMethod,
+                      submitResult: fillRes.submitResult,
+                    }
+                  : {}),
+                ...(fillRes.disambiguationWarning
+                  ? { disambiguationWarning: fillRes.disambiguationWarning }
+                  : {}),
+              };
               break;
             }
 
@@ -992,221 +530,64 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
                 );
               }
               const fillFormResults: any[] = [];
-              const selectAllMod = isMac ? 4 : 2;
-
-              await cdpSessionManager.withSession(tabId, 'batch-actions-fill-form', async () => {
-                for (let f = 0; f < fields.length; f++) {
-                  const field = fields[f];
-                  const loc = await resolveTargetLocation(tabId, {
-                    ref: field.ref ?? field.index,
-                    selector: field.selector,
-                    text: field.text,
-                  });
-                  if (!loc.success) {
-                    fillFormResults.push({
-                      fieldIndex: f,
-                      success: false,
-                      error: loc.error || 'Field locator failed',
-                    });
-                    continue;
-                  }
-
-                  const textVal = String(field.value ?? field.text ?? '');
-                  const isSpecial =
-                    loc.tagName === 'select' ||
-                    loc.inputType === 'color' ||
-                    loc.inputType === 'date' ||
-                    loc.inputType === 'range' ||
-                    loc.inputType === 'time' ||
-                    loc.inputType === 'datetime-local' ||
-                    loc.inputType === 'month' ||
-                    loc.inputType === 'week' ||
-                    loc.inputType === 'checkbox' ||
-                    loc.inputType === 'radio' ||
-                    loc.inputType === 'file';
-
-                  if (isSpecial) {
-                    const targetRef = field.ref ?? field.index;
-                    const targetIndex =
-                      typeof targetRef === 'number'
-                        ? targetRef
-                        : typeof targetRef === 'string' && /^\d+$/.test(targetRef)
-                          ? parseInt(targetRef, 10)
-                          : undefined;
-                    let outcome: any;
-                    if (typeof targetIndex === 'number' && targetIndex > 0) {
-                      const res = await executeInPage(
-                        loc.frameId ? { tabId, frameIds: [loc.frameId] } : { tabId },
-                        'inPageFillIndex',
-                        [targetIndex, textVal, field.clear !== false],
-                      );
-                      outcome = res?.[0]?.result;
-                    } else if (field.selector) {
-                      const selRes = await this.safeExecuteScript(tabId, {
-                        target: loc.frameId ? { tabId, frameIds: [loc.frameId] } : { tabId },
-                        func: (sel: string, val: string, shouldClear: boolean) => {
-                          const el = document.querySelector(sel);
-                          if (!el) return { success: false, error: `Selector "${sel}" not found` };
-                          if (typeof (el as HTMLElement).focus === 'function')
-                            (el as HTMLElement).focus();
-
-                          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                            window.HTMLInputElement?.prototype || {},
-                            'value',
-                          )?.set;
-                          const nativeCheckboxSetter = Object.getOwnPropertyDescriptor(
-                            window.HTMLInputElement?.prototype || {},
-                            'checked',
-                          )?.set;
-                          const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
-                            window.HTMLTextAreaElement?.prototype || {},
-                            'value',
-                          )?.set;
-
-                          if (
-                            el instanceof HTMLInputElement &&
-                            (el.type === 'checkbox' || el.type === 'radio')
-                          ) {
-                            const isTruthy =
-                              val === 'true' ||
-                              val === '1' ||
-                              val === 'checked' ||
-                              val === 'on' ||
-                              (val !== 'false' && val !== '0' && val !== 'off' && Boolean(val));
-                            if (nativeCheckboxSetter) {
-                              nativeCheckboxSetter.call(el, isTruthy);
-                            } else {
-                              el.checked = isTruthy;
-                            }
-                          } else if (el instanceof HTMLInputElement && nativeInputValueSetter) {
-                            if (shouldClear) nativeInputValueSetter.call(el, '');
-                            nativeInputValueSetter.call(el, val);
-                          } else if (el instanceof HTMLTextAreaElement && nativeTextAreaValueSetter) {
-                            if (shouldClear) nativeTextAreaValueSetter.call(el, '');
-                            nativeTextAreaValueSetter.call(el, val);
-                          } else if (el instanceof HTMLSelectElement) {
-                            let matched = false;
-                            for (const opt of Array.from(el.options)) {
-                              if (
-                                opt.value === val ||
-                                opt.text === val ||
-                                opt.text.trim() === val.trim()
-                              ) {
-                                el.value = opt.value;
-                                matched = true;
-                                break;
-                              }
-                            }
-                            if (!matched) el.value = val;
-                          } else if (
-                            el instanceof HTMLInputElement ||
-                            el instanceof HTMLTextAreaElement
-                          ) {
-                            if (shouldClear) el.value = '';
-                            el.value = val;
-                          } else if ((el as HTMLElement).isContentEditable) {
-                            if (shouldClear) (el as HTMLElement).innerText = '';
-                            (el as HTMLElement).innerText = val;
-                          } else {
-                            (el as any).value = val;
-                          }
-
-                          el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-                          el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-                          return { success: true, filledText: val };
-                        },
-                        args: [field.selector, textVal, field.clear !== false],
-                      });
-                      outcome = selRes?.[0]?.result;
-                    }
-                    fillFormResults.push({
-                      fieldIndex: f,
-                      success: outcome?.success !== false,
-                      resolutionPath: loc.resolutionPath,
-                    });
-                    continue;
-                  }
-
-                  let targetX = loc.x;
-                  let targetY = loc.y;
-                  if (loc.frameId && loc.frameId !== 0) {
-                    const offset = await getSubframeViewportOffset(tabId, loc.frameId);
-                    const localX = loc.frameOffsetX || 0;
-                    const localY = loc.frameOffsetY || 0;
-                    targetX = targetX - localX + offset.offsetX;
-                    targetY = targetY - localY + offset.offsetY;
-                  }
-
-                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                    type: 'mouseMoved',
-                    x: targetX,
-                    y: targetY,
-                  });
-                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                    type: 'mousePressed',
-                    x: targetX,
-                    y: targetY,
-                    button: 'left',
-                    buttons: 1,
-                    clickCount: 1,
-                  });
-                  await new Promise((r) => setTimeout(r, 35));
-                  await raceCdpBatch(tabId, 'Input.dispatchMouseEvent', {
-                    type: 'mouseReleased',
-                    x: targetX,
-                    y: targetY,
-                    button: 'left',
-                    buttons: 0,
-                    clickCount: 1,
-                  });
-
-                  if (field.clear !== false) {
-                    await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                      type: 'rawKeyDown',
-                      modifiers: selectAllMod,
-                      windowsVirtualKeyCode: 65,
-                      key: 'a',
-                      code: 'KeyA',
-                    });
-                    await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                      type: 'keyUp',
-                      modifiers: selectAllMod,
-                      windowsVirtualKeyCode: 65,
-                      key: 'a',
-                      code: 'KeyA',
-                    });
-                    await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                      type: 'rawKeyDown',
-                      windowsVirtualKeyCode: 8,
-                      key: 'Backspace',
-                      code: 'Backspace',
-                    });
-                    await raceCdpBatch(tabId, 'Input.dispatchKeyEvent', {
-                      type: 'keyUp',
-                      windowsVirtualKeyCode: 8,
-                      key: 'Backspace',
-                      code: 'Backspace',
-                    });
-                  }
-
-                  if (textVal.length > 0) {
-                    await raceCdpBatch(tabId, 'Input.insertText', {
-                      text: textVal,
-                    });
-                  }
-
+              for (let f = 0; f < fields.length; f++) {
+                const field = fields[f];
+                const target = field.ref ?? field.index ?? field.selector;
+                const textVal = String(field.value ?? field.text ?? '');
+                if (!target) {
                   fillFormResults.push({
                     fieldIndex: f,
-                    success: true,
-                    resolutionPath: loc.resolutionPath,
+                    success: false,
+                    error: 'Field locator failed: missing ref, index, or selector',
+                  });
+                  continue;
+                }
+                if (f > 0) {
+                  // Dynamic settling: allow framework DOM mutations / re-render from previous field to settle
+                  await new Promise((r) => setTimeout(r, 60));
+                }
+                try {
+                  const fillRes = await performPhysicalFill({
+                    tabId,
+                    target,
+                    text: textVal,
+                    clear: field.clear,
+                    selector: field.selector,
+                    ref: field.ref ?? field.index,
+                    sessionId: args.sessionId,
+                    sessionContext: args.sessionContext,
+                  });
+                  fillFormResults.push({
+                    fieldIndex: f,
+                    success: fillRes.success && fillRes.committed !== false,
+                    committed: fillRes.committed,
+                    ref: field.ref ?? field.index,
+                    selector: field.selector,
+                    resolutionPath: fillRes.resolutionPath,
+                    error: fillRes.error || fillRes.diagnostics,
+                  });
+                } catch (fillErr) {
+                  fillFormResults.push({
+                    fieldIndex: f,
+                    success: false,
+                    ref: field.ref ?? field.index,
+                    selector: field.selector,
+                    error: String(fillErr instanceof Error ? fillErr.message : fillErr),
                   });
                 }
-              });
-
+              }
+              const allFieldsPassed = fillFormResults.every((r) => r.success);
               stepOutput = {
-                success: true,
+                success: allFieldsPassed,
                 fields: fillFormResults,
               };
+              if (!allFieldsPassed && item.abortOnFailure !== false) {
+                const failedDesc = fillFormResults
+                  .filter((r) => !r.success)
+                  .map((r) => `field ${r.fieldIndex} [${r.ref ?? r.selector}]: ${r.error}`)
+                  .join('; ');
+                throw new Error(`Batch fill_form failed on ${failedDesc}. ${DIAGNOSTIC_REFRESH_GUIDANCE}`);
+              }
               break;
             }
 
@@ -1716,7 +1097,7 @@ export class BatchActionsTool extends BaseBrowserToolExecutor {
 
           actionResults.push({
             actionIndex: i,
-            success: true,
+            success: stepOutput?.success !== false && stepOutput?.passed !== false,
             output: stepOutput,
           });
         } catch (stepErr) {

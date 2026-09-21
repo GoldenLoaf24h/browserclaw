@@ -23,7 +23,7 @@ This reference documents BrowserClaw's Fast/System 1 local autonomous loop power
 
 - **Speed**: Local IPC execution cuts per-step latency from 3–6s down to 200–400ms.
 - **Cost**: Eliminates repetitive multi-turn remote LLM calls for deterministic micro-steps.
-- **Privacy**: Only a compact DOM budget ($\le$250 lines, sensitive password/file fields scrubbed) is evaluated.
+- **Privacy**: Only a compact DOM budget (≤250 lines, sensitive password/file fields scrubbed) is evaluated.
 
 ---
 
@@ -43,7 +43,7 @@ This reference documents BrowserClaw's Fast/System 1 local autonomous loop power
 
 - `goal`: Natural language goal or objective on the active page (required).
 - `tabId`: Target tab ID (optional, defaults to active tab).
-- `maxSteps`: Default 10. Maximum 60 in Jev mode; forced $\le 5$ in Heuristic mode.
+- `maxSteps`: Default 10. Maximum 60 in Jev mode; forced ≤5 in Heuristic mode.
 - `timeoutMs`: Default 90,000ms (90s); hard cap 300,000ms (5 minutes).
 - `confidenceThreshold`: Default 0.55. Actions below this threshold trigger instant escalation.
 - `textHint`: Explicit text to enter when typing if not clearly quoted in the goal string.

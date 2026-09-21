@@ -54,8 +54,8 @@ node app/native-server/dist/cli.js --stdio
 Configure the starting tool profile with the `CHROME_MCP_TOOL_PROFILE` environment variable:
 
 - **`core`** (default): 14 ultra-lean semantic navigation and DOM interaction tools (~5.8k tokens, cutting prompt tokens by >65% and eliminating decision paralysis).
-- **`full`**: All 48 tools exposed (~16.8k tokens).
-- **`crawl`**: 15 lightweight web scraping and content extraction tools (~5.8k tokens).
+- **`full`**: All 49 tools exposed (~19.5k tokens).
+- **`crawl`**: 12 lightweight web scraping and content extraction tools (~5.8k tokens).
 
 ### Auto-Unlock on Call & Dynamic Activation
 

@@ -94,3 +94,38 @@ Task: /goal /boost - Comprehensive Deep Audit + High-Value Fixes + JEV Potential
 - **Root Cause**: `extractElementIndices` did not deduplicate index keys, causing `validateChoice` probability length mismatch on malformed DOM states. Also `extractTextPayload` omitted Chinese single quotes (`‘...’`).
 - **Consequence**: Validation escalation failures on duplicate DOM elements; inability to extract text inside Chinese single quotes.
 - **Fix**: Deduplicated indices in `extractElementIndices` and added `‘` / `’` to payload extraction regex.
+
+### Candidate 12: P0 - Active Tab Protection Guard (Silent Background Operation)
+
+- **Location**: `app/chrome-extension/entrypoints/background/tools/browser/tab-group-manager.ts:182` & `index.ts:130`
+- **Root Cause**: When navigating with a tab ID that belongs to the user's active, foreground, unmanaged tab, `chrome.tabs.update` overwrote the user's active browsing session.
+- **Consequence**: Automation violently disrupted user's active browsing experience.
+- **Fix**: If target tab is active and not part of an agent-managed group, refuse in-place overwrite and spawn an isolated background tab (`active: false`, `focused: false`).
+
+### Candidate 13: P0 - De-patching Known Domains to Universal W3C URL Brand Extraction
+
+- **Location**: `app/chrome-extension/entrypoints/background/tools/browser/tab-group-manager.ts:10-40`
+- **Root Cause**: Hardcoded `KNOWN_DOMAINS` dictionary (e.g. `jd.com -> 京东`). Any site not in dictionary defaulted to static `"Agent"` title.
+- **Consequence**: Site-specific hack with poor generalization.
+- **Fix**: Deleted `KNOWN_DOMAINS`. Implemented universal host normalization (`extractBrandFromUrl()`) with negative-lookaround hyphen preservation (`cleanPageTitle()`) and dynamic task intent naming with `chrome.storage.session` persistence.
+
+### Candidate 14: P1 - Form Semantic Matcher Substring Bleed
+
+- **Location**: `app/chrome-extension/utils/form-semantic-matcher.ts:88-145`
+- **Root Cause**: Raw `cand.includes(query)` matching caused short queries to erroneously match longer field names (`phone` matched `no` via `phone number`, `female` matched `male`, `electricity` matched `city`).
+- **Consequence**: Disastrous cross-field form misfills.
+- **Fix**: Refactored into two-phase matching: Phase 1a exact matching, Phase 1b strict `\b` token-boundary matching.
+
+### Candidate 15: P1 - Auto-Submit Enter Fallback CDP Detach Race
+
+- **Location**: `app/chrome-extension/entrypoints/background/tools/browser/fill-core.ts:70-95`
+- **Root Cause**: Dispatching physical CDP Enter key when autocomplete dropdown intercepted Enter was executed outside `cdpSessionManager.withSession()`.
+- **Consequence**: Asynchronous debugger detach threw unhandled "Debugger is not attached" error.
+- **Fix**: Wrapped physical Enter dispatch strictly within `withSession(tabId, ...)`.
+
+### Candidate 16: P1 - W3C Composite Card Flattening & PUA Icon Glyph Stripping
+
+- **Location**: `app/chrome-extension/entrypoints/background/tools/browser/dom-indexer.ts:350-540` & `read-dom.ts:18-60`
+- **Root Cause**: Modern SPA cards (e-commerce, feeds, search) exploded into 8-15 fragmented DOM leaf nodes per item. PUA icon glyphs (`\uE000-\uF8FF`) crashed Windows GBK terminal consoles.
+- **Consequence**: Context overflow, 800+ lines of DOM noise, and Python process crashing with `UnicodeEncodeError`.
+- **Fix**: Implemented W3C standard composite card flattening for `article`, `[role="article"]`, `[role="listitem"]` with form container safety guards, and stripped PUA unicode glyphs.

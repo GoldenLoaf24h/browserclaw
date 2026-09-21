@@ -1,12 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/mcp-config.json",
-  "description": "BrowserClaw (mcp-chrome) Client Configuration Templates for All Major Agent Platforms",
+  "description": "BrowserClaw (mcp-chrome) MCP client configuration templates. Each entry shows where a client keeps its MCP server config and how to register BrowserClaw over HTTP (recommended) or stdio.",
   "configurations": {
-    "claude_desktop": {
+    "desktop_client_a": {
       "filePath": {
-        "windows": "%APPDATA%\\Claude\\claude_desktop_config.json",
-        "macos": "~/Library/Application Support/Claude/claude_desktop_config.json",
-        "linux": "~/.config/Claude/claude_desktop_config.json"
+        "windows": "%APPDATA%\\<CLIENT>\\<mcp-config>.json",
+        "macos": "~/Library/Application Support/<CLIENT>/<mcp-config>.json",
+        "linux": "~/.config/<CLIENT>/<mcp-config>.json"
       },
       "config_http": {
         "mcpServers": {
@@ -23,19 +23,19 @@
           "browserclaw": {
             "command": "node",
             "args": [
-              "D:\\workspace\\mcp-chrome-master\\mcp-chrome-master\\app\\native-server\\dist\\mcp\\mcp-server-stdio.js"
+              "<PATH_TO_BROWSERCLAW>/app/native-server/dist/mcp/mcp-server-stdio.js"
             ],
             "env": {
               "CHROME_MCP_HOST": "127.0.0.1",
-              "_comment_profile": "CHROME_MCP_TOOL_PROFILE: core (14 tools, ~7.5k tokens) | crawl (12 tools, ~5.8k tokens) | full (48 tools, ~16.8k tokens). Omit for full.",
+              "_comment_profile": "CHROME_MCP_TOOL_PROFILE: core (14 tools) | crawl (12 tools) | full (49 tools). Omit for full.",
               "CHROME_MCP_TOOL_PROFILE": "full"
             }
           }
         }
       }
     },
-    "cursor": {
-      "filePath": ".cursor/mcp.json or ~/.cursor/mcp.json",
+    "editor_client_a": {
+      "filePath": "<project>/.<client>/mcp.json or ~/.<client>/mcp.json",
       "config": {
         "mcpServers": {
           "browserclaw": {
@@ -47,8 +47,8 @@
         }
       }
     },
-    "windsurf": {
-      "filePath": "~/.codeium/windsurf/mcp_config.json",
+    "editor_client_b": {
+      "filePath": "~/.<client>/mcp_config.json",
       "config": {
         "mcpServers": {
           "browserclaw": {
@@ -61,7 +61,7 @@
       }
     },
     "cline_and_roo_code": {
-      "filePath": "%APPDATA%\\Code\\User\\globalStorage\\rooveterinaryinc.roo-cline\\settings\\cline_mcp_settings.json",
+      "filePath": "%APPDATA%\\<EDITOR>\\User\\globalStorage\\<vendor.extension>\\settings\\<mcp-settings>.json",
       "config": {
         "mcpServers": {
           "browserclaw": {
@@ -77,14 +77,15 @@
               "chrome_fill_index",
               "chrome_batch_actions",
               "chrome_screenshot",
-              "chrome_smart_scroll"
+              "chrome_smart_scroll",
+              "chrome_dismiss_overlay"
             ]
           }
         }
       }
     },
-    "antigravity": {
-      "filePath": "~/.gemini/antigravity/mcp_config.json",
+    "cli_client": {
+      "filePath": "~/.<cli-agent>/mcp_config.json",
       "config": {
         "mcpServers": {
           "browserclaw": {
