@@ -2098,6 +2098,19 @@ def _resolve_browserclaw_spec(tool_name: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _unwrap_deferred_tool_call(tool_name: str, args: dict | None = None) -> tuple[str, dict]:
+    """Unwrap Hermes Deferred Tool bridge calls (`tool_call`) to their underlying tool name & arguments."""
+    if tool_name == "tool_call" and isinstance(args, dict):
+        calls = args.get("calls")
+        if isinstance(calls, list) and len(calls) > 0 and isinstance(calls[0], dict):
+            inner_name = calls[0].get("name")
+            inner_args = calls[0].get("arguments")
+            if isinstance(inner_name, str) and inner_name:
+                safe_inner_args = inner_args if isinstance(inner_args, dict) else {}
+                return inner_name, safe_inner_args
+    return tool_name, args if isinstance(args, dict) else {}
+
+
 def _register_display_formatters() -> None:
     """Safely register tool previews, verbs, and emojis into agent.display and tools.registry."""
     try:
@@ -2121,12 +2134,13 @@ def _register_display_formatters() -> None:
             def _browserclaw_get_tool_verb(tool_name: str) -> str | None:
                 if not isinstance(tool_name, str) or not tool_name:
                     return None
-                v = orig_get_tool_verb(tool_name)
+                real_name, _ = _unwrap_deferred_tool_call(tool_name, None)
+                v = orig_get_tool_verb(real_name)
                 if v:
                     return v
                 if getattr(display, "_friendly_tool_labels", True):
-                    if tool_name.startswith("browserclaw_") or tool_name.startswith("chrome_"):
-                        raw = tool_name[len("browserclaw_"):] if tool_name.startswith("browserclaw_") else tool_name[len("chrome_"):]
+                    if real_name.startswith("browserclaw_") or real_name.startswith("chrome_"):
+                        raw = real_name[len("browserclaw_"):] if real_name.startswith("browserclaw_") else real_name[len("chrome_"):]
                         words = raw.replace("_", " ").strip()
                         return f"Executing {words}"
                 return None
@@ -2144,14 +2158,16 @@ def _register_display_formatters() -> None:
                         if d.get("_get_tool_verb") is orig_get_tool_verb:
                             d["_get_tool_verb"] = _browserclaw_get_tool_verb
 
-        # Ensure build_tool_preview invokes BrowserClaw builders even for zero-argument or default calls
+        # Ensure build_tool_preview invokes BrowserClaw builders even for zero-argument or default calls,
+        # and unwraps deferred bridge `tool_call` payloads to the underlying tool.
         orig_build_tool_preview = getattr(display, "build_tool_preview", None)
         if orig_build_tool_preview is not None and not getattr(orig_build_tool_preview, "_is_browserclaw_wrapped", False):
             def _browserclaw_build_tool_preview(tool_name: str, args: dict | None = None, max_len: int | None = None) -> str | None:
                 if not isinstance(tool_name, str) or not tool_name:
                     return None
-                safe_args = args if isinstance(args, dict) else {}
-                spec = _resolve_browserclaw_spec(tool_name)
+                real_name, real_args = _unwrap_deferred_tool_call(tool_name, args)
+                safe_args = real_args if isinstance(real_args, dict) else {}
+                spec = _resolve_browserclaw_spec(real_name)
                 if spec is not None:
                     builder = spec.get("builder")
                     if builder is not None:
@@ -2163,7 +2179,7 @@ def _register_display_formatters() -> None:
                         except Exception:
                             pass
                 try:
-                    return orig_build_tool_preview(tool_name, safe_args, max_len)
+                    return orig_build_tool_preview(real_name, safe_args, max_len)
                 except Exception:
                     return None
 
@@ -2205,6 +2221,74 @@ def _register_display_formatters() -> None:
                             d["get_tool_emoji"] = _browserclaw_get_tool_emoji
                         if d.get("_get_tool_emoji") is orig_get_tool_emoji:
                             d["_get_tool_emoji"] = _browserclaw_get_tool_emoji
+
+        # Wrap prepare_tool_preview to unwrap deferred `tool_call` bridges seamlessly
+        orig_prepare_tool_preview = getattr(display, "prepare_tool_preview", None)
+        if orig_prepare_tool_preview is not None and not getattr(orig_prepare_tool_preview, "_is_browserclaw_wrapped", False):
+            def _browserclaw_prepare_tool_preview(tool_name: str, args: dict | None, *, fallback: str, max_len: int):
+                real_name, real_args = _unwrap_deferred_tool_call(tool_name, args)
+                return orig_prepare_tool_preview(real_name, real_args, fallback=fallback, max_len=max_len)
+
+            _browserclaw_prepare_tool_preview._is_browserclaw_wrapped = True
+            display.prepare_tool_preview = _browserclaw_prepare_tool_preview
+
+            import sys
+            for mod in list(sys.modules.values()):
+                if mod is not None:
+                    d = getattr(mod, "__dict__", None)
+                    if isinstance(d, dict):
+                        if d.get("prepare_tool_preview") is orig_prepare_tool_preview:
+                            d["prepare_tool_preview"] = _browserclaw_prepare_tool_preview
+                        if d.get("_prepare_tool_preview") is orig_prepare_tool_preview:
+                            d["_prepare_tool_preview"] = _browserclaw_prepare_tool_preview
+
+        # Wrap format_tool_event in BasePlatformAdapter if available, so Telegram/Discord/Slack
+        # unwrap deferred `tool_call` bridges when formatting stream chunks.
+        try:
+            from gateway.platforms.base import BasePlatformAdapter
+            orig_format_tool_event = getattr(BasePlatformAdapter, "format_tool_event", None)
+            if orig_format_tool_event is not None and not getattr(orig_format_tool_event, "_is_browserclaw_wrapped", False):
+                def _browserclaw_format_tool_event(self, event: Any, *, mode: str = "all", preview_max_len: int = 40):
+                    from gateway.stream_events import ToolCallChunk
+                    if isinstance(event, ToolCallChunk) and event.tool_name == "tool_call":
+                        real_name, real_args = _unwrap_deferred_tool_call(event.tool_name, event.args)
+                        if real_name != "tool_call":
+                            # Create an unwrapped chunk
+                            from agent.display import prepare_tool_preview
+                            cap = preview_max_len if preview_max_len > 0 else 40
+                            p = prepare_tool_preview(real_name, real_args, fallback="", max_len=cap)
+                            unwrapped_event = ToolCallChunk(
+                                tool_name=real_name,
+                                preview=p.text or event.preview,
+                                args=real_args,
+                                index=getattr(event, "index", 0)
+                            )
+                            return orig_format_tool_event(self, unwrapped_event, mode=mode, preview_max_len=preview_max_len)
+                    return orig_format_tool_event(self, event, mode=mode, preview_max_len=preview_max_len)
+
+                _browserclaw_format_tool_event._is_browserclaw_wrapped = True
+                BasePlatformAdapter.format_tool_event = _browserclaw_format_tool_event
+        except Exception:
+            pass
+
+        # Wrap TurnRunner._progress_build_message if available in gateway.run_turn_runner
+        try:
+            from gateway.run_turn_runner import TurnRunner
+            orig_progress_build_message = getattr(TurnRunner, "_progress_build_message", None)
+            if orig_progress_build_message is not None and not getattr(orig_progress_build_message, "_is_browserclaw_wrapped", False):
+                def _browserclaw_progress_build_message(self, tool_name, preview, args):
+                    real_name, real_args = _unwrap_deferred_tool_call(tool_name, args)
+                    if real_name != tool_name:
+                        # Auto-compute fresh preview for the unwrapped tool
+                        from agent.display import build_tool_preview
+                        unwrapped_preview = build_tool_preview(real_name, real_args) or preview
+                        return orig_progress_build_message(self, real_name, unwrapped_preview, real_args)
+                    return orig_progress_build_message(self, tool_name, preview, args)
+
+                _browserclaw_progress_build_message._is_browserclaw_wrapped = True
+                TurnRunner._progress_build_message = _browserclaw_progress_build_message
+        except Exception:
+            pass
 
         # Quiet mode CLI renderers (┊ {emoji} {verb:9} {detail})
         if hasattr(display, "_CUTE_LINES"):

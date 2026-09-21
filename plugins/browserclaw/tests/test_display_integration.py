@@ -557,6 +557,50 @@ def test_none_type_and_malicious_input_guards():
     assert get_tool_emoji("") == "⚡"
     assert get_tool_verb("") is None
     assert registry.get_emoji("") == "⚡"
+
+
+def test_deferred_tool_call_unwrap_rendering():
+    """Verify deferred bridge tool_call calls unwrap to their underlying tool preview, verb, and emoji."""
+    from gateway.stream_events import ToolCallChunk
+    from gateway.platforms.base import BasePlatformAdapter
+    from gateway.run_turn_runner import TurnRunner
+    from unittest.mock import Mock
+
+    ctx = MagicMock()
+    plugin.register(ctx)
+
+    args = {"calls": [{"name": "browserclaw_navigate", "arguments": {"url": "https://x.com/i/bookmarks"}}]}
+
+    # 1. Test unwrap in prepare_tool_preview / build_tool_preview
+    p = prepare_tool_preview("tool_call", args, fallback="", max_len=60)
+    assert p.text == "https://x.com/i/bookmarks"
+    assert build_tool_preview("tool_call", args) == "https://x.com/i/bookmarks"
+
+    # 2. Test unwrap in platform format_tool_event
+    class TestAdapter(BasePlatformAdapter):
+        async def connect(self): pass
+        async def disconnect(self): pass
+        async def get_chat_info(self, chat_id): pass
+        async def send(self, *args, **kwargs): pass
+
+    adapter = TestAdapter(config={}, platform="telegram")
+    chunk = ToolCallChunk(tool_name="tool_call", args=args, preview="")
+    line = adapter.format_tool_event(chunk, mode="all", preview_max_len=60)
+    assert line == '🌐 browserclaw_navigate: "https://x.com/i/bookmarks"'
+
+    # 3. Test unwrap in TurnRunner._progress_build_message (CLI & live status line)
+    mock_ctx = Mock()
+    mock_ctx.progress_mode = "all"
+    mock_ctx.source = Mock()
+    mock_ctx.source.platform = "telegram"
+    mock_ctx.last_was_terminal_block = [False]
+    mock_runner = Mock()
+    mock_runner._delivery_adapter_for.return_value = None
+
+    runner = TurnRunner(mock_runner, mock_ctx)
+    msg = runner._progress_build_message("tool_call", "", args)
+    assert msg == "🌐 Navigating to https://x.com/i/bookmarks"
+
     assert build_tool_preview("", {}) is None
 
     # 2. Malicious inputs: unescaped quotes, control chars, newlines, HTML/script injections
