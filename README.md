@@ -1,9 +1,9 @@
 <div align="center">
   <img src="./docs/images/logo.png" width="100" alt="BrowserClaw Logo" />
   <h1>BrowserClaw</h1>
-  <p><b>Take full control of everything in your own browser.</b></p>
+  <p><b>Control your everyday Chrome browser from AI agents, without losing logins or focus.</b></p>
   <p>
-    <a href="./docs/MAP.md">🗺️ Project Map</a> ·
+    <a href="./docs/MAP.md">Project Map</a> ·
     <a href="./docs/TOOLS.md">Tool Reference (49)</a> ·
     <a href="./AGENT_CONFIG_GUIDE.md">Client Config</a> ·
     <a href="./README.zh-CN.md">Chinese (zh-CN)</a> ·
@@ -14,276 +14,222 @@
 ---
 
 <details>
-<summary><b>💡 Background: Why BrowserClaw? (Click to expand)</b></summary>
+<summary><b>Background: Why BrowserClaw?</b></summary>
 
 <br/>
 
-Traditional browser automation frameworks (Playwright, Puppeteer, browser-use) run in isolated, throwaway sandboxes. They fail to inherit your active logins, cookies, and extensions. Attempting to copy user profile directories on Windows crashes with `[WinError 32]` exclusive file sharing locks, while `--remote-debugging-port` triggers intrusive security banners that ruin unattended automation.
+Browser automation frameworks that drive a separate browser instance (Playwright, Puppeteer, browser-use) start from a clean profile. They do not inherit your active logins, cookies, or extensions, and copying a live Chrome profile on Windows fails with file-sharing locks. Attaching to an existing Chrome via a debug port triggers security banners.
 
-**BrowserClaw** solves this from the inside: an MV3 Chrome extension paired with a local Native Messaging bridge. It runs inside your everyday Chrome — zero login loss, zero file locks, and zero focus-stealing — turning your real browser into a secure, high-speed automation surface for AI agents.
+BrowserClaw takes a different route: a Chrome MV3 extension plus a local Native Messaging bridge, running inside the Chrome you already use. Cookies, sessions, and extensions are preserved, and automation happens in background tabs without stealing focus.
 
 </details>
 
 ---
 
-## ⚡ What is BrowserClaw?
+## What is BrowserClaw?
 
-BrowserClaw is a **hierarchical dual-brain browser agent platform**. It pairs a high-performance MCP execution surface (49 tools, running inside your real Chrome) with a local semantic micro-loop — so a fast decision engine handles the high-frequency "perceive → decide → act" steps, while your reasoning LLM stays in charge of macro planning.
+BrowserClaw is a Chrome extension + local MCP server that lets AI agents operate your real browser. It exposes 49 tools across 7 categories (navigation, perception, action, observation, management, diagnostics, network), with a minimal 14-tool core profile for everyday sessions.
 
-The result: agent browser control that is **3–5× faster and 70–80%+ cheaper on tokens**, without giving up CDP fidelity, Shadow-DOM penetration, or anti-bot resilience.
+Two execution paths are available:
 
-- 🧠 **Hierarchical Dual-Brain (`chrome_act_toward_goal`)**: A semantic micro-loop perceives, decides, and acts locally at ~200–400ms/step with zero intermediate MCP network round-trips. Powered by TypeSafe Jev System One with automatic heuristic fallback and structured escalation to macro planners.
-- 🔑 **Everyday Session & Auth Continuity**: Runs inside your everyday Google Chrome browser, seamlessly inheriting active Google, GitHub, and enterprise SSO logins without file sharing locks or re-authentication friction.
-- 🌲 **Pruned 1-Based DOM & Compact AX Tree**: Strips decorative DOM noise and redundant closing tags, delivering clean numbered accessibility trees. Features automatic eCommerce/feed card flattening (`flattenCards`) and intelligent viewport virtualization (`virtualizeViewport`) that cut prompt tokens by 85%+ vs raw HTML.
-- ⚡ **Code-Driven & Pipelined Execution**: Chain complex multi-step interactions, form fills, assertions, and data extractions in a single round-trip via `chrome_batch_actions` or in-page `mcp.*` script evaluation.
-- 🛡️ **Industrial DOM & Deep Shadow Piercing**: Recursive composed-tree traversal penetrates multi-layered Web Components (e.g. Reddit Shreddit `<shreddit-comment>` / `<faceplate-tracker>`), extracts accessible semantics (`aria-label`, `title`, inner SVG titles) from icon-only buttons, and supports closed shadow host composed event fallback.
-- 🎯 **Visual Fallback Drift Compensation**: Real-time dynamic scroll delta compensation (`alignVisualCoordinate`), document-space coordinate scaling for fullpage captures, automatic scroll centering, and scroll-lock guards during click dispatch.
-- 🔄 **Adaptive Diffing & Targeted Grep**: `includeDelta: true` piggybacks local DOM mutations directly onto click/fill responses, while `chrome_grep` provides instant sub-100 token regex and text queries across large documents and shadow trees.
-- 🚫 **1-Step Overlay Dismissal (`chrome_dismiss_overlay`)**: Instantly clear marketing popups, coupon modals, promotional banners, and cookie consent overlays without wasting roundtrips or dumping DOM nodes.
-- 🖱️ **Human-First Coexistence**: Smooth 1:1 spring-kinematics virtual cursor, dedicated colored Chrome Tab Groups with intelligent intent naming, optional Window Isolation Mode, and a frosted-glass takeover banner that yields cleanly to humans on 2FA or captchas.
-- 🧭 **Comprehensive Local Browser Management**: Beyond standard page automation, exposes 49 canonical MCP tools to manage active tabs, windows, cookies, storage, browsing history, and bookmarks under your existing credentials.
+1. **Deterministic tools** – indexed clicks, fills, batch pipelines, form wizards, screenshots, network capture, etc. The calling agent plans each step.
+2. **\`chrome_act_toward_goal\`** – a local perception-action micro-loop. The native server perceives the page, decides the next action, and acts, without a network round-trip per step. It uses TypeSafe Jev System One inference when an API key is set, and falls back to a built-in heuristic engine otherwise.
 
 ---
 
-## 🧠 How the Dual-Brain Works
+## Key capabilities
 
-```text
-┌─ Tier 2 · Macro Planner (your reasoning LLM) ──────────┐
-│  Task decomposition, long-horizon reasoning,           │
-│  free-text generation, exception takeover              │
-└───────────────────────────┬────────────────────────────┘
-                            │ MCP (low frequency, macro goals)
-                            ▼
-┌─ Tier 1 · Semantic Micro-Loop (Native Server) ─────────┐
-│  chrome_act_toward_goal internal loop:                 │
-│  read_dom → Jev / heuristic decision → act → verify    │
-│  ~200–400ms per step · zero MCP round-trips            │
-└───────────────────────────┬────────────────────────────┘
-                            │ Native Messaging
-                            ▼
-┌─ Tier 0 · Deterministic Primitives (48 tools + 1 loop = 49 tools) ─┐
-│  batch_actions / form_pipeline / interact_index / insert_media ... │
-│  Chrome MV3 Extension · CDP physical events                        │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-**Routing rule of thumb:**
-
-- Target index known, action sequence fixed → **Tier 0** (`chrome_batch_actions` / `chrome_form_pipeline`)
-- Natural-language micro-goal, target on page but location unknown → **Tier 1** (`chrome_act_toward_goal`)
-- Long-horizon task, novel situation, content generation, or Tier 1 escalates → **Tier 2** (your LLM drives the other tools)
-
-**Setup:** set the `TYPESAFE_API_KEY` environment variable to enable the Jev engine. Without it, `chrome_act_toward_goal` automatically falls back to the built-in heuristic engine — always functional, gracefully degraded, and self-reporting via the `engine` field in every response.
-
-### Real-world benchmark (real Jev API, T1–T5)
-
-| Task                 | Wall-clock | Jev calls | Tokens (in/out) | Engine |
-| -------------------- | ---------- | --------- | --------------- | ------ |
-| T1 navigate + search | 2,062ms    | 2         | 1,737 / 52      | jev    |
-| T2 form submit       | 586ms      | 2         | 1,666 / 48      | jev    |
-| T3 select option     | 249ms      | 1         | 781 / 24        | jev    |
-| T4 modal handling    | 518ms      | 2         | 1,654 / 50      | jev    |
-| T5 multi-step        | 574ms      | 2         | 1,654 / 51      | jev    |
-
-Single-step median **~260–350ms**; end-to-end speedup **>75%** and token reduction **>80%** vs an LLM-in-the-loop baseline.
+- **Session continuity** – Runs inside your existing Chrome. Google, GitHub, and SSO logins are already there; no profile copying, no re-authentication.
+- **Pruned, indexed DOM** – \`chrome_read_dom\` strips non-interactive and occluded nodes and assigns 1-based indices. On 1,000+ node pages this reduces node count by over 85% (test-validated), keeping snapshots small. A fast snapshot mode returns a viewport summary in ≤30 ms and ≤15 KB.
+- **Card flattening and viewport virtualization** – \`flattenCards\` collapses repetitive feed cards into one-line summaries; \`virtualizeViewport\` folds off-screen list items into count placeholders.
+- **Shadow DOM traversal** – Recursively walks open shadow roots; closed shadow hosts are tagged and interacted with at the host level. Accessible names are extracted from icon-only buttons (aria-label, title, SVG titles).
+- **Batch pipelines** – \`chrome_batch_actions\` runs multi-step click/fill/wait/assert/extract sequences in a single MCP round-trip. \`chrome_form_pipeline\` advances multi-step forms locally.
+- **Overlay dismissal** – \`chrome_dismiss_overlay\` closes marketing popups, cookie banners, and modals in one step, without dumping the DOM.
+- **Delta piggybacking** – \`includeDelta: true\` returns DOM mutations in the same response as an action, removing the need for a follow-up DOM read.
+- **Native event fidelity** – Clicks and keystrokes are dispatched as trusted CDP events (\`isTrusted: true\`), so React/Vue/Angular and Shadow DOM handlers fire normally.
+- **Coordinate fallback** – When DOM indexing fails (canvas, WebGL, icon-only UI), a screenshot grid plus \`chrome_computer\` provides coordinate-based control with 24 px snap-to-edge.
+- **Human handoff** – \`chrome_request_human_intervention\` dims the page, shows a banner, and parks the cursor so the user can complete 2FA or captchas; automation resumes afterward.
+- **Tab and window management** – Create, group, move, and close tabs, query history and bookmarks, and capture performance traces, all under the user's existing credentials.
 
 ---
 
-## 🚀 Quick Start
+## Dual-brain execution
 
-### Option 1: Let AI Agent Install (Recommended)
+\`\`\`text
+┌─ Macro planner (your reasoning LLM) ────────────────────┐
+│ Task decomposition, cross-page strategy, recovery │
+└───────────────────────────┬─────────────────────────────┘
+│ MCP (low frequency)
+▼
+┌─ Semantic micro-loop (native server) ───────────────────┐
+│ chrome_act_toward_goal: │
+│ perceive → decide (Jev or heuristic) → act → verify │
+│ No MCP round-trip per step │
+└───────────────────────────┬─────────────────────────────┘
+│ Native Messaging
+▼
+┌─ Chrome MV3 extension ──────────────────────────────────┐
+│ 48 deterministic tools · CDP events · in-page engine │
+└──────────────────────────────────────────────────────────┘
+\`\`\`
 
-Copy and paste this message directly to your AI assistant (Claude Code, Cursor, Windsurf, Codex):
+Routing guideline:
 
-> _"Set up BrowserClaw for me: https://github.com/GoldenLoaf24h/browserclaw. Read `INSTALL.md` and follow the steps."_
+- Fixed action sequence, known indices → deterministic tools (\`chrome_batch_actions\`, \`chrome_form_pipeline\`).
+- Single-page goal in natural language → \`chrome_act_toward_goal\`.
+- Long-horizon, multi-page, novel, or escalated situations → the calling agent drives.
 
-Your agent will configure the backend automatically. Afterwards, download the latest **`browserclaw-extension-v*.zip`** asset from **[Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** (e.g. `browserclaw-extension-v3.0.0.zip`), unzip it to a persistent local folder, open `chrome://extensions` (with Developer mode enabled), and drag that folder in.
+The micro-loop is bounded: at most 60 steps in Jev mode (default 10), truncated to 5 steps in heuristic fallback. It intercepts 14 destructive action keywords (pay, delete, submit, etc.) and escalates ambiguous or low-confidence decisions back to the calling agent with candidate elements.
 
-### Option 2: Add via ChatGPT / Codex Plugin Marketplace
+**Setup:** set the \`TYPESAFE_API_KEY\` environment variable to enable Jev inference. Without it, the micro-loop runs on the heuristic engine – always functional, slower, and more conservative.
 
-In ChatGPT or Codex, open the Plugin Store / Marketplace, click **`+`** in the top-right corner to add a new marketplace, and enter:
+---
 
-```text
-https://github.com/GoldenLoaf24h/browserclaw
-```
+## Quick start
 
-Then click install on **BrowserClaw**.
+### Option 1: Prebuilt release (no build)
 
-### Option 3: Install via Hermes Agent
+1. Download the latest \`browserclaw-extension-v*.zip\` and \`browserclaw-skill-v*.zip\` from [Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest).
+2. Unzip both to persistent local folders.
+3. Open \`chrome://extensions\`, enable Developer mode, and load the extension folder.
+4. Copy the \`skill/\` folder into your agent's skills directory.
 
-Install directly from terminal into your active Hermes environment:
+### Option 2: Install with an AI agent
 
-```bash
-hermes plugins install GoldenLoaf24h/browserclaw#plugins/browserclaw
-hermes plugins enable browserclaw
-```
+Paste this to your agent:
 
-### Option 4: Manual Developer Installation
+> "Set up BrowserClaw: https://github.com/GoldenLoaf24h/browserclaw. Read INSTALL.md and follow the steps."
 
-```bash
+Then load the extension from \`app/chrome-extension/.output/chrome-mv3\` into \`chrome://extensions\`.
+
+### Option 3: Build from source
+
+\`\`\`bash
 git clone https://github.com/GoldenLoaf24h/browserclaw.git
 cd browserclaw && pnpm install && pnpm build
 cd app/native-server && node dist/scripts/register-dev.js
-```
+\`\`\`
 
-Then load `app/chrome-extension/.output/chrome-mv3` into `chrome://extensions`.
+Then load \`app/chrome-extension/.output/chrome-mv3\` into \`chrome://extensions\`.
 
----
-
-## 🛠️ Complete Tool Catalog (49 MCP Tools)
-
-All 49 schema-validated tools (48 deterministic browser control tools + 1 autonomous semantic micro-loop) are grouped into 8 logical categories below. **Click any category to expand its tool listing.**
-For machine-readable JSON schemas and detailed option flags, consult **[docs/TOOLS.md](./docs/TOOLS.md)**.
-
-<details>
-<summary><b>🧠 0. Autonomous Goal Execution (1 Tool)</b></summary>
-
-<br/>
-
-- **`chrome_act_toward_goal`**: Autonomous semantic micro-loop that perceives, decides, and acts toward a natural-language goal within a local Native Server loop (~200–400ms/step). Powered by TypeSafe Jev System One with seamless fallback to heuristic scoring when no API key is available or on quota/network degradation. Automatically escalates ambiguous, destructive, or complex actions back to the macro planner with pre-fetched page context and a Top-3 decision probability distribution.
-
-</details>
-
-<details>
-<summary><b>🌐 1. Navigation & Tab Management (7 Tools)</b></summary>
-
-<br/>
-
-- **`chrome_navigate`**: Navigate to any URL, refresh, or travel history (`"back"` / `"forward"`). Native `background: true` opens tabs silently without stealing user focus.
-- **`chrome_switch_tab`**: Switch the active browser tab or bind session-level tab affinity without disrupting the user.
-- **`chrome_close_tabs`**: Close tabs by ID array, URL pattern, or safely close active/session tabs (requires `confirm: true` to protect personal tabs).
-- **`chrome_move_tab`**: Reposition tabs by index or detach/transfer tabs across separate browser windows.
-- **`get_windows_and_tabs`**: List all open Chrome windows and tabs with IDs, active state, URLs, and window titles.
-- **`chrome_attach_tab`**: Explicitly attach the low-level Chrome DevTools Protocol debugger to a specific tab.
-- **`chrome_detach_tab`**: Explicitly detach the debugger session from a tab.
-
-</details>
-
-<details>
-<summary><b>📄 2. Content Perception & Data Extraction (5 Tools)</b></summary>
-
-<br/>
-
-- **`chrome_read_dom`**: Pruned interactive DOM tree with 1-based numeric indices. Traverses deep open and closed Shadow DOM boundaries, extracting accessible names from Web Components and icon buttons. Reduces prompt token consumption by >85%.
-- **`chrome_grep`**: Sub-100 token instant regex or text search across elements and text lines with deep Shadow DOM penetration without full DOM dumping.
-- **`chrome_get_markdown`**: Clean, structured Markdown content extraction (supports `includeLinks: true` for link graph extraction) optimized for long-form reading and article summarization.
-- **`chrome_inspect_media`**: Lossless in-memory extraction of raw `<img>` and `<canvas>` data, with 200%+ super-sampling crop fallback for noisy captchas.
-- **`chrome_get_dropdown_options`**: Inspect all selectable options within native or custom `<select>` dropdown elements.
-
-</details>
-
-<details>
-<summary><b>🖱️ 3. Action Execution & Pipeline (13 Tools)</b></summary>
-
-<br/>
-
-- **`chrome_interact_index`**: Native trusted click, hover, dblclick, or click sequence (`points` array) by 1-based index; supports `includeDelta: true` for autonomous DOM diff feedback and visual coordinate drift compensation (`alignVisualCoordinate`).
-- **`chrome_fill_index`**: Native trusted text input with automatic value clearing, Enter key submission, and `includeDelta: true` mutation checking.
-- **`chrome_insert_media`**: Direct zero-copy injection of images/media into rich-text editors and composers (e.g. ChatGPT, Claude, Twitter/X, Discord) via clipboard/DataTransfer emulation without native file picker dialogs.
-- **`chrome_batch_actions`**: High-performance multi-step pipeline combining click, fill, press, and wait in a single roundtrip, with built-in `assert` and `extract` rules.
-- **`chrome_form_pipeline`**: Deterministic multi-step wizard/questionnaire form pipeline — zero model calls, fastest and most reliable for standard form flows.
-- **`chrome_smart_scroll`**: Viewport overflow-aware scrolling with pixel precision and accurate remaining page counts (`pages_down` / `pages_up`).
-- **`chrome_keyboard`**: Dispatch physical keystrokes (Enter, Tab, Esc), combinations (Ctrl+C/V), or targeted text input.
-- **`chrome_upload_file`**: Intercept file chooser dialogs dynamically or inject absolute local file paths into `<input type="file">`.
-- **`chrome_handle_dialog`**: Handle or pre-arm responses for native JavaScript dialogs (alert, confirm, prompt).
-- **`chrome_handle_download`**: Track, monitor, and manage active native browser file downloads.
-- **`chrome_computer`**: Anthropic Computer Use-compatible unified interface for mouse and keyboard control. _(Legacy compatibility path — prefer `chrome_act_toward_goal` for new autonomous loops.)_
-- **`chrome_request_human_intervention`**: Softly dim page, display a frosted-glass banner, park the virtual cursor, and yield control to the human for 2FA or slider captchas.
-- **`chrome_undo_last_action`**: 5-step ring buffer undo engine to roll back recent navigation jumps or form input values.
-
-</details>
-
-<details>
-<summary><b>👁️ 4. Vision, Console & Low-Level CDP (3 Tools)</b></summary>
-
-<br/>
-
-- **`chrome_screenshot`**: Capture viewport or full-page PNGs with optional high-contrast pixel coordinate grid overlays for visual fallback.
-- **`chrome_console`**: Capture, monitor, and filter page-level JavaScript console logs, warnings, and unhandled runtime exceptions.
-- **`chrome_cdp_execute`**: Industrial-grade low-level CDP escape hatch with target polymorphic routing and anti-hang auto-detach guards.
-
-</details>
-
-<details>
-<summary><b>📡 5. Network Intercept & Storage (5 Tools)</b></summary>
-
-<br/>
-
-- **`chrome_intercept_api`**: Silently sniff and decode backend API responses matching URL patterns to retrieve structured JSON data directly.
-- **`chrome_network_capture`**: Start and stop full network traffic recording with status codes, headers, and request/response payloads.
-- **`chrome_network_request`**: Dispatch native HTTP requests through the browser session, inheriting all active origin cookies and headers.
-- **`chrome_storage`**: Read, write, or clear browser storage state (`localStorage`, `sessionStorage`, and cookies).
-- **`chrome_javascript`**: Execute custom JavaScript expressions in the page context with automatic single-expression return detection.
-
-</details>
-
-<details>
-<summary><b>🗂️ 6. Tab Groups, Bookmarks & Diagnostics (14 Tools)</b></summary>
-
-<br/>
-
-- **`chrome_tab_group_create`**: Create dedicated colored tab groups with adaptive task titles (default: "Agent").
-- **`chrome_tab_group_update`**: Dynamically rename, recolor, or toggle the collapsed state of tab groups.
-- **`chrome_tab_group_list`**: List all active tab groups in the window and their associated tabs.
-- **`chrome_tab_group_ungroup`**: Remove specific tabs from their parent group.
-- **`chrome_tab_group_close`**: Close all tabs in a group and purge the group with zero orphan residue.
-- **`chrome_history`**: Query and filter historical browser visits across customizable time ranges.
-- **`chrome_bookmark_search` / `add` / `delete`**: Search, create, and remove browser bookmarks.
-- **`performance_start_trace` / `stop_trace` / `analyze_insight`**: Record and analyze Core Web Vitals and Chromium performance traces.
-- **`chrome_tool_docs`**: Dynamic in-session capability discovery and profile activation (`activateForSession: true`).
-- **`chrome_doctor`**: Diagnose environment health, check port 12306, Native Messaging Host, and extension bridge connectivity.
-
-</details>
+Full onboarding (native host registration, MCP client setup, Jev key, health check) is in [INSTALL.md](./INSTALL.md).
 
 ---
 
-## 🏗️ Architecture
+## Tool catalog
 
-```text
-AI Client (Cursor / Claude / Codex)
-         │  MCP (HTTP / SSE / Stdio) @ 127.0.0.1:12306
-         ▼
-Native Messaging Bridge (Fastify + Stdio Host)
-         ├── Fast Decision Engine (Jev client + heuristic fallback + micro-loop)
-         └── Passthrough for 48 deterministic tools + 1 autonomous micro-loop (49 tools total)
-         │  Chrome Native Messaging (1MB buffer guard)
-         ▼
-Chrome MV3 Extension (Service Worker + WXT + Vue 3)
-         ├── Inpage DOM Engine (Isolated World, 1-based indexing)
-         ├── CDP Session Manager (10-min retention, domain ref-counting)
-         └── Agent Cursor (Closed Shadow DOM spring kinematics overlay)
-```
+All 49 tools are grouped below. For machine-readable schemas and parameter details, see [docs/TOOLS.md](./docs/TOOLS.md).
 
-See **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** for detailed topology and ADR records (including ADR-023: the dual-brain decision layer).
+### Autonomous execution (1)
+
+- **\`chrome_act_toward_goal\`** – Local perception-action loop toward a natural-language goal. Jev inference with heuristic fallback; escalates on ambiguity or destructive actions.
+
+### Navigation & tabs (7)
+
+- **\`chrome_navigate\`** – Open URL, refresh, history back/forward, background tabs.
+- **\`chrome_switch_tab\`** – Switch active tab or bind session affinity.
+- **\`chrome_close_tabs\`** – Close tabs by id, URL, or session (requires confirm for active tab).
+- **\`chrome_move_tab\`** – Reposition tabs or move across windows.
+- **\`get_windows_and_tabs\`** – List windows and tabs with state.
+- **\`chrome_attach_tab\` / \`chrome_detach_tab\`** – Attach or detach the CDP debugger.
+
+### Perception & extraction (6)
+
+- **\`chrome_read_dom\`** – Indexed, pruned DOM tree with shadow DOM traversal and fast snapshot mode.
+- **\`chrome_grep\`** – Regex or text search returning element indices without a full DOM dump.
+- **\`chrome_get_markdown\`** – Clean Markdown extraction for reading tasks.
+- **\`chrome_inspect_media\`** – Extract image or canvas data; super-resolves small captchas.
+- **\`chrome_get_dropdown_options\`** – List select/combobox options.
+- **\`chrome_console\`** – Capture console logs and errors.
+
+### Action & pipeline (15)
+
+- **\`chrome_interact_index\`** – Trusted click, hover, double-click, drag by 1-based index.
+- **\`chrome_fill_index\`** – Trusted text input with clear, submit, and multiline support.
+- **\`chrome_batch_actions\`** – Multi-step pipeline (click/fill/wait/assert/extract) in one round-trip.
+- **\`chrome_form_pipeline\`** – Autonomous multi-step form filling.
+- **\`chrome_smart_scroll\`** – Scroll page or inner containers with progress reporting.
+- **\`chrome_keyboard\`** – Raw key presses and shortcuts.
+- **\`chrome_upload_file\`** – Native file-input upload.
+- **\`chrome_insert_media\`** – Paste/drop a real File into rich-text editors.
+- **\`chrome_handle_dialog\`** – Accept or dismiss native alert/confirm/prompt.
+- **\`chrome_handle_download\`** – Wait for and locate downloads.
+- **\`chrome_computer\`** – Coordinate-level mouse/keyboard control (visual fallback).
+- **\`chrome_request_human_intervention\`** – Yield to the user for captcha/2FA.
+- **\`chrome_undo_last_action\`** – Roll back the last mutation.
+- **\`chrome_dismiss_overlay\`** – Close popups, modals, and cookie banners.
+- **\`chrome_javascript\`** – Evaluate JavaScript in the page context.
+
+### Observation & diagnostics (3)
+
+- **\`chrome_screenshot\`** – Viewport, element, or full-page capture with optional coordinate grid.
+- **\`chrome_cdp_execute\`** – Raw CDP escape hatch.
+- **\`chrome_tool_docs\`** – Query tool schemas and activate hidden profiles.
+
+### Management (9)
+
+- **\`chrome_tab_group_create/update/list/ungroup/close\`** – Tab group lifecycle.
+- **\`chrome_history\`** – Search browsing history.
+- **\`chrome_bookmark_search/add/delete\`** – Bookmark operations.
+
+### Network (3)
+
+- **\`chrome_intercept_api\`** – Capture backend JSON responses matching a URL pattern.
+- **\`chrome_network_capture\`** – Record network traffic.
+- **\`chrome_network_request\`** – Authenticated HTTP requests through the browser session.
+
+### Performance & health (4)
+
+- **\`performance_start_trace / stop_trace / analyze_insight\`** – Record and analyze performance traces.
+- **\`chrome_doctor\`** – Check port, extension link, token, and native host health.
 
 ---
 
-## 📚 Documentation Map
+## Architecture
 
-- **[Project Map & Index](./docs/MAP.md)**: 🗺️ Master navigation hub, reading paths by role, and code topology.
-- **[Tool Reference](./docs/TOOLS.md)**: Auto-generated parameter dictionary for all 49 tools.
-- **[Agent Integration Guide](./AGENT_CONFIG_GUIDE.md)**: 6 core interaction rules and client configurations.
-- **[Architecture Deep-Dive](./docs/ARCHITECTURE.md)**: Monorepo design, security boundaries, and ADR records.
-- **[Troubleshooting](./docs/TROUBLESHOOTING.md)**: Instant diagnosis checklist for connection or execution errors.
+\`\`\`text
+AI client (any MCP-capable agent)
+│ MCP over HTTP/SSE on 127.0.0.1:12306, or stdio
+▼
+Native bridge (Fastify + stdio host)
+├── Jev micro-loop (chrome_act_toward_goal)
+└── Passthrough for 48 deterministic tools
+│ Chrome Native Messaging
+▼
+Chrome MV3 extension (service worker)
+├── In-page engine (1-based DOM indexing)
+├── CDP session manager
+└── Agent cursor overlay
+\`\`\`
 
----
-
-## 💡 Acknowledgments & Prior Art
-
-BrowserClaw synthesizes architectural wisdom from the open-source community:
-
-- **[hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome)**: Foundational MV3 extension + Native Messaging IPC bridge.
-- **[browser-use/browser-use](https://github.com/browser-use/browser-use)**: Token-efficient DOM-first indexing principles.
-- **[browseros-ai/BrowserOS](https://github.com/browseros-ai/BrowserOS)**: Autonomous DOM diffing (`includeDelta`) and element grep (`chrome_grep`).
-- **[ChatGPT Official Extension](https://chromewebstore.google.com/detail/chatgpt/hehggadaopoacecdllhhajmbjkdcmajg)**: Spring kinematics virtual cursor and tab group lifecycle patterns.
-- **[TypeSafe Jev](https://docs.typesafe.ai)** — and the [jev-browser](https://github.com/jkudish/jev-browser), [jev-voice-browser](https://github.com/moritzkremb/jev-voice-browser) & [jev-ultrafast](https://github.com/browser-use/jev-ultrafast) reference implementations: System One fast-decision patterns, speculative fan-out, and semantic-find criteria design.
-
----
-
-## 📄 License
-
-[GNU Affero General Public License v3.0 (AGPL-3.0)](./LICENSE). Modifications or SaaS hosted deployments must remain open-source.
+For details, see [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ---
 
-_Disambiguation: BrowserClaw MCP is an independent Chrome extension and Model Context Protocol automation ecosystem, built for AI agents to control everyday user browsers. It is not affiliated with the standalone `browserclaw` Playwright library on npm._
+## Documentation
+
+- [Project Map](./docs/MAP.md) – Navigation hub and reading paths.
+- [Tool Reference](./docs/TOOLS.md) – Schemas for all 49 tools.
+- [Install & Onboard](./INSTALL.md) – Step-by-step setup including Jev key.
+- [Agent Integration](./AGENT_CONFIG_GUIDE.md) – MCP client configuration.
+- [Architecture](./docs/ARCHITECTURE.md) – Design and decisions.
+- [Troubleshooting](./docs/TROUBLESHOOTING.md) – Connection and execution issues.
+
+---
+
+## Acknowledgments
+
+- [hangwin/mcp-chrome](https://github.com/hangwin/mcp-chrome) – MV3 extension and Native Messaging bridge foundation.
+- [browser-use/browser-use](https://github.com/browser-use/browser-use) – DOM-first indexing principles.
+- [BrowserOS](https://github.com/browseros-ai/BrowserOS) – DOM diffing and element grep patterns.
+- [TypeSafe](https://docs.typesafe.ai) – Jev System One fast-decision models.
+
+---
+
+## License
+
+[AGPL-3.0](./LICENSE). Modifications and SaaS deployments must remain open-source.
+
+---
+
+BrowserClaw is an independent Chrome extension and MCP automation project. It is not affiliated with the standalone \`browserclaw\` package on npm.
