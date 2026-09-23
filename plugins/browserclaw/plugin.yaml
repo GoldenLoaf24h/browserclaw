@@ -39,3 +39,12 @@ config_schema:
     type: boolean
     default: false
     description: 'When true, automatically isolates active modal dialogs in browserclaw_read_dom'
+  typesafe_api_key:
+    type: secret
+    env: TYPESAFE_API_KEY
+    description: 'API key for TypeSafe Jev System 1 autonomous micro-loop (enables 200-400ms ultra-fast local actions)'
+  disable_jev_without_key:
+    type: boolean
+    default: false
+    env: BROWSERCLAW_DISABLE_JEV_WITHOUT_KEY
+    description: 'When true, automatically hides chrome_act_toward_goal if no Jev API key is configured'

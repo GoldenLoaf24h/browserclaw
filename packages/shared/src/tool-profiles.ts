@@ -163,10 +163,50 @@ for (const [category, toolList] of Object.entries(TOOL_CATEGORIES)) {
   }
 }
 
+/**
+ * Check whether a valid TypeSafe / Jev API key is present in environment
+ */
+export function hasJevApiKey(): boolean {
+  const env = typeof process !== 'undefined' ? process.env : undefined;
+  if (!env) return false;
+  const key = (env.TYPESAFE_API_KEY || env.JEV_API_KEY || '').trim();
+  return key.length > 0;
+}
+
+/**
+ * Check whether Jev should be automatically disabled when no API key is present
+ */
+export function isJevDisabledWithoutKey(): boolean {
+  const env = typeof process !== 'undefined' ? process.env : undefined;
+  if (!env) return false;
+  const flag = (env.BROWSERCLAW_DISABLE_JEV_WITHOUT_KEY || env.DISABLE_JEV_WITHOUT_KEY || '')
+    .trim()
+    .toLowerCase();
+  return flag === 'true' || flag === '1';
+}
+
 /** Filter the schema list for a profile. Unknown names are simply not exposed. */
 export function filterToolSchemas(schemas: Tool[], profile: ToolProfile): Tool[] {
-  if (profile === 'full') return schemas;
-  const allow = profile === 'crawl' ? CRAWL_TOOL_NAMES : CORE_TOOL_NAMES;
+  const hasKey = hasJevApiKey();
+  const shouldDisableWithoutKey = isJevDisabledWithoutKey();
+  const shouldPurgeJev = !hasKey && shouldDisableWithoutKey;
+
+  if (profile === 'full') {
+    return shouldPurgeJev ? schemas.filter((t) => t.name !== 'chrome_act_toward_goal') : schemas;
+  }
+
+  const allow = new Set(profile === 'crawl' ? CRAWL_TOOL_NAMES : CORE_TOOL_NAMES);
+  // Optional promotion: promote chrome_act_toward_goal to core profile when key is set and promotion is enabled
+  const autoPromote =
+    typeof process !== 'undefined' &&
+    (process.env.CHROME_MCP_AUTO_PROMOTE_JEV === 'true' ||
+      process.env.CHROME_MCP_AUTO_PROMOTE_JEV === '1');
+  if (hasKey && autoPromote && profile === 'core') {
+    allow.add('chrome_act_toward_goal');
+  } else if (shouldPurgeJev) {
+    allow.delete('chrome_act_toward_goal');
+  }
+
   return schemas.filter((tool) => allow.has(tool.name));
 }
 

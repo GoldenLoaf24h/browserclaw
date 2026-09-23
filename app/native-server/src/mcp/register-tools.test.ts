@@ -91,9 +91,47 @@ describe('AgentUpdateNotifier - Strict Single-Turn Update Prompt Enforcement', (
   });
 
   it('formatAgentUpdateNotice formats a clean, informative system prompt', () => {
-    const formatted = formatAgentUpdateNotice('2.11.0', 'https://github.com/GoldenLoaf24h/browserclaw/releases/latest');
+    const formatted = formatAgentUpdateNotice(
+      '2.11.0',
+      'https://github.com/GoldenLoaf24h/browserclaw/releases/latest',
+    );
     expect(formatted).toBe(
       '[System Notice: A new version of BrowserClaw is available (v2.11.0). It is recommended to update to the latest release for new features and improvements: https://github.com/GoldenLoaf24h/browserclaw/releases/latest]',
     );
+  });
+
+  it('verifies tool profile promotion and purge flags for Jev', async () => {
+    const { filterToolSchemas, TOOL_SCHEMAS } = await import('chrome-mcp-shared');
+
+    // 1. Without key & with purge flag -> chrome_act_toward_goal is completely purged
+    const prevKey = process.env.TYPESAFE_API_KEY;
+    const prevJevKey = process.env.JEV_API_KEY;
+    const prevPurge = process.env.BROWSERCLAW_DISABLE_JEV_WITHOUT_KEY;
+    const prevPromote = process.env.CHROME_MCP_AUTO_PROMOTE_JEV;
+
+    delete process.env.TYPESAFE_API_KEY;
+    delete process.env.JEV_API_KEY;
+    process.env.BROWSERCLAW_DISABLE_JEV_WITHOUT_KEY = 'true';
+
+    const fullPurged = filterToolSchemas(TOOL_SCHEMAS, 'full');
+    expect(fullPurged.some((t) => t.name === 'chrome_act_toward_goal')).toBe(false);
+
+    // 2. With key & with auto-promote flag -> chrome_act_toward_goal is in core profile
+    delete process.env.BROWSERCLAW_DISABLE_JEV_WITHOUT_KEY;
+    process.env.TYPESAFE_API_KEY = 'test-typesafe-key';
+    process.env.CHROME_MCP_AUTO_PROMOTE_JEV = 'true';
+
+    const corePromoted = filterToolSchemas(TOOL_SCHEMAS, 'core');
+    expect(corePromoted.some((t) => t.name === 'chrome_act_toward_goal')).toBe(true);
+
+    // Restore environment
+    if (prevKey !== undefined) process.env.TYPESAFE_API_KEY = prevKey;
+    else delete process.env.TYPESAFE_API_KEY;
+    if (prevJevKey !== undefined) process.env.JEV_API_KEY = prevJevKey;
+    else delete process.env.JEV_API_KEY;
+    if (prevPurge !== undefined) process.env.BROWSERCLAW_DISABLE_JEV_WITHOUT_KEY = prevPurge;
+    else delete process.env.BROWSERCLAW_DISABLE_JEV_WITHOUT_KEY;
+    if (prevPromote !== undefined) process.env.CHROME_MCP_AUTO_PROMOTE_JEV = prevPromote;
+    else delete process.env.CHROME_MCP_AUTO_PROMOTE_JEV;
   });
 });

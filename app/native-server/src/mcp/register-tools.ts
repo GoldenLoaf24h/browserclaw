@@ -20,6 +20,7 @@ import {
   normalizeIncomingToolName,
   alignToolReferences,
   getActiveToolPrefix,
+  resolveToolName,
 } from 'chrome-mcp-shared';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -213,6 +214,26 @@ const handleToolCallInner = async (
         },
         server,
       );
+
+      let guidanceNote: string | undefined;
+      if (actResult.fallbackReason === 'no_api_key' || actResult.engine === 'heuristic') {
+        if (actResult.status === 'escalate') {
+          const topCandidates = (actResult.currentElements || []).slice(0, 6).join('\n  ');
+          guidanceNote = [
+            `[System Guidance: Jev API Key not configured (running in local Heuristic fallback mode)]`,
+            `The heuristic rule engine recommends handing over to deterministic execution.`,
+            `Goal: "${args.goal || ''}"`,
+            `Status: ${actResult.status} (Reason: ${actResult.reason || 'Heuristic rules require manual confirmation'})`,
+            topCandidates
+              ? `Current page interactive candidates are ready below — proceed directly without calling ${resolveToolName('read_dom')}:\n  ${topCandidates}`
+              : `Current page elements are ready in the payload.`,
+            `Next Step: Call ${resolveToolName('interact_index')}({ index: <N>, action: "click" }) or ${resolveToolName('fill_index')}({ index: <N>, text: "..." }) to continue.`,
+          ].join('\n');
+        } else if (actResult.status === 'done') {
+          guidanceNote = `[System Guidance: Jev API Key not configured. Goal successfully completed via local Heuristic rule engine.]`;
+        }
+      }
+
       const result: CallToolResult = {
         content: [
           {
@@ -222,6 +243,12 @@ const handleToolCallInner = async (
         ],
         isError: false,
       };
+      if (guidanceNote && result && Array.isArray(result.content)) {
+        result.content.unshift({
+          type: 'text',
+          text: guidanceNote,
+        });
+      }
       if (autoActivatedCategory && result && Array.isArray(result.content)) {
         result.content.unshift({
           type: 'text',
