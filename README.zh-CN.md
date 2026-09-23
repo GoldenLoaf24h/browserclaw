@@ -4,7 +4,7 @@
   <p><b>控制你自己的浏览器的一切。</b></p>
   <p>
     <a href="./docs/MAP.md">🗺️ 项目地图</a> ·
-    <a href="./docs/TOOLS.md">工具参考 (49)</a> ·
+    <a href="./docs/TOOLS.md">工具参考 (50)</a> ·
     <a href="./AGENT_CONFIG_GUIDE.md">客户端配置</a> ·
     <a href="./README.md">📖 English</a> ·
     <a href="https://github.com/GoldenLoaf24h/browserclaw/releases">Releases</a>
@@ -37,7 +37,7 @@
 - 🔄 **自驱增量 Diff 与定向 Grep 检索**：`includeDelta: true` 在操作完成后直接携带页面局部变动；`chrome_grep` 实现多层 Shadow 树下毫秒级低 Token 正则检索。
 - 🚫 **一键浮层与营销弹窗关闭 (`chrome_dismiss_overlay`)**：极速清理淘宝/京东消费券弹窗、广告模态框与 Cookie 授权条，无需往返倾倒数百个 DOM 节点。
 - 🖱️ **真人级防打扰交互共存**：具备 1:1 弹簧动力学虚拟光标悬浮层、专属智能意图命名标签组生命周期管理、可选独立窗口隔离，以及在 2FA/滑块验证时柔和礼让用户的毛玻璃介入横幅。
-- 🧭 **本地浏览器全维能力治理**：超越常规网页爬取，通过 49 项规范 MCP 工具全面管理标签页、窗口、Cookie、存储、浏览历史及书签。
+- 🧭 **本地浏览器全维能力治理**：超越常规网页爬取，通过 50 项规范 MCP 工具全面管理标签页、窗口、Cookie、存储、浏览历史及书签。
 
 ---
 
@@ -56,7 +56,7 @@
 └───────────────────────────┬────────────────────────────┘
                             │ Native Messaging 内部管道
                             ▼
-┌─ Tier 0 · 确定性原子工具群 (48 个确定性工具 + 1 循环 = 49 项) ─┐
+┌─ Tier 0 · 确定性原子工具群 (49 个确定性原子工具 + 1 个自主微循环 = 50 项) ─┐
 │  batch_actions / form_pipeline / interact_index / ...    │
 │  Chrome MV3 扩展底层驱动 · 硬件级 CDP 物理事件           │
 └──────────────────────────────────────────────────────────┘
@@ -177,7 +177,7 @@ node skill/config/doctor.mjs
 </details>
 
 <details>
-<summary><b>🖱️ 3. 页面交互、输入与流水线 (13 个工具)</b></summary>
+<summary><b>🖱️ 3. 页面交互、输入与流水线 (14 个工具)</b></summary>
 
 <br/>
 
@@ -232,8 +232,8 @@ node skill/config/doctor.mjs
 - **`chrome_tab_group_ungroup`**：将指定标签页从分组中解散移出。
 - **`chrome_tab_group_close`**：一键关闭组内所有标签并彻底销毁空分组（零孤儿残留）。
 - **`chrome_history`**：按关键词或自定义时间跨度检索浏览器历史访问记录。
-- **`chrome_bookmark_search` / `add` / `delete`**：检索、新增或删除 Chrome 收藏夹书签。
-- **`performance_start_trace` / `stop_trace` / `analyze_insight`**：录制并深入分析 Chromium 底层性能 Trace 指标。
+- **`chrome_bookmark_search`** / **`chrome_bookmark_add`** / **`chrome_bookmark_delete`**：检索、新增或删除 Chrome 收藏夹书签。
+- **`performance_start_trace`** / **`performance_stop_trace`** / **`performance_analyze_insight`**：录制并深入分析 Chromium 底层性能 Trace 指标。
 - **`chrome_tool_docs`**：动态查询工具文档，支持在会话级按需解锁全量工具分类（`activateForSession: true`）。
 - **`chrome_doctor`**：诊断运行环境健康状况、检查端口 12306、Native Messaging Host 与插件通信链路。
 
@@ -249,7 +249,7 @@ AI 智能体 (Cursor / Claude / Codex)
          ▼
 本地原生网桥 (Fastify + Stdio 宿主)
          ├── 极速决策引擎 (Jev 客户端 + 零依赖启发式降级 + 语义微循环)
-         ├── 48 个确定性原子工具 + 1 个自主微循环（共 49 项工具穿透直通）
+         ├── 49 个确定性原子工具 + 1 个自主微循环（共 50 项工具穿透直通）
          │  Chrome Native Messaging 本地双向管道 (1MB 物理截断保护)
          ▼
 Chrome MV3 扩展 (Service Worker + WXT + Vue 3)
@@ -265,7 +265,7 @@ Chrome MV3 扩展 (Service Worker + WXT + Vue 3)
 ## 📚 项目全景文档库
 
 - **[项目地图导览](./docs/MAP.md)**：🗺️ 快速按角色导航、全工程 Monorepo 代码拓扑树与文档矩阵。
-- **[全量工具字典](./docs/TOOLS.md)**：自动化生成的 49 个工具完整参数输入输出参考手册。
+- **[全量工具字典](./docs/TOOLS.md)**：自动化生成的 50 个工具完整参数输入输出参考手册。
 - **[Agent 交互实操心法](./AGENT_CONFIG_GUIDE.md)**：面向大模型的六大高能交互准则与主流客户端配置样例。
 - **[深度系统架构](./docs/ARCHITECTURE.md)**：多进程拓扑、IPC 安全边界与设计决策记录 (ADR)。
 - **[故障排查指南](./docs/TROUBLESHOOTING.zh-CN.md)**：常见报错代码与连接异常秒级诊断排查。

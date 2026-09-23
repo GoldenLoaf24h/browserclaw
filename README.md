@@ -141,7 +141,7 @@ All 50 tools are grouped below. For machine-readable schemas and parameter detai
 - **`get_windows_and_tabs`** – List windows and tabs with state.
 - **`chrome_attach_tab` / `chrome_detach_tab`** – Attach or detach the CDP debugger.
 
-### Perception & extraction (6)
+### Perception & extraction (7)
 
 - **`chrome_read_dom`** – Indexed, pruned DOM tree with shadow DOM traversal and fast snapshot mode.
 - **`chrome_scroll_until_found`** – Client-side auto-scroll to find target text/element, settles virtual DOM, centers element, and returns live index.
@@ -175,11 +175,12 @@ All 50 tools are grouped below. For machine-readable schemas and parameter detai
 - **`chrome_cdp_execute`** – Raw CDP escape hatch.
 - **`chrome_tool_docs`** – Query tool schemas and activate hidden profiles.
 
-### Management (9)
+### Management (10)
 
-- **`chrome_tab_group_create/update/list/ungroup/close`** – Tab group lifecycle.
+- **`chrome_tab_group_create`** / **`chrome_tab_group_update`** / **`chrome_tab_group_list`** / **`chrome_tab_group_ungroup`** / **`chrome_tab_group_close`** – Tab group lifecycle.
 - **`chrome_history`** – Search browsing history.
-- **`chrome_bookmark_search/add/delete`** – Bookmark operations.
+- **`chrome_bookmark_search`** / **`chrome_bookmark_add`** / **`chrome_bookmark_delete`** – Bookmark operations.
+- **`chrome_storage`** – Read and manipulate cookies, localStorage, and sessionStorage.
 
 ### Network (3)
 
@@ -189,7 +190,7 @@ All 50 tools are grouped below. For machine-readable schemas and parameter detai
 
 ### Performance & health (4)
 
-- **`performance_start_trace / stop_trace / analyze_insight`** – Record and analyze performance traces.
+- **`performance_start_trace`** / **`performance_stop_trace`** / **`performance_analyze_insight`** – Record and analyze performance traces.
 - **`chrome_doctor`** – Check port, extension link, token, and native host health.
 
 ---
@@ -202,7 +203,7 @@ AI Client (any MCP-capable agent)
          ▼
 Native Messaging Bridge (Fastify + Stdio Host)
          ├── Fast Decision Engine (Jev micro-loop)
-         └── Passthrough for 48 deterministic tools (49 tools total)
+         └── Passthrough for 49 deterministic tools (50 tools total)
          │  Chrome Native Messaging
          ▼
 Chrome MV3 Extension (Service Worker)
@@ -218,7 +219,7 @@ For details, see [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 ## 📚 Documentation
 
 - [Project Map](./docs/MAP.md) – Navigation hub and reading paths.
-- [Tool Reference](./docs/TOOLS.md) – Schemas for all 49 tools.
+- [Tool Reference](./docs/TOOLS.md) – Schemas for all 50 tools.
 - [Install & Onboard](./INSTALL.md) – Step-by-step setup including Jev key.
 - [Agent Integration](./AGENT_CONFIG_GUIDE.md) – MCP client configuration.
 - [Architecture](./docs/ARCHITECTURE.md) – Design and decisions.
