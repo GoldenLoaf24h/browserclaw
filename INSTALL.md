@@ -137,12 +137,14 @@ To unlock full-speed Jev:
 2. Set the environment variable before starting your agent / the native bridge:
 
 **Windows (PowerShell, persistent for current user):**
+
 ```powershell
 [Environment]::SetEnvironmentVariable("TYPESAFE_API_KEY", "your-key-here", "User")
 $env:TYPESAFE_API_KEY = "your-key-here"   # makes it available in the current session immediately
 ```
 
 **macOS / Linux (bash/zsh):**
+
 ```bash
 export TYPESAFE_API_KEY="your-key-here"
 # To persist, add the line above to ~/.bashrc or ~/.zshrc
@@ -154,7 +156,35 @@ export TYPESAFE_API_KEY="your-key-here"
 
 ---
 
-## Step 6: Configure Your AI Agent (MCP Client Setup)
+## Step 6: Connect to Your AI Agent (Plugin vs. Manual MCP)
+
+BrowserClaw supports two connection modes:
+
+- **Mode A (Recommended): Zero-Config Plugin**: If your agent platform (Codex Desktop, Hermes) supports native plugins, install the plugin once and tools are auto-discovered without touching JSON/TOML files.
+- **Mode B: Manual MCP Server**: For Cursor, Claude Desktop, Windsurf, or custom agent setups.
+
+---
+
+### Mode A: Zero-Config Plugin (Codex Desktop & Hermes)
+
+#### 1. Codex Desktop App
+
+If installing as a Codex Plugin:
+
+1. Add the BrowserClaw plugin via the Codex Marketplace or your plugin directory.
+2. **Critical: Start a New Thread / Task**: Codex injects MCP tool declarations only when a new task initializes. Always open a fresh conversation after installing or updating the plugin.
+3. Once the new thread starts, all `chrome_*` tools (such as `chrome_navigate`, `chrome_read_dom`, `chrome_interact_index`) are directly callable out-of-the-box.
+
+#### 2. Hermes Agent
+
+```bash
+hermes plugins install GoldenLoaf24h/browserclaw#plugins/browserclaw
+hermes plugins enable browserclaw
+```
+
+---
+
+### Mode B: Manual MCP Server Configuration
 
 Add BrowserClaw to your agent client's MCP configuration:
 
@@ -216,25 +246,25 @@ Config path: Windows `%APPDATA%\Claude\claude_desktop_config.json`, macOS `~/Lib
 }
 ```
 
-### 6.4 ChatGPT / Codex (Desktop App & CLI)
+### 6.4 Codex Desktop & CLI (Manual Mode)
 
-The `mcp-config.json` template in `skill/config/` covers several common layouts. For Codex specifically, add a stdio server entry:
+If you prefer manual configuration over the native plugin, add a stdio server entry directly to `~/.codex/config.toml` (Windows: `%USERPROFILE%\.codex\config.toml`):
 
-```json
-{
-  "mcpServers": {
-    "browserclaw": {
-      "command": "node",
-      "args": ["<repo-root>/app/native-server/dist/mcp/mcp-server-stdio.js"],
-      "env": {
-        "CHROME_MCP_TOOL_PROFILE": "core"
-      }
-    }
-  }
-}
+```toml
+[mcp_servers.browserclaw]
+command = "node"
+args = ["<repo-root>/app/native-server/dist/mcp/mcp-server-stdio.js"]
+startup_timeout_sec = 60
+
+[mcp_servers.browserclaw.env]
+CHROME_MCP_TOOL_PROFILE = "full"
 ```
 
-For the ChatGPT desktop app, use the HTTP transport instead (streamable HTTP):
+> **Note**: After modifying `config.toml`, start a **New Task / Thread** in Codex Desktop to load the tools.
+
+#### ChatGPT Desktop App (HTTP Transport)
+
+For clients supporting HTTP Streamable MCP with custom headers:
 
 ```json
 {
