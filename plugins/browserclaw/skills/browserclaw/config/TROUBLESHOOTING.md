@@ -81,15 +81,15 @@ Windows users can also double-click [`skill/config/repair.bat`](./repair.bat) or
 
 ---
 
-### 4. `ACTION REQUIRED: Please call 'browserclaw_read_dom' to refresh`
+### 4. `ACTION REQUIRED: Please call 'chrome_read_dom' to refresh`
 
 - **Symptom**:
-  Calling `browserclaw_interact_index` or `browserclaw_fill_index` returns:
-  `ACTION REQUIRED: Element reference is stale. Please call 'browserclaw_read_dom' to refresh the index tree.`
+  Calling `chrome_interact_index` or `chrome_fill_index` returns:
+  `ACTION REQUIRED: Element reference is stale. Please call 'chrome_read_dom' to refresh the index tree.`
 - **Root Cause**:
   SPA routing, modal animations, or asynchronous DOM mutations re-rendered the target tree. The numeric index (`ref`) is stale.
 - **Protocol**:
-  **Do NOT blindly retry!** The agent must invoke `browserclaw_read_dom` to obtain fresh 1-based indices, then continue.
+  **Do NOT blindly retry!** The agent must invoke `chrome_read_dom` to obtain fresh 1-based indices, then continue.
 
 ---
 
@@ -109,14 +109,14 @@ Windows users can also double-click [`skill/config/repair.bat`](./repair.bat) or
 - **Symptom**:
   A native `alert()` or `confirm()` halts CDP commands.
 - **Handling**:
-  BrowserClaw intercepts the dialog and returns `requiresDialogAction: true`. Call `browserclaw_handle_dialog({ action: "accept" })` to dismiss and unfreeze execution.
+  BrowserClaw intercepts the dialog and returns `requiresDialogAction: true`. Call `chrome_handle_dialog({ action: "accept" })` to dismiss and unfreeze execution.
 
 ---
 
-### 7. Explicit Confirmation Required for `browserclaw_close_tabs` (`confirm: true`)
+### 7. Explicit Confirmation Required for `chrome_close_tabs` (`confirm: true`)
 
 - **Symptom**:
-  `browserclaw_close_tabs({})` fails with `No tabIds or url specified. To close the current active tab, pass confirm: true...`.
+  `chrome_close_tabs({})` fails with `No tabIds or url specified. To close the current active tab, pass confirm: true...`.
 - **Safety Mechanism**:
   Protects users from accidental tab loss when agents omit target parameters. Pass `confirm: true` only if intentionally closing the active tab, or supply explicit `tabIds` / `sessionId`.
 
@@ -145,13 +145,13 @@ Windows users can also double-click [`skill/config/repair.bat`](./repair.bat) or
 - **Method**:
   In `core` or `crawl` profiles, call:
   ```json
-  browserclaw_tool_docs({ "category": "manage", "activateForSession": true })
+  chrome_tool_docs({ "category": "manage", "activateForSession": true })
   ```
   to dynamically expose advanced tools within the active session without restarting the server.
 
 ---
 
-### 11. `browserclaw_javascript` Expression Evaluation
+### 11. `chrome_javascript` Expression Evaluation
 
 - **Feature**:
   Single expressions like `document.title` or `window.location.href` are automatically wrapped in `return (...)`.

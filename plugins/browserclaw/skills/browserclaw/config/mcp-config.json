@@ -22,9 +22,7 @@
         "mcpServers": {
           "browserclaw": {
             "command": "node",
-            "args": [
-              "<PATH_TO_BROWSERCLAW>/app/native-server/dist/mcp/mcp-server-stdio.js"
-            ],
+            "args": ["<PATH_TO_BROWSERCLAW>/app/native-server/dist/mcp/mcp-server-stdio.js"],
             "env": {
               "CHROME_MCP_HOST": "127.0.0.1",
               "_comment_profile": "CHROME_MCP_TOOL_PROFILE: core (14 tools) | crawl (12 tools) | full (49 tools). Omit for full.",
@@ -71,14 +69,14 @@
             },
             "disabled": false,
             "autoApprove": [
-              "browserclaw_act_toward_goal",
-              "browserclaw_read_dom",
-              "browserclaw_interact_index",
-              "browserclaw_fill_index",
-              "browserclaw_batch_actions",
-              "browserclaw_screenshot",
-              "browserclaw_smart_scroll",
-              "browserclaw_dismiss_overlay"
+              "chrome_act_toward_goal",
+              "chrome_read_dom",
+              "chrome_interact_index",
+              "chrome_fill_index",
+              "chrome_batch_actions",
+              "chrome_screenshot",
+              "chrome_smart_scroll",
+              "chrome_dismiss_overlay"
             ]
           }
         }
