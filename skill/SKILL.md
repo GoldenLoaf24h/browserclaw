@@ -5,56 +5,56 @@ description: High-efficiency, zero-hallucination Chrome browser control and auto
 
 # BrowserClaw Browser Control Skill
 
-BrowserClaw operates inside the user's active Chrome session: cookies, logins, profile state and extensions are preserved, and every click/keystroke is a native CDP event (`isTrusted: true`), so React/Vue/Angular and Shadow DOM handlers fire normally.
+Operates directly inside user's active Chrome session via native CDP (`isTrusted: true`), preserving cookies, logins, and extensions. React/Vue/Angular and deep Shadow DOM supported.
 
-> **Tool name prefix (read first).** The MCP server exposes tools as `chrome_*` (46 tools) plus `performance_*` (3) and `get_windows_and_tabs`. `browserclaw_*` is a convenience alias accepted in HTTP/SSE mode only; in Stdio mode call the `chrome_*` names directly. This file uses canonical `chrome_*` names throughout.
+> **Tool Prefix**: Canonical tool names use `chrome_*` (46), `performance_*` (3), and `get_windows_and_tabs`. In Stdio mode, call canonical names directly; `browserclaw_*` is an HTTP/SSE convenience alias.
 
 ---
 
 ## 1. Execution Hierarchy & 6-Tier Routing Ladder
 
-BrowserClaw uses a **Dual-Brain architecture**: You (the calling Agent) are **System 2 (Macro Planner)** responsible for multi-page strategy, reasoning, and content generation. The local Native Server runs **System 1 (`chrome_act_toward_goal`)** executing local on-page perceive-decide-act loops at 200–400ms/step.
+Dual-Brain architecture: Agent acts as **System 2 (Macro Planner)** for multi-page orchestration; local server acts as **System 1 (`chrome_act_toward_goal`)** executing on-page perceive-decide-act loops at 200–400ms/step.
 
-|    Tier    | Layer                             | Primary Tools                                                                                     |  Usage %  | Operational Purpose                                                                                                                                                                                      |
-| :--------: | :-------------------------------- | :------------------------------------------------------------------------------------------------ | :-------: | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Tier 1** | **Semantic Micro-Loop (DEFAULT)** | `chrome_act_toward_goal`                                                                          |  **70%**  | **Primary choice for on-page action goals**: "Search for X", "Add to cart", "Filter by 4 stars", "Agree to cookies", "Fill out shipping form". Delegates continuous on-page clicks and inputs in 1 turn! |
-| **Tier 0** | **Deterministic Primitives**      | `chrome_get_markdown`<br>`chrome_batch_actions`<br>`chrome_interact_index`<br>`chrome_fill_index` |  **20%**  | Clean text reading (`get_markdown`), known multi-step pipelines (`batch_actions`), or supervisor takeover when `chrome_act_toward_goal` escalates with candidates.                                       |
-| **Tier 2** | **In-Page Scripting & API**       | `chrome_javascript`<br>`chrome_network_request`                                                   |  **5%**   | Complex rich-text editors, Shadow DOM inspection, or calling authenticated internal APIs.                                                                                                                |
-| **Tier 3** | **Visual Fallback (PCIE)**        | `chrome_screenshot`<br>`chrome_computer`                                                          |  **3%**   | Canvas games, WebGL, unlabeled SVG icons, or anti-bot DOM-obfuscated layouts.                                                                                                                            |
-| **Tier 4** | **Human Handoff**                 | `chrome_request_human_intervention`                                                               |  **1%**   | CAPTCHA / Cloudflare Turnstile / 2FA / payment approval.                                                                                                                                                 |
-| **Tier 5** | **Raw CDP Escape Hatch**          | `chrome_cdp_execute`                                                                              | **<0.1%** | Raw CDP domain commands when high-level tools are blocked.                                                                                                                                               |
+|    Tier    | Layer                             | Primary Tools                                                                                  |  Usage %  | Operational Purpose                                                                                                                                  |
+| :--------: | :-------------------------------- | :--------------------------------------------------------------------------------------------- | :-------: | :--------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Tier 1** | **Semantic Micro-Loop (DEFAULT)** | `chrome_act_toward_goal`                                                                       |  **70%**  | **Primary for on-page action goals**: searches, filters, clicks, form navigation. Delegates multi-action chains in 1 turn.                           |
+| **Tier 0** | **Deterministic Primitives**      | `chrome_get_markdown` / `chrome_batch_actions` / `chrome_interact_index` / `chrome_fill_index` |  **20%**  | Text extraction (`get_markdown`), fixed multi-step pipelines (`batch_actions`), or takeover when `chrome_act_toward_goal` escalates with candidates. |
+| **Tier 2** | **In-Page Scripting & API**       | `chrome_javascript` / `chrome_network_request`                                                 |  **5%**   | Complex rich-text composers, Shadow DOM inspection, or authenticated in-page fetches.                                                                |
+| **Tier 3** | **Visual Fallback (PCIE)**        | `chrome_screenshot` / `chrome_computer`                                                        |  **3%**   | Canvas games, WebGL, unlabeled icon buttons, or anti-bot DOM-obfuscated layouts.                                                                     |
+| **Tier 4** | **Human Handoff**                 | `chrome_request_human_intervention`                                                            |  **1%**   | CAPTCHA, Cloudflare Turnstile, 2FA, or payment confirmation.                                                                                         |
+| **Tier 5** | **Raw CDP Escape Hatch**          | `chrome_cdp_execute`                                                                           | **<0.1%** | Direct CDP protocol commands when high-level tools are blocked.                                                                                      |
 
 ---
 
-## 2. Choose the Tool by Intent
+## 2. Tool Selection by Intent
 
-| Intent                             | Tool                                                             | Strategy & Key Arguments                                                                                                                                                                          |
-| :--------------------------------- | :--------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **On-page action goals (DEFAULT)** | `chrome_act_toward_goal`                                         | **Always try first for on-page interaction chains**: `{ goal: "Search for laptop and filter by brand Lenovo", maxSteps: 10 }`. Runs locally in 200-400ms/step!                                    |
-| Open / go back / forward           | `chrome_navigate`                                                | `{ url }` (pass `"back"` or `"forward"` for history), `background: true` (default, avoids focus theft), `autoGroup: true` (default)                                                               |
-| Read article / documentation       | `chrome_get_markdown`                                            | Clean text, 80%+ cheaper than DOM dump; `fit: true` for main body                                                                                                                                 |
-| Find a button / text               | `chrome_grep`                                                    | No DOM dump needed; set `autoScroll: true` for virtual lists; returned indices feed `chrome_interact_index`                                                                                       |
-| Scroll until target found          | `chrome_scroll_until_found`                                      | `{ query, maxSteps: 10, stepPx: 800 }`; client-side RAF scroll, settles virtual DOM, centers element, returns live index                                                                          |
-| Perceive page structure            | `chrome_read_dom`                                                | Auto-isolates active modals; `format: "compact"` (default) slashes 60%+ tokens; `activeViewportOnly: true` eliminates offscreen ghost nodes; `flattenCards: true` preserves inner action triggers |
-| Single input (search box)          | `chrome_fill_index`                                              | `{ index, text, clear: true, pressEnter: true }` fills and submits in 1 turn; preserves `\n` in rich editors                                                                                      |
-| Click / hover one element          | `chrome_interact_index`                                          | `{ index, action: "click" }`; `pierceOverlay: true` (default) under translucent masks; `captureNetwork` to grab triggered API                                                                     |
-| 2+ predictable steps               | `chrome_batch_actions`                                           | One RTT: fill + click + wait + assert. Default for login/search flows (see `references/batch-pipeline.md`)                                                                                        |
-| Multi-step form / wizard           | `chrome_form_pipeline`                                           | Local autonomous field matching + advance; stops on captcha or validation errors                                                                                                                  |
-| Marketing popup / cookie banner    | `chrome_dismiss_overlay`                                         | One-step dismissal; do not dump the DOM first                                                                                                                                                     |
-| Scroll page or inner container     | `chrome_smart_scroll`                                            | Detects the scrollable element itself; returns remaining pages                                                                                                                                    |
-| Insert image into a composer       | `chrome_insert_media`                                            | Real File paste/drop for Draft.js/Lexical/X/Reddit; local files up to 50MB                                                                                                                        |
-| Upload to `<input type=file>`      | `chrome_upload_file`                                             | `{ index, filePath }`; for drop zones use `chrome_insert_media`                                                                                                                                   |
-| Canvas / WebGL / icon-only UI      | `chrome_screenshot` + `chrome_computer`                          | Coordinate fallback (see `references/visual-fallback.md`)                                                                                                                                         |
-| Run JS / call page APIs            | `chrome_javascript` / `chrome_network_request`                   | `{ code }` with `mcp.*` helpers; fetch JSON with page cookies                                                                                                                                     |
-| CAPTCHA / 2FA / payment            | `chrome_request_human_intervention`                              | Banner + cursor park, resumes after the human finishes                                                                                                                                            |
-| Tabs / windows hygiene             | `get_windows_and_tabs`, `chrome_switch_tab`, `chrome_close_tabs` | Check existing tabs first; closing requires `confirm: true` or explicit ids                                                                                                                       |
-| Connectivity problems              | `chrome_doctor`                                                  | Verifies port 12306, extension link, token, native host                                                                                                                                           |
+| Intent                             | Tool                                                               | Strategy & Key Arguments                                                                                                                                                         |
+| :--------------------------------- | :----------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **On-page action goals (DEFAULT)** | `chrome_act_toward_goal`                                           | **Primary for interactive on-page chains**: `{ goal: "Search for laptop and filter by brand Lenovo", maxSteps: 10 }`. Local execution in 200–400ms/step.                         |
+| Open / back / forward              | `chrome_navigate`                                                  | `{ url }` (`"back"` / `"forward"` for history), `background: true` (default, prevents focus theft), `autoGroup: true` (default).                                                 |
+| Read article / docs                | `chrome_get_markdown`                                              | Clean structured text, 80%+ cheaper than full DOM; `fit: true` targets main article body.                                                                                        |
+| Find button / text                 | `chrome_grep`                                                      | Element lookup without full DOM dump; `autoScroll: true` probes virtual feeds. Returned index feeds `chrome_interact_index`.                                                     |
+| Scroll until element found         | `chrome_scroll_until_found`                                        | `{ query, maxSteps: 10, stepPx: 800 }`. Client-side RAF scroll, settles virtual DOM, centers element, returns live index.                                                        |
+| Perceive page structure            | `chrome_read_dom`                                                  | Auto-isolates active modals; `format: "compact"` (default) slashes tokens; `activeViewportOnly: true` prunes offscreen nodes; `flattenCards: true` exposes card action triggers. |
+| Single input / search              | `chrome_fill_index`                                                | `{ index, text, clear: true, pressEnter: true }` fills and submits in 1 turn. Preserves linebreaks in rich editors.                                                              |
+| Click / hover element              | `chrome_interact_index`                                            | `{ index, action: "click" }`. `pierceOverlay: true` (default) clicks beneath translucent masks. Pass `captureNetwork` to capture triggered API response.                         |
+| 2+ predictable steps               | `chrome_batch_actions`                                             | Atomic pipeline (fill + click + wait + assert) in 1 RTT. Default for login and search workflows.                                                                                 |
+| Multi-step form / wizard           | `chrome_form_pipeline`                                             | Autonomous field matching and progression; halts on CAPTCHA or validation errors.                                                                                                |
+| Marketing popup / banner           | `chrome_dismiss_overlay`                                           | 1-step dismissal for coupon popups, consent banners, and overlays. Avoids manual DOM parsing.                                                                                    |
+| Scroll page / container            | `chrome_smart_scroll`                                              | Auto-detects scrollable container; reports remaining scroll distance.                                                                                                            |
+| Insert image / media               | `chrome_insert_media`                                              | Direct File paste/drop for rich-text editors (Draft.js/Lexical/X/Reddit); local files up to 50MB.                                                                                |
+| Upload to `<input type=file>`      | `chrome_upload_file`                                               | `{ index, filePath }`. For dynamic drop zones, use `chrome_insert_media` or `clickTargetIndex`.                                                                                  |
+| Canvas / WebGL / icon UI           | `chrome_screenshot` + `chrome_computer`                            | Visual fallback (PCIE). Requires screenshot calibration with `grid: true`.                                                                                                       |
+| Run JS / fetch with cookies        | `chrome_javascript` / `chrome_network_request`                     | Page context execution with `mcp.*` helpers; authenticated in-page HTTP fetch bypassing CORS.                                                                                    |
+| CAPTCHA / 2FA / payment            | `chrome_request_human_intervention`                                | Banner and cursor park; automatically resumes when human finishes.                                                                                                               |
+| Tab & window hygiene               | `get_windows_and_tabs` / `chrome_switch_tab` / `chrome_close_tabs` | Query existing tabs before opening duplicates. Closing requires `confirm: true` or explicit `tabIds`.                                                                            |
+| Diagnostic self-check              | `chrome_doctor`                                                    | Validates port 12306, extension link, token auth, and native host status.                                                                                                        |
 
 ---
 
 ## 3. On-Page Autonomy: `chrome_act_toward_goal`
 
-When given any on-page interactive goal (e.g. search, add to cart, toggle options, click button), call `chrome_act_toward_goal` as your primary action:
+Execute interactive on-page tasks in a single turn:
 
 ```json
 {
@@ -65,53 +65,53 @@ When given any on-page interactive goal (e.g. search, add to cart, toggle option
 }
 ```
 
-### Engine & Graceful Fallback
+### Engine Execution & Fallback
 
-- **With API Key (`TYPESAFE_API_KEY` or `JEV_API_KEY`)**: Powered by TypeSafe Jev model with semantic probability scoring at 200–400ms/step.
-- **Without API Key**: Automatically and gracefully runs in local **Heuristic Rule Engine** mode. If ambiguous, it halts safely and returns indexed candidate elements so you can directly execute with `chrome_interact_index` or `chrome_fill_index` without re-reading DOM!
+- **With API Key (`TYPESAFE_API_KEY` or `JEV_API_KEY`)**: Uses TypeSafe Jev semantic scoring at 200–400ms/step.
+- **Without API Key**: Automatically degrades to local deterministic **Heuristic Rule Engine**. When ambiguous, halts safely and returns indexed candidate elements for direct execution via `chrome_interact_index` or `chrome_fill_index` without re-reading the DOM.
 
-### Act on the returned `status`:
+### Status Handling
 
-- `done` — goal achieved, proceed to next macro step.
-- `paused` — safety breakpoint matched `pauseBeforeKeywords`; review `pausedBeforeAction` and commit explicitly.
-- `escalate` — ambiguous target or sensitive action. **`currentElements` already contains the indexed elements! Pick the target `[n]` and immediately call `chrome_interact_index` or `chrome_fill_index` — do NOT call `chrome_read_dom` again!**
-- `stuck` — 3 steps without DOM/URL change; take over with atomic tools.
-- `blocked` — captcha or bot wall; call `chrome_request_human_intervention`.
-- `max_steps` / `timeout` — budget exhausted; inspect current elements and proceed.
-
----
-
-## 4. Hard Rules
-
-1. **Micro-loop first for interactions.** For on-page action chains, call `chrome_act_toward_goal` first. Do NOT micromanage with slow turn-by-turn `chrome_read_dom` → `chrome_interact_index` loops.
-2. **1-based indices only.** Target elements by the `[n]` index from `chrome_read_dom`, `chrome_grep`, or `currentElements` — never guessed CSS selectors. For rich-text/contenteditable/Lexical/Draft.js composers (Reddit, X), target the `[composer]` index directly with `chrome_fill_index`; native CDP commits text and triggers framework state automatically.
-3. **Takeover without re-perceiving.** When `chrome_act_toward_goal` escalates or pauses, use the attached `currentElements` directly to invoke `chrome_interact_index` or `chrome_fill_index`. Do not waste an RTT on `chrome_read_dom`.
-4. **Dialogs block everything.** A native alert/confirm/prompt freezes the tab; calls time out until you call `chrome_handle_dialog { action: "accept"|"dismiss", promptText? }`. Never auto-accept blindly — confirm dialogs can be destructive.
-5. **Background by default.** Open tabs with `background: true`; never steal foreground focus unless the user asked.
-6. **Don't close the user's tab.** `chrome_close_tabs` requires `confirm: true` or explicit `tabIds`/`sessionId`.
-7. **Submit in one turn.** `pressEnter: true` on `chrome_fill_index` for search boxes and single-field forms.
-8. **Verify via piggybacked deltas.** Pass `includeDelta: true` on interact/fill/batch to get DOM mutations in the same response instead of a follow-up `chrome_read_dom`.
-9. **Dynamic unlock.** If a tool is outside the active profile, call `chrome_tool_docs { category, activateForSession: true }`; calling an unlocked tool also auto-unlocks its category.
-10. **Parameter invariants.** `index` is numeric; screenshots use `grid: true` for coordinate calibration; `chrome_javascript` takes `code`; uploads take `index` or `clickTargetIndex`.
+- `done`: Goal achieved; continue macro workflow.
+- `paused`: Triggered by `pauseBeforeKeywords`; inspect `pausedBeforeAction` and commit explicitly.
+- `escalate`: Ambiguous target or sensitive boundary. **Target candidates already indexed in `currentElements`; pick target `[n]` and call `chrome_interact_index` or `chrome_fill_index` directly. Do NOT re-invoke `chrome_read_dom`**.
+- `stuck`: 3 steps without DOM/URL mutation; switch to atomic primitives.
+- `blocked`: Bot challenge detected; invoke `chrome_request_human_intervention`.
+- `max_steps` / `timeout`: Step quota reached; inspect `currentElements` and proceed.
 
 ---
 
-## 5. Recovery Patterns
+## 4. Operational Invariants
 
-- **Long virtualized list / dynamic feed item missing** → `chrome_scroll_until_found { query, maxSteps: 10 }` or `chrome_grep { query, autoScroll: true }` instead of manual multi-turn scrolling loops.
-- **Modal dialog open with background occlusion** → `chrome_read_dom` automatically isolates active modal (Modal Focus Mode) and strips background elements. _False-positive trap_: if `read_dom` collapses to 1-2 elements when a modal is visibly open, pass `isolateModal: false` or specify `selector` to force full visibility.
-- **Interaction fails under an overlay** → `chrome_dismiss_overlay`, or `pierceOverlay: true` on the click.
-- **Repeated RTT-heavy steps** → consolidate into `chrome_batch_actions` with `waitForSettle: true`.
-- **Form fields keep mismatching** → switch to `chrome_form_pipeline` (semantic matching + auto-advance built in).
-- **Anti-bot challenge / 2FA / payment approval** → `chrome_request_human_intervention { reason }` and wait.
-- **Everything else fails twice** → `chrome_cdp_execute` as the low-level escape hatch; then `chrome_doctor` if connectivity is suspect.
+1. **Semantic Micro-Loop First**: For interactive workflows, call `chrome_act_toward_goal` first. Avoid manual `chrome_read_dom` → `chrome_interact_index` turn loops.
+2. **Numeric 1-Based Indices**: Target elements strictly by `[n]` index from `chrome_read_dom`, `chrome_grep`, or `currentElements`. Do not guess CSS selectors. For rich-text editors (Reddit, X), target `[composer]` directly with `chrome_fill_index`.
+3. **Zero-RTT Escalation Takeover**: When `chrome_act_toward_goal` escalates or pauses, consume attached `currentElements` immediately. Do not waste a turn on `chrome_read_dom`.
+4. **Dialog Isolation**: Native `alert`/`confirm`/`prompt` freezes page execution; resolve via `chrome_handle_dialog { action: "accept"|"dismiss" }` in an isolated call. Never auto-accept blindly.
+5. **Background Tab Discipline**: Open tabs with `background: true` to avoid stealing user OS focus.
+6. **Destructive Close Guard**: `chrome_close_tabs` requires `confirm: true` or explicit `tabIds` / `sessionId` to protect user tabs.
+7. **Single-Turn Submission**: Use `pressEnter: true` on `chrome_fill_index` for search boxes and single-field forms.
+8. **Piggybacked Deltas**: Pass `includeDelta: true` on interact/fill/batch calls to receive DOM mutations in the same response, eliminating follow-up `chrome_read_dom` calls.
+9. **Dynamic Profile Unlock**: If a required tool is hidden under active profile, unlock on-demand via `chrome_tool_docs { category, activateForSession: true }`.
+10. **Parameter Constraints**: `index` must be numeric; screenshots use `grid: true` for coordinate alignment; `chrome_javascript` requires `code`; file uploads require `index` or `clickTargetIndex`.
 
 ---
 
-## 6. References (Read on Demand)
+## 5. Failure Recovery Protocols
 
-- `references/dual-brain-jev.md` — micro-loop architecture, heuristic fallback, destructive-keyword guard, and takeover protocols.
-- `references/tool-cheatsheet.md` — per-tool parameters and gotchas for all 50 registered tools.
-- `references/batch-pipeline.md` — batch action types, assertions, inline network capture, form pipelines.
-- `references/visual-fallback.md` — screenshot grid calibration and `chrome_computer` coordinates.
-- `config/TROUBLESHOOTING.md` — port conflicts, token auth, native host repair.
+- **Virtualized Feeds / Infinite Scroll**: Invoke `chrome_scroll_until_found { query, maxSteps: 10 }` or `chrome_grep { query, autoScroll: true }` instead of manual multi-turn scrolling.
+- **Modal Occlusion**: `chrome_read_dom` auto-isolates modals. If collapsed unexpectedly, pass `isolateModal: false` or specify `selector`.
+- **Overlay Interference**: Dispatch `chrome_dismiss_overlay`, or pass `pierceOverlay: true` on `chrome_interact_index`.
+- **High-RTT Form Chains**: Consolidate into `chrome_batch_actions` with `waitForSettle: true`.
+- **Complex Multi-Step Forms**: Switch to `chrome_form_pipeline` with semantic matching.
+- **Anti-Bot / 2FA / CAPTCHA**: Dispatch `chrome_request_human_intervention { reason }` and wait.
+- **Persistent Failures**: Dispatch `chrome_cdp_execute` as low-level escape hatch; run `chrome_doctor` if bridge connectivity is broken.
+
+---
+
+## 6. References (Consult On Demand)
+
+- `references/dual-brain-jev.md` — Micro-loop architecture, heuristic fallback, destructive guard, and takeover protocols.
+- `references/tool-cheatsheet.md` — Complete contracts and parameter tables for all 50 registered tools.
+- `references/batch-pipeline.md` — Multi-action batch grammar, assertions, network capture, and form pipelines.
+- `references/visual-fallback.md` — Screenshot grid calibration, DPR scaling, and `chrome_computer` coordinates.
+- `config/TROUBLESHOOTING.md` — Port conflicts, token auth, and native host repair.
