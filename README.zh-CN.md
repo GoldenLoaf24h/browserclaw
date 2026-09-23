@@ -92,7 +92,7 @@
 
 > _“帮我配置 BrowserClaw：https://github.com/GoldenLoaf24h/browserclaw ，阅读仓库中的 `INSTALL.md` 并按步骤自动安装。”_
 
-AI 将自动完成本地服务的编译与注册。随后你只需从 **[Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** 下载最新的 **`browserclaw-extension-v*.zip`** 资产（例如 `browserclaw-extension-v3.1.0.zip`），解压到本地固定目录，打开 `chrome://extensions` 开启“开发者模式”，将该解压文件夹拖入即可。
+AI 将自动完成本仓库的编译与本地服务的注册。随后你只需打开 `chrome://extensions` 开启“开发者模式”，点击“加载已解压的扩展程序”，选择本仓库已生成的 `app/chrome-extension/.output/chrome-mv3` 目录即可。
 
 ### 方案二：通过 ChatGPT / Codex 插件市场添加
 
@@ -102,7 +102,7 @@ AI 将自动完成本地服务的编译与注册。随后你只需从 **[Release
 https://github.com/GoldenLoaf24h/browserclaw
 ```
 
-添加成功后，点击安装 **BrowserClaw** 插件即可一键启用。
+添加成功后，点击安装 **BrowserClaw** 插件即可一键启用。_(注：插件模式需确保本地后台服务在线；对于 Codex Desktop 用户，若希望免手动开后台终端、实现随会话自动启停，强烈推荐在 `~/.codex/config.toml` 中配置 Stdio 模式，详见 [INSTALL.md](./INSTALL.md)。)_
 
 ### 方案三：通过 Hermes Agent 安装
 
@@ -123,11 +123,19 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 随后在 `chrome://extensions` 中点击“加载已解压的扩展程序”，选择 `app/chrome-extension/.output/chrome-mv3` 目录即可。
 
+### 一键验证安装状态
+
+在终端运行全链路内置体检脚本，显示 7 项全部 [PASS] 即代表全栈就绪：
+
+```bash
+node skill/config/doctor.mjs
+```
+
 ---
 
-## 🛠️ 全量工具分类全览 (49 个核心规范 MCP 工具)
+## 🛠️ 全量工具分类全览 (50 个核心规范 MCP 工具)
 
-全量 49 个核心规范 Schema 校验的工具（48 个确定性浏览器原子工具 + 1 个目标自驱微闭环）归纳为以下 8 个大类别。**点击对应分类即可展开查看工具清单。**
+全量 50 个核心规范 Schema 校验的工具（49 个确定性浏览器原子工具 + 1 个目标自驱微闭环）归纳为以下 8 个大类别。**点击对应分类即可展开查看工具清单。**
 完整 JSON Schema 与入参定义请参阅 **[docs/TOOLS.md](./docs/TOOLS.md)**。
 
 <details>
@@ -155,11 +163,12 @@ cd app/native-server && node dist/scripts/register-dev.js
 </details>
 
 <details>
-<summary><b>📄 2. 内容感知、检索与数据提取 (5 个工具)</b></summary>
+<summary><b>📄 2. 内容感知、检索与数据提取 (6 个工具)</b></summary>
 
 <br/>
 
 - **`chrome_read_dom`**：极简剪枝 DOM 交互树，带 1-based 纯数字索引，Token 消耗压缩 85%+。深度穿透多层 open/closed Shadow DOM，提取纯图标按钮的 accessible 名称。
+- **`chrome_scroll_until_found`**：客户端高性能 RAF 平滑流式滚屏查找，自动沉降虚拟列表与 DOM 回收节点，找到目标元素后居中高亮并返回活跃索引。
 - **`chrome_grep`**：毫秒级正则/文本定向检索，穿透 Shadow DOM 边界提取文本，超大页面免除 Dump 全量 DOM。
 - **`chrome_get_markdown`**：提取页面排版优美、纯净结构化的 Markdown 文本（支持 `includeLinks: true` 提取链接图谱），阅读长文与资料总结首选。
 - **`chrome_inspect_media`**：内存无损提取 `<img>` 与 `<canvas>` 原始图像 Data URL，支持 200%+ 超采样局部特写裁切。

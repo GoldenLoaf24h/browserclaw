@@ -28,7 +28,7 @@ BrowserClaw takes a different route: a Chrome MV3 extension plus a local Native 
 
 ## ⚡ What is BrowserClaw?
 
-BrowserClaw is a Chrome extension + local MCP server that lets AI agents operate your real browser. It exposes 49 tools across 7 categories (navigation, perception, action, observation, management, diagnostics, network), with a minimal 14-tool core profile for everyday sessions.
+BrowserClaw is a Chrome extension + local MCP server that lets AI agents operate your real browser. It exposes 50 tools across 7 categories (navigation, perception, action, observation, management, diagnostics, network), with a minimal 14-tool core profile for everyday sessions.
 
 Two execution paths are available:
 
@@ -87,20 +87,20 @@ The micro-loop is bounded: at most 60 steps in Jev mode (default 10), truncated 
 
 ## 🚀 Quick start
 
-### Option 1: Prebuilt release (no build)
-
-1. Download the latest `browserclaw-extension-v*.zip` and `browserclaw-skill-v*.zip` from [Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest).
-2. Unzip both to persistent local folders.
-3. Open `chrome://extensions`, enable Developer mode, and load the extension folder.
-4. Copy the `skill/` folder into your agent's skills directory.
-
-### Option 2: Install with an AI agent
+### Option 1: Install with an AI agent (Recommended)
 
 Paste this to your agent:
 
 > "Set up BrowserClaw: https://github.com/GoldenLoaf24h/browserclaw. Read INSTALL.md and follow the steps."
 
-Then load the extension from `app/chrome-extension/.output/chrome-mv3` into `chrome://extensions`.
+Your agent will compile the project and register the OS native host automatically. Then simply open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select `app/chrome-extension/.output/chrome-mv3`.
+
+### Option 2: Prebuilt release (No build required)
+
+1. Download the latest `browserclaw-extension-v*.zip` and `browserclaw-skill-v*.zip` from [Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest).
+2. Unzip the extension to a local persistent directory, open `chrome://extensions`, enable Developer mode, and click **Load unpacked**.
+3. Register the native host once: run `node dist/scripts/register-dev.js` inside the server directory.
+4. Copy the full `skill/` directory (including its `references/` folder) into your agent's skills directory (Codex: `~/.codex/skills/browserclaw/`).
 
 ### Option 3: Build from source
 
@@ -112,13 +112,21 @@ cd app/native-server && node dist/scripts/register-dev.js
 
 Then load `app/chrome-extension/.output/chrome-mv3` into `chrome://extensions`.
 
-Full onboarding (native host registration, MCP client setup, Jev key, health check) is in [INSTALL.md](./INSTALL.md).
+### Verification
+
+Verify that all components are functioning with the built-in diagnostic suite:
+
+```bash
+node skill/config/doctor.mjs
+```
+
+Full onboarding (Codex Stdio setup, Cursor, Claude Desktop, Hermes, Jev API key) is in **[INSTALL.md](./INSTALL.md)**.
 
 ---
 
 ## 🛠️ Tool catalog
 
-All 49 tools are grouped below. For machine-readable schemas and parameter details, see [docs/TOOLS.md](./docs/TOOLS.md).
+All 50 tools are grouped below. For machine-readable schemas and parameter details, see [docs/TOOLS.md](./docs/TOOLS.md).
 
 ### Autonomous execution (1)
 
@@ -136,6 +144,7 @@ All 49 tools are grouped below. For machine-readable schemas and parameter detai
 ### Perception & extraction (6)
 
 - **`chrome_read_dom`** – Indexed, pruned DOM tree with shadow DOM traversal and fast snapshot mode.
+- **`chrome_scroll_until_found`** – Client-side auto-scroll to find target text/element, settles virtual DOM, centers element, and returns live index.
 - **`chrome_grep`** – Regex or text search returning element indices without a full DOM dump.
 - **`chrome_get_markdown`** – Clean Markdown extraction for reading tasks.
 - **`chrome_inspect_media`** – Extract image or canvas data; super-resolves small captchas.
