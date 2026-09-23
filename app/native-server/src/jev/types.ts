@@ -36,6 +36,7 @@ export interface JevSuggestion {
   target?: string;
   confidence: number;
   probabilities: Record<string, number>;
+  speculativeTargets?: Record<string, string>;
 }
 
 export interface StepRecord {

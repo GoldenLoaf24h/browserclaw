@@ -1,5 +1,10 @@
 import { BaseBrowserToolExecutor } from '../base-browser';
-import { TOOL_NAMES, resolveToolName, type IndexedElement, type PrunedDOMTreeResult } from 'chrome-mcp-shared';
+import {
+  TOOL_NAMES,
+  resolveToolName,
+  type IndexedElement,
+  type PrunedDOMTreeResult,
+} from 'chrome-mcp-shared';
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { executeInPage } from './in-page-engine';
 
@@ -8,6 +13,9 @@ export interface GrepParams {
   isRegex?: boolean;
   searchType?: 'interactive_only' | 'all_dom' | 'page_text';
   limit?: number;
+  autoScroll?: boolean;
+  maxSteps?: number;
+  stepPx?: number;
   tabId?: number;
   windowId?: number;
   sessionId?: string;
@@ -272,6 +280,37 @@ export class GrepTool extends BaseBrowserToolExecutor {
         }
       }
 
+      // If interactive search yielded 0 matches, check if autoScroll was requested
+      let autoScrollOutcome: any = undefined;
+      if (matches.length === 0 && args.autoScroll) {
+        try {
+          const scrollRes = await executeInPage(
+            { tabId },
+            'inPageScrollUntilFound',
+            [
+              {
+                query: args.query,
+                isRegex: args.isRegex,
+                maxSteps: args.maxSteps ?? 10,
+                stepPx: args.stepPx ?? 800,
+              },
+            ],
+            20000,
+          );
+          const sHit = scrollRes?.[0]?.result;
+          if (sHit?.found && typeof sHit.index === 'number') {
+            autoScrollOutcome = sHit;
+            matches.push({
+              index: sHit.index,
+              tagName: sHit.tagName || 'element',
+              text: sHit.text || args.query,
+              isInteractive: true,
+              selector: `[data-mcp-idx="${sHit.index}"]`,
+            });
+          }
+        } catch {}
+      }
+
       // If interactive search yielded 0 matches, perform automatic deep page text fallback
       let textFallbackMatches: Array<{ line: number; text: string }> | undefined;
       if (matches.length === 0 && searchType === 'interactive_only') {
@@ -317,6 +356,14 @@ export class GrepTool extends BaseBrowserToolExecutor {
                   matches.length > 0 ? matches.length : (textFallbackMatches?.length ?? 0),
                 limit,
                 matches: matches.length > 0 ? matches : (textFallbackMatches ?? []),
+                ...(autoScrollOutcome
+                  ? {
+                      autoScrolled: true,
+                      scrollSteps: autoScrollOutcome.stepsTaken,
+                      scrolledPx: autoScrollOutcome.scrolledPx,
+                      coordinates: autoScrollOutcome.coordinates,
+                    }
+                  : {}),
                 ...(textFallbackMatches
                   ? {
                       note: `No interactive elements matched query "${args.query}". Displaying matches found in deep page text. Use ${resolveToolName('interact_index')} with coordinate, or ${resolveToolName('click_element')} with text/role.`,

@@ -1,11 +1,18 @@
 import { tabFaviconManager } from './tab-favicon';
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
-import { TOOL_NAMES, resolveToolName, type PrunedDOMTreeResult, type IndexedElement } from 'chrome-mcp-shared';
+import {
+  TOOL_NAMES,
+  resolveToolName,
+  type PrunedDOMTreeResult,
+  type IndexedElement,
+} from 'chrome-mcp-shared';
 import { executeInPage } from './in-page-engine';
 import { snapshotCacheManager } from '@/utils/snapshot-cache-manager';
 import { renderCompactElementLine } from './dom-indexer';
 import { waitForPageSettle } from '@/utils/action-watchdog';
+import { cdpSessionManager } from '@/utils/cdp-session-manager';
+import { scrubUrl } from '@/utils/url-sanitizer';
 
 export interface ReadDOMParams {
   viewportThreshold?: number;
@@ -100,6 +107,27 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
           { legacyVisibility: args.legacyVisibility },
         ]);
         const fastData = snapRes?.[0]?.result as any;
+        if (fastData?.isErrorPage) {
+          const pageUrl = scrubUrl(tab.url || '');
+          return {
+            content: [
+              {
+                type: 'text',
+                text: [
+                  `## ⚠️ Browser Navigation / Network Error`,
+                  ``,
+                  `The page at **${pageUrl || 'unknown URL'}** failed to load and is displaying Chrome's native error page (\`chrome-error://chromewebdata/\`).`,
+                  ``,
+                  `- **Reason**: ${fastData?.error || 'Frame is showing error page'}`,
+                  `- **Status**: Network unreachable, DNS failure, or page crashed.`,
+                  ``,
+                  `*Tip: Please check the URL, network connection, or try navigating to a valid address using \`browserclaw_navigate\`.*`,
+                ].join('\n'),
+              },
+            ],
+            isError: false,
+          };
+        }
         if (!fastData) {
           return createErrorResponse('Failed to execute fast DOM snapshot');
         }
@@ -118,7 +146,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         }));
 
         const snapshot = snapshotCacheManager.setSnapshot(tab.id, {
-          url: tab.url || fastData.url,
+          url: scrubUrl(tab.url || fastData.url),
           elementCount: snapshotElements.length,
           elements: snapshotElements,
         });
@@ -129,6 +157,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
               type: 'text',
               text: JSON.stringify({
                 ...fastData,
+                url: scrubUrl(fastData.url || tab.url || ''),
                 snapshotId: snapshot.snapshotId,
               }),
             },
@@ -161,13 +190,36 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         ]);
       } catch (frameErr) {
         // Fallback to main frame only if allFrames fails
-        results = await executeInPage({ tabId: tab.id }, 'inPageDOMPruner', [
-          prunerOpts,
-        ]);
+        results = await executeInPage({ tabId: tab.id }, 'inPageDOMPruner', [prunerOpts]);
       }
 
       if (!results || results.length === 0) {
         return createErrorResponse('Failed to execute DOM pruning and indexing');
+      }
+
+      // Handle Chrome native error page (chrome-error://chromewebdata/) gracefully
+      const errorPageResult = results.find((r) => (r?.result as any)?.isErrorPage);
+      if (errorPageResult) {
+        const errPayload = errorPageResult.result as any;
+        const pageUrl = scrubUrl(tab.url || '');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: [
+                `## ⚠️ Browser Navigation / Network Error`,
+                ``,
+                `The page at **${pageUrl || 'unknown URL'}** failed to load and is displaying Chrome's native error page (\`chrome-error://chromewebdata/\`).`,
+                ``,
+                `- **Reason**: ${errPayload?.error || 'Frame is showing error page'}`,
+                `- **Status**: Network unreachable, DNS failure, or page crashed.`,
+                ``,
+                `*Tip: Please check the URL, network connection, or try navigating to a valid address using \`browserclaw_navigate\`.*`,
+              ].join('\n'),
+            },
+          ],
+          isError: false,
+        };
       }
 
       // Merge multi-frame results
@@ -209,7 +261,8 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         mergedData.elementCount += subData.elementCount;
 
         if (typeof subData.virtualizedCount === 'number' && subData.virtualizedCount > 0) {
-          mergedData.virtualizedCount = (mergedData.virtualizedCount || 0) + subData.virtualizedCount;
+          mergedData.virtualizedCount =
+            (mergedData.virtualizedCount || 0) + subData.virtualizedCount;
         }
         if (Array.isArray(subData.virtualizedSummary) && subData.virtualizedSummary.length > 0) {
           if (!mergedData.virtualizedSummary) mergedData.virtualizedSummary = [];
@@ -278,7 +331,84 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
             });
           }
         }
+      }
 
+      // Dual-track CDP Accessibility Tree alignment & fusion (Task B5)
+      if (tab.id) {
+        try {
+          const axRes: any = await cdpSessionManager.sendCommand(
+            tab.id,
+            'Accessibility.getFullAXTree',
+            {},
+          );
+          if (axRes && Array.isArray(axRes.nodes)) {
+            const axNodes = axRes.nodes;
+            const axRoleMap = new Map<string, { role?: string; name?: string; value?: string }>();
+            const axIdMap = new Map<string, { role?: string; name?: string; value?: string }>();
+            for (const n of axNodes) {
+              const roleVal = n.role?.value;
+              const nameVal = n.name?.value;
+              const valVal = n.value?.value;
+              const info = { role: roleVal, name: nameVal, value: valVal };
+              if (nameVal) {
+                axRoleMap.set(nameVal.trim().toLowerCase(), info);
+              }
+              if (Array.isArray(n.properties)) {
+                for (const p of n.properties) {
+                  if (p.name === 'id' && p.value?.value) {
+                    axIdMap.set(String(p.value.value).trim().toLowerCase(), info);
+                  }
+                }
+              }
+            }
+
+            // Align AXTree attributes onto indexedElements
+            let treeChanged = false;
+            if (Array.isArray(mergedData.indexedElements)) {
+              for (const el of mergedData.indexedElements) {
+                const elText = (
+                  el.text ||
+                  el.attributes?.['aria-label'] ||
+                  el.attributes?.['title'] ||
+                  ''
+                )
+                  .trim()
+                  .toLowerCase();
+                const elId = (el.attributes?.id || '').trim().toLowerCase();
+                const axInfo =
+                  (elId ? axIdMap.get(elId) : undefined) ||
+                  (elText ? axRoleMap.get(elText) : undefined);
+                if (axInfo) {
+                  if (axInfo.role === 'button' || axInfo.role === 'link') {
+                    if (el.tagName.toLowerCase() === 'div' || el.tagName.toLowerCase() === 'span') {
+                      el.role = axInfo.role;
+                      el.isInteractive = true;
+                      if (el.attributes) el.attributes.role = axInfo.role;
+                      treeChanged = true;
+                    }
+                  }
+                  if (
+                    axInfo.value !== undefined &&
+                    (el.tagName.toLowerCase() === 'input' ||
+                      el.tagName.toLowerCase() === 'textarea')
+                  ) {
+                    el.value = axInfo.value;
+                    if (el.attributes) el.attributes.value = axInfo.value;
+                    treeChanged = true;
+                  }
+                }
+              }
+
+              if (treeChanged && args.format !== 'html') {
+                mergedData.treeString = mergedData.indexedElements
+                  .map((el) => renderCompactElementLine(el))
+                  .join('\n');
+              }
+            }
+          }
+        } catch {
+          // Graceful fallback when CDP is unavailable or not attached
+        }
       }
 
       // Count the interactive subset, not every indexed element: informational
@@ -308,7 +438,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
           mergedData.indexedElements || [],
         );
         snapshotCacheManager.setSnapshot(tab.id, {
-          url: tab.url || '',
+          url: scrubUrl(tab.url || ''),
           elementCount: mergedData.elementCount,
           elements: mergedData.indexedElements,
         });
@@ -373,7 +503,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
 
       // Record snapshot in cache manager (P1-6)
       const snapshot = snapshotCacheManager.setSnapshot(tab.id, {
-        url: tab.url || '',
+        url: scrubUrl(tab.url || ''),
         elementCount: mergedData.elementCount,
         elements: mergedData.indexedElements,
       });
@@ -405,7 +535,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         treeString,
         indexedElements: returnElements,
         snapshotId: snapshot.snapshotId,
-        tabUrl: tab.url,
+        tabUrl: scrubUrl(tab.url || ''),
         tabTitle: tab.title,
         cursor,
         limit,
@@ -417,7 +547,8 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
               selector: effectiveSelector,
               ...(args.scope ? { scope: args.scope } : {}),
               selectorMatched: Boolean(mergedData.selectorMatched),
-              ...(!mergedData.selectorMatched || (mergedData.elementCount === 0 && effectiveSelector.trim().toLowerCase() === 'form')
+              ...(!mergedData.selectorMatched ||
+              (mergedData.elementCount === 0 && effectiveSelector.trim().toLowerCase() === 'form')
                 ? {
                     message:
                       effectiveSelector.trim().toLowerCase() === 'form'
@@ -438,8 +569,7 @@ export class ReadDOMTool extends BaseBrowserToolExecutor {
         ...(args.exclude !== undefined ? { exclude: args.exclude } : {}),
         ...(mergedData.modalIsolated ? { modalIsolated: true } : {}),
         ...(mergedData.isConfirmationTrap ? { isConfirmationTrap: true } : {}),
-        pipelineHint:
-          `1-Turn Optimal Paradigm: Pipeline fill + submit in 1 turn via ${resolveToolName('batch_actions')}([{type: "fill", index: ..., text: "..."\x7d, {type: "click", index: ...\x7d]) or ${resolveToolName('fill_index')}({ index, text, pressEnter: true \x7d). Avoid splitting fill and submit into separate LLM turns.`,
+        pipelineHint: `1-Turn Optimal Paradigm: Pipeline fill + submit in 1 turn via ${resolveToolName('batch_actions')}([{type: "fill", index: ..., text: "..."\x7d, {type: "click", index: ...\x7d]) or ${resolveToolName('fill_index')}({ index, text, pressEnter: true \x7d). Avoid splitting fill and submit into separate LLM turns.`,
       };
 
       // Default response is the pruned tree plus counters only. The detail

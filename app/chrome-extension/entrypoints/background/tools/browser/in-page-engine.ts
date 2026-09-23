@@ -43,6 +43,14 @@ if (typeof chrome !== 'undefined' && chrome.tabs?.onUpdated) {
 /**
  * Detects whether an error represents page navigation, frame removal, or execution context destruction.
  */
+/**
+ * Detects whether an error represents Chrome's native error page (e.g. chrome-error://chromewebdata/).
+ */
+export function isShowingErrorPageError(error: unknown): boolean {
+  if (!error) return false;
+  const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return msg.includes('is showing error page');
+}
 export function isNavigationOrContextDestroyedError(error: unknown): boolean {
   if (!error) return false;
   const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
@@ -90,6 +98,7 @@ export async function executeInPage<R = any>(
   target: chrome.scripting.InjectionTarget,
   fnName: string,
   args: unknown[],
+  timeoutMs = EXECUTE_TIMEOUT_MS,
 ): Promise<chrome.scripting.InjectionResult<R>[]> {
   // Reject browser internal / web store pages up front so read_dom,
   // interact_index, batch_actions, etc. return a friendly error instead of the
@@ -115,6 +124,19 @@ export async function executeInPage<R = any>(
     } catch (err) {
       if (typeof target.tabId === 'number' && isNavigationOrContextDestroyedError(err)) {
         injectedTabs.delete(target.tabId);
+      }
+      if (isShowingErrorPageError(err)) {
+        return [
+          {
+            documentId: '',
+            frameId: 0,
+            result: {
+              error: err instanceof Error ? err.message : String(err),
+              isErrorPage: true,
+              success: false,
+            } as unknown as R,
+          },
+        ];
       }
       throw err;
     }
@@ -175,7 +197,11 @@ export async function executeInPage<R = any>(
               promise: raw,
               settled: !isAsync,
               listening: false,
-              value: !isAsync ? (raw === undefined ? { __mcpInpageReturn: 'undefined' } : raw) : undefined,
+              value: !isAsync
+                ? raw === undefined
+                  ? { __mcpInpageReturn: 'undefined' }
+                  : raw
+                : undefined,
               error: undefined,
             };
             g[slotKey] = box;
@@ -222,6 +248,19 @@ export async function executeInPage<R = any>(
     if (typeof target.tabId === 'number' && isNavigationOrContextDestroyedError(err)) {
       injectedTabs.delete(target.tabId);
     }
+    if (isShowingErrorPageError(err)) {
+      return [
+        {
+          documentId: '',
+          frameId: 0,
+          result: {
+            error: err instanceof Error ? err.message : String(err),
+            isErrorPage: true,
+            success: false,
+          } as unknown as R,
+        },
+      ];
+    }
     throw err;
   }
 
@@ -256,8 +295,7 @@ export async function executeInPage<R = any>(
     : (startResults ?? []);
 
   const allSingleTurn =
-    validResults.length > 0 &&
-    validResults.every((r) => r?.result?.singleTurn === true);
+    validResults.length > 0 && validResults.every((r) => r?.result?.singleTurn === true);
 
   if (allSingleTurn) {
     for (const r of validResults) {
@@ -284,7 +322,7 @@ export async function executeInPage<R = any>(
 
   try {
     // 2) Poll: attach settle callbacks; every dispatcher stays synchronous.
-    const deadline = Date.now() + EXECUTE_TIMEOUT_MS;
+    const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const pollResults = (await raceInjection(
         chrome.scripting.executeScript({
@@ -335,7 +373,8 @@ export async function executeInPage<R = any>(
           // A frame can navigate away between start and retrieve - drop it
           // silently; real engine-missing cases already fail at the start step.
           if (!box) return undefined;
-          if (!box.settled) return { __mcpInpageError: `timeout: entrypoint did not settle in ${timeoutMs}ms` };
+          if (!box.settled)
+            return { __mcpInpageError: `timeout: entrypoint did not settle in ${timeoutMs}ms` };
           if (box.error !== undefined) return { __mcpInpageError: box.error };
           return box.value === undefined ? { __mcpInpageReturn: 'undefined' } : box.value;
         },
@@ -358,6 +397,19 @@ export async function executeInPage<R = any>(
   } catch (err) {
     if (typeof target.tabId === 'number' && isNavigationOrContextDestroyedError(err)) {
       injectedTabs.delete(target.tabId);
+    }
+    if (isShowingErrorPageError(err)) {
+      return [
+        {
+          documentId: '',
+          frameId: 0,
+          result: {
+            error: err instanceof Error ? err.message : String(err),
+            isErrorPage: true,
+            success: false,
+          } as unknown as R,
+        },
+      ];
     }
     throw err;
   }

@@ -2,6 +2,7 @@ import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { LIMITS, NETWORK_FILTERS } from '@/common/constants';
 import { isPopupUrl } from '@/utils/popup-guard';
+import { scrubUrl } from '@/utils/url-sanitizer';
 
 // Static resource file extensions
 const STATIC_RESOURCE_EXTENSIONS = [
@@ -377,7 +378,7 @@ class NetworkCaptureStartTool extends BaseBrowserToolExecutor {
       if (!captureInfo.requests[details.requestId]) {
         captureInfo.requests[details.requestId] = {
           requestId: details.requestId,
-          url: details.url,
+          url: scrubUrl(details.url),
           method: details.method,
           type: details.type,
           requestTime: details.timeStamp,
@@ -816,7 +817,10 @@ class NetworkCaptureStartTool extends BaseBrowserToolExecutor {
         } else {
           // Create new tab (default active: false to protect user focus)
           console.log(`NetworkCaptureV2: Creating new tab with URL: ${targetUrl}`);
-          tabToOperateOn = await chrome.tabs.create({ url: targetUrl, active: (args as any).background === false });
+          tabToOperateOn = await chrome.tabs.create({
+            url: targetUrl,
+            active: (args as any).background === false,
+          });
 
           // Wait for page to load
           await new Promise((resolve) => setTimeout(resolve, 1000));

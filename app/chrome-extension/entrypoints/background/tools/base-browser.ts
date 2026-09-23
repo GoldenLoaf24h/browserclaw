@@ -257,7 +257,7 @@ export abstract class BaseBrowserToolExecutor implements ToolExecutor {
    * Get the active tab in the current window. Throws when not found.
    */
   protected async getActiveTabOrThrow(): Promise<chrome.tabs.Tab> {
-    const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const active = await this.getActiveTabInWindow();
     if (!active || !active.id) throw new Error('Active tab not found');
     return active;
   }
@@ -288,8 +288,14 @@ export abstract class BaseBrowserToolExecutor implements ToolExecutor {
       const tabs = await chrome.tabs.query({ active: true, windowId });
       return tabs && tabs[0] ? tabs[0] : null;
     }
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    return tabs && tabs[0] ? tabs[0] : null;
+    let [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (!active || !active.id) {
+      [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+    }
+    if (!active || !active.id) {
+      [active] = await chrome.tabs.query({ active: true });
+    }
+    return active && active.id ? active : null;
   }
 
   /**

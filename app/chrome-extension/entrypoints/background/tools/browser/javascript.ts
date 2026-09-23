@@ -42,7 +42,7 @@ export const MCP_INPAGE_HELPERS = `const mcp = (() => {
   const deref = (e) => (e && typeof e.deref === 'function' ? e.deref() : e);
 
   // Robust :has-text evaluator supporting:
-  // 1. Quotes with escaped characters: :has-text("Submit \"Now\"")
+  // 1. Quotes with escaped characters: :has-text("Submit 'Now'")
   // 2. Regular expressions: :has-text(/失效|无货/)
   // 3. Comma-separated selectors: button:has-text("A"), button:has-text("B")
   // 4. Non-terminal pseudo-selectors: tr:has-text("Order #123") button
@@ -657,7 +657,8 @@ type ErrorKind =
   | 'scripting_error';
 
 interface JavaScriptToolParams {
-  code: string;
+  code?: string;
+  script?: string;
   tabId?: number;
   contextId?: number;
   timeoutMs?: number;
@@ -828,7 +829,9 @@ export function wrapUserCode(code: string): string {
     return `(async () => {\n${MCP_INPAGE_HELPERS}return (\n${expr}\n);\n})()`;
   }
   const trimmed = code.trim();
-  const declMatch = /^\s*(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=([\s\S]+)$/.exec(trimmed);
+  const declMatch = /^\s*(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=([\s\S]+)$/.exec(
+    trimmed,
+  );
   if (declMatch) {
     const varName = declMatch[1];
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
@@ -921,6 +924,7 @@ async function executeViaCdp(
           expression,
           returnByValue: true,
           awaitPromise: true,
+          includeCommandLineAPI: true,
           // CDP 内置超时（毫秒），与外层 withTimeout 双重保障
           timeout: options.timeoutMs,
         };
@@ -1044,9 +1048,10 @@ async function executeViaScripting(
             if (validExpr !== null) {
               codeToRun = `return (\n${validExpr}\n);`;
             } else {
-              const declMatch = /^\s*(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*([\s\S]+?);?\s*$/.exec(
-                rawTrimmed,
-              );
+              const declMatch =
+                /^\s*(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*([\s\S]+?);?\s*$/.exec(
+                  rawTrimmed,
+                );
               if (declMatch && !declMatch[2].includes(';\n') && !declMatch[2].includes(';\r\n')) {
                 codeToRun = `${userCode}\nreturn ${declMatch[1]};`;
               }
@@ -1144,8 +1149,9 @@ class JavaScriptTool extends BaseBrowserToolExecutor {
     const startTime = performance.now();
 
     try {
-      // Validate required parameter
-      const code = typeof args?.code === 'string' ? args.code.trim() : '';
+      // Validate required parameter (supports code or script alias)
+      const rawCode = args?.code ?? args?.script;
+      const code = typeof rawCode === 'string' ? rawCode.trim() : '';
       if (!code) {
         return createErrorResponse('Parameter [code] is required');
       }

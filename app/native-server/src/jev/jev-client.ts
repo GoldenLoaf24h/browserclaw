@@ -269,10 +269,34 @@ const LATIN_DESTRUCTIVE_REGEX = new RegExp(
 /**
  * Check if element text or label hits destructive keywords
  */
+/**
+ * Extract the human-visible label/text from a compact element line so keyword
+ * matching only sees what the user actually reads — never the technical id /
+ * class / href attributes. Prevents false positives like the Reddit
+ * "Add tags" button whose id is "#reddit-post-flair-button" (kebab-case "post"
+ * was matching the destructive keyword and blocking a benign tag action).
+ *
+ * Compact format: "[index] [flags] role \"text\" #id ..." → returns "text".
+ * HTML format:    "<tag ...>\"text\"</tag>" or "<tag ...>text</tag>".
+ * Fallback:       strip "#id" and selector attributes, keep the remainder.
+ */
+function extractTargetVisibleText(raw: string): string {
+  if (!raw) return '';
+  if (/^\[\d+\]/.test(raw)) {
+    const quotedMatch = raw.match(/^\[\d+\](?:\s*\[[\w-]+\])*\s*[a-zA-Z-]+\s*"([^"]+)"/);
+    if (quotedMatch) return quotedMatch[1];
+    const htmlMatch = raw.match(/>\s*"?([^"<]+)"?\s*</);
+    if (htmlMatch) return htmlMatch[1];
+    return raw.replace(/#[\w-]+/g, '').replace(/\b(?:href|name|placeholder)="[^"]*"/g, '');
+  }
+  return raw;
+}
+
 export function isDestructiveTarget(text: string): boolean {
   if (!text) return false;
-  if (LATIN_DESTRUCTIVE_REGEX.test(text)) return true;
-  const lower = text.toLowerCase();
+  const targetText = extractTargetVisibleText(text);
+  if (LATIN_DESTRUCTIVE_REGEX.test(targetText)) return true;
+  const lower = targetText.toLowerCase();
   for (const kw of NON_LATIN_DESTRUCTIVE_KEYWORDS) {
     if (lower.includes(kw.trim().toLowerCase())) return true;
   }
@@ -477,7 +501,8 @@ export class JevClientWrapper {
         );
         if (found >= 0) bestCandidateIndex = found;
       }
-      confidence = typeof answer.confidence === 'number' ? answer.confidence : (probs[chosenKey] ?? 1.0);
+      confidence =
+        typeof answer.confidence === 'number' ? answer.confidence : (probs[chosenKey] ?? 1.0);
       scoreVal = bestCandidateIndex;
     } else {
       // type === 'score' or legacy rubric response

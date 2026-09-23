@@ -54,6 +54,9 @@ export interface IndexedElement {
   isSearch?: boolean;
   /** True when element is a Web Component host with closed/encapsulated shadow root */
   isClosedShadowHost?: boolean;
+  /** True when element is an actionable trigger inside a composite card (reply, like, retweet, etc.) */
+  isActionTrigger?: boolean;
+  actionTriggerType?: string;
 }
 
 export interface ScrollInfo {
@@ -352,4 +355,29 @@ export interface UnifiedLocatorResult {
   isSearch?: boolean;
   error?: string;
   warning?: string;
+  isSelectOption?: boolean;
+  scopeHash?: string;
+}
+
+export interface ScrollUntilFoundOptions {
+  query?: string;
+  selector?: string;
+  isRegex?: boolean;
+  maxSteps?: number;
+  stepPx?: number;
+  direction?: 'down' | 'up';
+  timeoutMs?: number;
+  containerSelector?: string;
+  settleMs?: number;
+}
+
+export interface ScrollUntilFoundResult {
+  found: boolean;
+  index?: number;
+  tagName?: string;
+  text?: string;
+  stepsTaken: number;
+  scrolledPx: number;
+  coordinates?: { x: number; y: number };
+  message: string;
 }

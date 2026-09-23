@@ -33,6 +33,7 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
     monkeypatch.delenv('BROWSERCLAW_MCP_TOKEN', raising=False)
     monkeypatch.delenv('CHROME_MCP_TOKEN', raising=False)
+    monkeypatch.setattr(urllib.request, 'urlopen', lambda *args, **kwargs: (_ for _ in ()).throw(urllib.error.URLError('offline in unit test')))
     return tmp_path
 
 

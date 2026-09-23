@@ -92,7 +92,7 @@
 
 > _“帮我配置 BrowserClaw：https://github.com/GoldenLoaf24h/browserclaw ，阅读仓库中的 `INSTALL.md` 并按步骤自动安装。”_
 
-AI 将自动完成本地服务的编译与注册。随后你只需从 **[Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** 下载最新的 **`browserclaw-extension-v*.zip`** 资产（例如 `browserclaw-extension-v3.0.0.zip`），解压到本地固定目录，打开 `chrome://extensions` 开启“开发者模式”，将该解压文件夹拖入即可。
+AI 将自动完成本地服务的编译与注册。随后你只需从 **[Releases](https://github.com/GoldenLoaf24h/browserclaw/releases/latest)** 下载最新的 **`browserclaw-extension-v*.zip`** 资产（例如 `browserclaw-extension-v3.1.0.zip`），解压到本地固定目录，打开 `chrome://extensions` 开启“开发者模式”，将该解压文件夹拖入即可。
 
 ### 方案二：通过 ChatGPT / Codex 插件市场添加
 

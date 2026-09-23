@@ -8,6 +8,8 @@ import { computeHumanizedPoints } from '@/utils/mouse-trajectory';
 import { resolveTargetLocation } from './unified-locator';
 import { sessionTabAffinity, type TabHandoverInfo } from '@/utils/session-tab-affinity';
 import { resolveToolName } from 'chrome-mcp-shared';
+import { dispatchNativeSelectAll } from './keyboard';
+import { snapshotCacheManager } from '@/utils/snapshot-cache-manager';
 export { getNativeValueSetter, getNativeCheckedSetter } from './fast-snapshot';
 
 export class FocusVerificationError extends Error {
@@ -89,17 +91,20 @@ export async function performPhysicalFill(
   // Arm handover tracker at the very start of physical fill so any navigation/tab derivation
   // triggered by pressEnter, typing, or auto-submit is reliably captured without races.
   const handoverTracker =
-    pressEnter || submit
-      ? sessionTabAffinity.startHandoverTracking(tabId, sessionId)
-      : null;
+    pressEnter || submit ? sessionTabAffinity.startHandoverTracking(tabId, sessionId) : null;
 
   const isNumericIndex =
     typeof target === 'number' || (typeof target === 'string' && /^\d+$/.test(target));
-  let numericIndex = isNumericIndex ? (typeof target === 'number' ? target : parseInt(target, 10)) : undefined;
+  let numericIndex = isNumericIndex
+    ? typeof target === 'number'
+      ? target
+      : parseInt(target, 10)
+    : undefined;
   const explicitSelector = options.selector;
   const isExplicitRef =
     typeof target === 'string' && (target.startsWith('ref_') || target.startsWith('e'));
-  const effectiveSelector = explicitSelector || (!isNumericIndex && !isExplicitRef ? String(target) : undefined);
+  const effectiveSelector =
+    explicitSelector || (!isNumericIndex && !isExplicitRef ? String(target) : undefined);
   const selectorOrRef = !isNumericIndex ? String(target) : effectiveSelector;
 
   let targetX: number | undefined;
@@ -107,6 +112,7 @@ export async function performPhysicalFill(
   let targetFrameId = 0;
   let coords: any = null;
   let resolutionPath: string | undefined;
+  let disambiguationWarning: string | undefined;
 
   // 1. Resolve target coordinates and metadata
   if (numericIndex !== undefined && numericIndex > 0) {
@@ -122,6 +128,14 @@ export async function performPhysicalFill(
       if (match?.result) {
         coords = match.result;
         targetFrameId = match.frameId ?? 0;
+        if (coords.warning) {
+          disambiguationWarning = disambiguationWarning
+            ? `${disambiguationWarning}; ${coords.warning}`
+            : coords.warning;
+        }
+        if (coords.scopeHash && typeof numericIndex === 'number') {
+          snapshotCacheManager.isScopeValid(tabId, numericIndex, coords.scopeHash);
+        }
         if (targetFrameId !== 0) {
           const offset = await getSubframeViewportOffset(tabId, targetFrameId);
           const localX = coords?.frameOffsetX || 0;
@@ -240,7 +254,7 @@ export async function performPhysicalFill(
 
       const resObj: PhysicalFillResult = {
         success: comboRes?.success !== false && comboRes?.committed !== false,
-        committed: comboRes?.committed ?? (comboRes?.success !== false),
+        committed: comboRes?.committed ?? comboRes?.success !== false,
         index: numericIndex,
         ref: options.target,
         selector: selectorOrRef,
@@ -251,7 +265,10 @@ export async function performPhysicalFill(
         inputType: 'combobox',
         resolutionPath,
         diagnostics: comboRes?.error || comboRes?.diagnostics,
-        error: comboRes?.success === false ? (comboRes?.error || 'Custom combobox selection failed') : undefined,
+        error:
+          comboRes?.success === false
+            ? comboRes?.error || 'Custom combobox selection failed'
+            : undefined,
       };
 
       if (submit && resObj.success) {
@@ -319,7 +336,10 @@ export async function performPhysicalFill(
 
             if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
               const isTruthy =
-                val === 'true' || val === '1' || val === 'checked' || val === 'on' ||
+                val === 'true' ||
+                val === '1' ||
+                val === 'checked' ||
+                val === 'on' ||
                 (val !== 'false' && val !== '0' && val !== 'off' && Boolean(val));
               if (nativeCheckboxSetter) nativeCheckboxSetter.call(el, isTruthy);
               else el.checked = isTruthy;
@@ -358,7 +378,7 @@ export async function performPhysicalFill(
 
     const resObj: PhysicalFillResult = {
       success: outcome?.success !== false,
-      committed: outcome?.committed ?? (outcome?.success !== false),
+      committed: outcome?.committed ?? outcome?.success !== false,
       index: numericIndex,
       ref: options.target,
       selector: selectorOrRef,
@@ -385,7 +405,6 @@ export async function performPhysicalFill(
   }
 
   // 3. Disambiguation check (Search input vs multi-line post text)
-  let disambiguationWarning: string | undefined;
   const isSearchTarget = Boolean(
     coords?.isSearch ||
     coords?.inputType === 'search' ||
@@ -399,7 +418,10 @@ export async function performPhysicalFill(
     /(http|#|@|tweet|post|reply|thread)/i.test(textToFill);
 
   if (isSearchTarget && isMultiLineOrPostText) {
-    disambiguationWarning = `[Input Disambiguation Notice] Targeted element [${target}] appears to be a search input (searchbox), but the filled text looks like a multi-line post or comment. If you intended to post or reply, verify with ${resolveToolName('read_dom')} to target the [composer] element instead.`;
+    const searchNotice = `[Input Disambiguation Notice] Targeted element [${target}] appears to be a search input (searchbox), but the filled text looks like a multi-line post or comment. If you intended to post or reply, verify with ${resolveToolName('read_dom')} to target the [composer] element instead.`;
+    disambiguationWarning = disambiguationWarning
+      ? `${disambiguationWarning}; ${searchNotice}`
+      : searchNotice;
     console.warn(`[performPhysicalFill] ${disambiguationWarning}`);
   }
 
@@ -450,7 +472,11 @@ export async function performPhysicalFill(
               selector: effectiveSelector,
               preferComposer,
             });
-            if (freshLoc.success && typeof freshLoc.x === 'number' && typeof freshLoc.y === 'number') {
+            if (
+              freshLoc.success &&
+              typeof freshLoc.x === 'number' &&
+              typeof freshLoc.y === 'number'
+            ) {
               targetX = freshLoc.x;
               targetY = freshLoc.y;
               if (typeof freshLoc.index === 'number') numericIndex = freshLoc.index;
@@ -544,7 +570,7 @@ export async function performPhysicalFill(
           );
         }
 
-        // Deep reset
+        // Deep reset with native SelectAll command (Task B3)
         if (clear === true || (clear !== false && !isKnownEmpty)) {
           if (numericIndex !== undefined) {
             try {
@@ -555,6 +581,7 @@ export async function performPhysicalFill(
               );
             } catch {}
           }
+          await dispatchNativeSelectAll(tabId).catch(() => {});
           await raceCdp(tabId, 'Input.dispatchKeyEvent', {
             type: 'rawKeyDown',
             windowsVirtualKeyCode: 8,
@@ -602,6 +629,15 @@ export async function performPhysicalFill(
           } else {
             await raceCdp(tabId, 'Input.insertText', { text: String(textToFill) });
           }
+
+          // Synthetic bubbling input & change pair to guarantee framework reactive states see update
+          try {
+            await executeInPage(
+              targetFrameId !== 0 ? { tabId, frameIds: [targetFrameId] } : { tabId },
+              'inPageDispatchInputEvents',
+              [numericIndex],
+            ).catch(() => {});
+          } catch {}
         }
 
         // Settle React/Vue microtasks
@@ -755,7 +791,10 @@ export async function performPhysicalFill(
       if (cdpErr instanceof StalePageError) {
         throw cdpErr;
       }
-      console.warn(`[performPhysicalFill] CDP native fill failed on target [${target}], falling back to inPageFillIndex:`, cdpErr);
+      console.warn(
+        `[performPhysicalFill] CDP native fill failed on target [${target}], falling back to inPageFillIndex:`,
+        cdpErr,
+      );
     }
   }
 
@@ -770,11 +809,12 @@ export async function performPhysicalFill(
       ]);
       outcome = results?.[0]?.result;
       if (!outcome || !outcome.success) {
-        const frameResults = await executeInPage(
-          { tabId, allFrames: true },
-          'inPageFillIndex',
-          [numericIndex, textToFill, clear !== false, pressEnter],
-        );
+        const frameResults = await executeInPage({ tabId, allFrames: true }, 'inPageFillIndex', [
+          numericIndex,
+          textToFill,
+          clear !== false,
+          pressEnter,
+        ]);
         const match = frameResults.find((r) => r.result?.success);
         if (match?.result) outcome = match.result;
       }
@@ -871,7 +911,10 @@ export async function performPhysicalFill(
 
             if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
               const isTruthy =
-                val === 'true' || val === '1' || val === 'checked' || val === 'on' ||
+                val === 'true' ||
+                val === '1' ||
+                val === 'checked' ||
+                val === 'on' ||
                 (val !== 'false' && val !== '0' && val !== 'off' && Boolean(val));
               if (nativeChkSetter) nativeChkSetter.call(el, isTruthy);
               else el.checked = isTruthy;
@@ -989,17 +1032,52 @@ async function handleAutoSubmit(
   result.autoSubmitHandled = true;
   if (result.submitted) return;
 
-  if (
-    result.submitButtonState?.found &&
-    typeof result.submitButtonState.index === 'number'
-  ) {
+  if (result.submitButtonState?.found && typeof result.submitButtonState.index === 'number') {
     const btnIdx = result.submitButtonState.index;
     try {
+      // P1: Rich-text editor (Draft.js/ProseMirror/React) reactive settle polling:
+      // Wait for button to transition from disabled to enabled (up to 450ms, polling every 50ms)
+      try {
+        await chrome.scripting.executeScript({
+          target: targetFrameId !== 0 ? { tabId, frameIds: [targetFrameId] } : { tabId },
+          func: (idx: number) => {
+            return new Promise<void>((resolve) => {
+              const start = Date.now();
+              function check() {
+                const isolatedMap = (globalThis as any)[
+                  Symbol.for('__browser_use_isolated_index_map__')
+                ];
+                const entry = isolatedMap?.get(idx);
+                const el = typeof entry?.deref === 'function' ? entry.deref() : entry;
+                if (el) {
+                  const disabled =
+                    el.disabled === true ||
+                    el.getAttribute('aria-disabled') === 'true' ||
+                    el.classList.contains('disabled') ||
+                    el.style.pointerEvents === 'none';
+                  if (!disabled || Date.now() - start > 450) {
+                    resolve();
+                    return;
+                  }
+                } else if (Date.now() - start > 450) {
+                  resolve();
+                  return;
+                }
+                setTimeout(check, 50);
+              }
+              check();
+            });
+          },
+          args: [btnIdx],
+        });
+      } catch {}
+
       const { interactIndexTool } = await import('./interact-index');
       const clickPromise = interactIndexTool.execute({
         index: btnIdx,
         action: 'click',
         tabId,
+        skipLock: true,
         sessionId,
         waitForSettle: false,
       });
@@ -1026,7 +1104,10 @@ async function handleAutoSubmit(
       }
       return;
     } catch (clickErr) {
-      console.warn('[performPhysicalFill] Auto-submit click failed, falling back to Enter:', clickErr);
+      console.warn(
+        '[performPhysicalFill] Auto-submit click failed, falling back to Enter:',
+        clickErr,
+      );
     }
   }
 

@@ -27,6 +27,12 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
+_plugin_config: Dict[str, Any] = {
+    'native_server_port': 12306,
+    'auth_token': None,
+    'isolate_modal': False,
+}
+
 DEFAULT_URLS = [
     os.getenv('BROWSERCLAW_MCP_URL', 'http://127.0.0.1:12306/mcp'),
     'http://127.0.0.1:12306/mcp',
@@ -43,7 +49,7 @@ SESSION_ID_ENV_VARS = ('BROWSERCLAW_MCP_SESSION_ID', 'CHROME_MCP_SESSION_ID')
 MCP_PROTOCOL_VERSION = '2024-11-05'
 CLIENT_INFO = {
     'name': 'browserclaw-python-plugin',
-    'version': '3.0.0',
+    'version': '3.1.0',
 }
 
 _AUTH_HELP = (
@@ -114,7 +120,8 @@ def _get_target_urls() -> List[str]:
     env_url = os.getenv('BROWSERCLAW_MCP_URL', '').strip()
     if env_url:
         urls.append(env_url)
-    default_url = 'http://127.0.0.1:12306/mcp'
+    port = _plugin_config.get('native_server_port') or 12306
+    default_url = f'http://127.0.0.1:{port}/mcp'
     if default_url not in urls:
         urls.append(default_url)
     return urls
@@ -294,15 +301,36 @@ def _bridge_token() -> Optional[str]:
     Read lazily on every call: the file is tiny and the native server may
     regenerate it between calls.
     """
+    cfg_token = _plugin_config.get('auth_token')
+    if cfg_token:
+        return str(cfg_token).strip()
     for name in BRIDGE_TOKEN_ENV_VARS:
         value = os.getenv(name, '').strip()
         if value:
             return value
     try:
         value = (Path.home() / BRIDGE_TOKEN_FILE).read_text(encoding='utf-8').strip()
+        if value:
+            return value
     except OSError:
-        return None
-    return value or None
+        pass
+
+    # Loopback mutual-trust fallback: query native bridge token endpoint directly
+    try:
+        port = _plugin_config.get('native_server_port') or 12306
+        req = urllib.request.Request(
+            f'http://127.0.0.1:{port}/token',
+            headers={'x-hermes-auth': 'local', 'x-local-trust': 'true'},
+        )
+        with urllib.request.urlopen(req, timeout=0.5) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            token = data.get('token')
+            if token and isinstance(token, str):
+                return token.strip()
+    except Exception:
+        pass
+
+    return None
 
 
 def _align_response_tool_names(text: str) -> str:
@@ -315,6 +343,9 @@ def _align_response_tool_names(text: str) -> str:
 
 
 def _call_browserclaw(tool_name: str, arguments: dict) -> str:
+    if tool_name == 'browserclaw_read_dom' and isinstance(arguments, dict):
+        if 'isolateModal' not in arguments and _plugin_config.get('isolate_modal'):
+            arguments['isolateModal'] = True
     remote_name = tool_name
     if tool_name == 'browserclaw_get_windows_and_tabs':
         remote_name = 'get_windows_and_tabs'
@@ -424,8 +455,9 @@ def _call_browserclaw(tool_name: str, arguments: dict) -> str:
                 last_error = str(e)
                 break
 
+    port = _plugin_config.get('native_server_port') or 12306
     return json.dumps({
-        'error': f'BrowserClaw server not reachable ({last_error}). Ensure Chrome extension is loaded and native server is running on http://127.0.0.1:12306/mcp.',
+        'error': f'BrowserClaw server not reachable ({last_error}). Ensure Chrome extension is loaded and native server is running on http://127.0.0.1:{port}/mcp.',
     })
 
 def _register_bundled_skill(ctx: Any) -> None:
@@ -1681,6 +1713,68 @@ TOOL_DEFINITIONS = {
                 "goal"
             ]
         }
+    },
+    "browserclaw_scroll_until_found": {
+        "description": "Performs client-side step-by-step scrolling until an element matching a text query, regex, or selector is found. Waits for virtual lists (DOM recycling) to settle at each step, searches light and shadow DOM, centers the target in the viewport, and returns its 1-based index and safe coordinates.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Text query or keyword to search for during scrolling"
+                },
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector to search for during scrolling (supports >>> and /deep/ shadow piercing)"
+                },
+                "isRegex": {
+                    "type": "boolean",
+                    "description": "Treat query as a regular expression pattern (default: false)"
+                },
+                "maxSteps": {
+                    "type": "number",
+                    "description": "Maximum number of scroll steps before giving up (default: 10, max: 50)"
+                },
+                "stepPx": {
+                    "type": "number",
+                    "description": "Scroll distance in pixels per step (default: 800)"
+                },
+                "direction": {
+                    "type": "string",
+                    "enum": ["down", "up"],
+                    "description": "Scroll direction (default: \"down\")"
+                },
+                "timeoutMs": {
+                    "type": "number",
+                    "description": "Timeout in milliseconds for the overall scrolling operation (default: 15000)"
+                },
+                "containerSelector": {
+                    "type": "string",
+                    "description": "CSS selector for a custom scrollable container (defaults to window)"
+                },
+                "settleMs": {
+                    "type": "number",
+                    "description": "Delay in milliseconds to wait for virtual lists / DOM recycling after each scroll (default: 150)"
+                },
+                "tabId": {
+                    "type": "number",
+                    "description": "Target tab ID (optional, defaults to active tab)"
+                },
+                "windowId": {
+                    "type": "number",
+                    "description": "Target window ID (optional)"
+                },
+                "sessionId": {
+                    "type": "string",
+                    "description": "Session identifier for tab affinity binding"
+                },
+                "sessionContext": {
+                    "type": "string",
+                    "description": "Optional alias for sessionId"
+                }
+            },
+            "required": []
+        }
     }
 }
 
@@ -1771,6 +1865,12 @@ BROWSERCLAW_SPECS: Dict[str, Dict[str, Any]] = {
         "verb": "Searching DOM",
         "primary_arg": "query",
         "builder": lambda a, m: f'query: "{_clip_display_text(a.get("query", ""), 25)}"',
+    },
+    "browserclaw_scroll_until_found": {
+        "emoji": "📜",
+        "verb": "Auto-scrolling until found",
+        "primary_arg": "query",
+        "builder": lambda a, m: f'target: "{_clip_display_text(a.get("query") or a.get("selector") or "", 25)}"',
     },
     "browserclaw_get_markdown": {
         "emoji": "📄",
@@ -2332,6 +2432,20 @@ def _register_display_formatters() -> None:
         pass
 
 def register(ctx: Any) -> None:
+    global _plugin_config
+    if hasattr(ctx, 'config') and ctx.config:
+        try:
+            if hasattr(ctx.config, 'get'):
+                _plugin_config['native_server_port'] = int(ctx.config.get('native_server_port', 12306) or 12306)
+                _plugin_config['auth_token'] = ctx.config.get('auth_token', None)
+                _plugin_config['isolate_modal'] = bool(ctx.config.get('isolate_modal', False))
+            elif isinstance(ctx.config, dict):
+                _plugin_config['native_server_port'] = int(ctx.config.get('native_server_port', 12306) or 12306)
+                _plugin_config['auth_token'] = ctx.config.get('auth_token', None)
+                _plugin_config['isolate_modal'] = bool(ctx.config.get('isolate_modal', False))
+        except Exception as exc:
+            logger.debug('Failed to parse plugin config: %s', exc)
+
     _register_bundled_skill(ctx)
     _register_display_formatters()
 
@@ -2373,3 +2487,58 @@ def register(ctx: Any) -> None:
 
     # Ensure registry entries have emoji updated after registration
     _register_display_formatters()
+
+
+def browserclaw_scroll_until_found(
+    query: Optional[str] = None,
+    selector: Optional[str] = None,
+    is_regex: bool = False,
+    max_steps: int = 10,
+    step_px: int = 800,
+    direction: str = 'down',
+    timeout_ms: int = 15000,
+    container_selector: Optional[str] = None,
+    settle_ms: int = 150,
+    tab_id: Optional[int] = None,
+    session_id: Optional[str] = None,
+) -> str:
+    """Scroll step-by-step in the active page until an element matching query or selector is found.
+
+    Executes in-page client-side RAF/step scrolling, waiting for virtual lists to render at each step,
+    probing open and shadow DOM trees. Upon finding, stops scrolling, centers the element in the viewport,
+    and returns its 1-based index and safe coordinates.
+    """
+    args: Dict[str, Any] = {
+        'isRegex': is_regex,
+        'maxSteps': max_steps,
+        'stepPx': step_px,
+        'direction': direction,
+        'timeoutMs': timeout_ms,
+        'settleMs': settle_ms,
+    }
+    if query:
+        args['query'] = query
+    if selector:
+        args['selector'] = selector
+    if container_selector:
+        args['containerSelector'] = container_selector
+    if tab_id is not None:
+        args['tabId'] = tab_id
+    if session_id:
+        args['sessionId'] = session_id
+
+    return _call_browserclaw('browserclaw_scroll_until_found', args)
+
+
+def browserclaw_eval(script: str, tab_id: Optional[int] = None) -> str:
+    """Execute raw JavaScript in the active tab context as a high-privilege fallback."""
+    args: Dict[str, Any] = {'code': script, 'script': script}
+    if tab_id is not None:
+        args['tabId'] = tab_id
+    return _call_browserclaw('browserclaw_javascript', args)
+
+
+def browserclaw_execute_script(script: str, tab_id: Optional[int] = None) -> str:
+    """Alias for browserclaw_eval."""
+    return browserclaw_eval(script, tab_id=tab_id)
+

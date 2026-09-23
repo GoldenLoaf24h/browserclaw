@@ -294,6 +294,9 @@ class KeyboardTool extends BaseBrowserToolExecutor {
         }
         // Clear selector so keyboard events go to the focused element
         finalSelector = undefined;
+      } else if (!finalSelector) {
+        // Modal Focus Trap: if a modal blocker is active, pull focus into the modal so Tab/Enter don't hit background DOM
+        await executeInPage({ tabId: tab.id }, 'inPageEnsureModalFocus', []).catch(() => {});
       }
 
       const frameIds = typeof args.frameId === 'number' ? [args.frameId] : undefined;
@@ -395,3 +398,35 @@ class KeyboardTool extends BaseBrowserToolExecutor {
 }
 
 export const keyboardTool = new KeyboardTool();
+
+/**
+ * Dispatch OS-adaptive native SelectAll command through CDP.
+ * Modeled after Browser-Harness (BH: src/browser_harness/helpers.py:221-248) and
+ * JEV (jev_ultrafast/browser.py:170-180).
+ */
+export async function dispatchNativeSelectAll(tabId: number): Promise<void> {
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    /Mac|iPhone|iPod|iPad/i.test(navigator.platform || navigator.userAgent);
+  const modifierMask = isMac ? 4 : 2; // Meta (Mac: 4) vs Ctrl (Win/Linux: 2)
+
+  await cdpSessionManager.withSession(tabId, 'keyboard-select-all', async () => {
+    await cdpSessionManager.sendCommand(tabId, 'Input.dispatchKeyEvent', {
+      type: 'rawKeyDown',
+      key: 'a',
+      code: 'KeyA',
+      windowsVirtualKeyCode: 65,
+      nativeVirtualKeyCode: 65,
+      modifiers: modifierMask,
+      commands: ['SelectAll'],
+    });
+    await cdpSessionManager.sendCommand(tabId, 'Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'a',
+      code: 'KeyA',
+      windowsVirtualKeyCode: 65,
+      nativeVirtualKeyCode: 65,
+      modifiers: modifierMask,
+    });
+  });
+}

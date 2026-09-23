@@ -4,6 +4,9 @@ import {
   renderCompactElementLine,
   querySelectorAllDeep,
   querySelectorDeep,
+  splitSelectorSafely,
+  splitByCharacterUnlessQuoted,
+  parentElementOrShadowHost,
   composedContains,
   composedParent,
   extractCleanElementText,
@@ -523,6 +526,92 @@ describe('Deep Shadow DOM Piercing & Visual Drift Compensation', () => {
       const snap = inPageSnapCoordinate(110, 750, 24);
       expect(snap.snapped).toBe(true);
       expect(scrolledIntoView).toBe(true);
+    });
+    describe('6. Cross-Root Composite Selector Engine (Shadow DOM Piercing)', () => {
+      it('safely splits selectors without breaking spaces in single or double quoted attributes', () => {
+        const tokens1 = splitSelectorSafely('textarea[placeholder="Body text*"]');
+        expect(tokens1).toEqual(['textarea[placeholder="Body text*"]']);
+
+        const tokens2 = splitSelectorSafely("textarea[placeholder='Body text*']");
+        expect(tokens2).toEqual(["textarea[placeholder='Body text*']"]);
+
+        const tokens3 = splitSelectorSafely('shreddit-markdown-composer textarea');
+        expect(tokens3).toEqual(['shreddit-markdown-composer', 'textarea']);
+
+        const tokens4 = splitSelectorSafely('shreddit-markdown-composer >> textarea');
+        expect(tokens4).toEqual(['shreddit-markdown-composer', 'textarea']);
+
+        const tokens5 = splitSelectorSafely('shreddit-markdown-composer >>> textarea');
+        expect(tokens5).toEqual(['shreddit-markdown-composer', 'textarea']);
+
+        const tokens6 = splitSelectorSafely('shreddit-markdown-composer /deep/ textarea');
+        expect(tokens6).toEqual(['shreddit-markdown-composer', 'textarea']);
+
+        const tokens7 = splitSelectorSafely('div > span + p ~ a');
+        expect(tokens7).toEqual(['div>span+p~a']);
+      });
+
+      it('pierces shadow boundaries to match textarea[placeholder="Body text*"] inside shadow DOM', () => {
+        const host = document.createElement('custom-editor');
+        document.body.appendChild(host);
+
+        const shadow = host.attachShadow({ mode: 'open' });
+        const textarea = document.createElement('textarea');
+        textarea.setAttribute('placeholder', 'Body text*');
+        shadow.appendChild(textarea);
+
+        const found = querySelectorDeep('textarea[placeholder="Body text*"]', document);
+        expect(found).toBe(textarea);
+      });
+
+      it('matches cross-shadow composite selector shreddit-markdown-composer textarea', () => {
+        const composer = document.createElement('shreddit-markdown-composer');
+        document.body.appendChild(composer);
+
+        const shadow = composer.attachShadow({ mode: 'open' });
+        const innerDiv = document.createElement('div');
+        const textarea = document.createElement('textarea');
+        textarea.id = 'post-content-textarea';
+        innerDiv.appendChild(textarea);
+        shadow.appendChild(innerDiv);
+
+        // 1. Descendant space piercing
+        const matchedBySpace = querySelectorDeep('shreddit-markdown-composer textarea', document);
+        expect(matchedBySpace).toBe(textarea);
+
+        // 2. Playwright >> piercing
+        const matchedByPlaywright = querySelectorDeep(
+          'shreddit-markdown-composer >> textarea',
+          document,
+        );
+        expect(matchedByPlaywright).toBe(textarea);
+
+        // 3. Shadow combinator >>> piercing
+        const matchedByTriple = querySelectorDeep(
+          'shreddit-markdown-composer >>> textarea',
+          document,
+        );
+        expect(matchedByTriple).toBe(textarea);
+
+        // 4. /deep/ piercing
+        const matchedByDeep = querySelectorDeep(
+          'shreddit-markdown-composer /deep/ textarea',
+          document,
+        );
+        expect(matchedByDeep).toBe(textarea);
+      });
+
+      it('finds parent element or shadow host across shadow boundaries using parentElementOrShadowHost', () => {
+        const host = document.createElement('my-host-element');
+        document.body.appendChild(host);
+
+        const shadow = host.attachShadow({ mode: 'open' });
+        const innerChild = document.createElement('span');
+        shadow.appendChild(innerChild);
+
+        expect(parentElementOrShadowHost(innerChild)).toBe(host);
+        expect(parentElementOrShadowHost(host)).toBe(document.body);
+      });
     });
   });
 });

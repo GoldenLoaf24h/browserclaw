@@ -125,6 +125,44 @@ describe('Fastify MCP Native Server Integration Tests', () => {
       expect(response.body).toHaveProperty('status', 'error');
       expect(response.body.message).toMatch(/not connected|not available/i);
     });
+
+    test('GET /token returns active bridge token on loopback', async () => {
+      const response = await supertest(Server.getInstance().server).get('/token').expect(200);
+
+      expect(response.body).toEqual({
+        status: 'ok',
+        token: getBridgeToken(),
+      });
+    });
+
+    test('POST /eval rejects without valid script', async () => {
+      const response = await supertest(Server.getInstance().server)
+        .post('/eval')
+        .set('x-hermes-auth', 'local')
+        .send({})
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error');
+    });
+
+    test('POST /eval passes auth with x-hermes-auth local header', async () => {
+      const response = await supertest(Server.getInstance().server)
+        .post('/eval')
+        .set('x-hermes-auth', 'local')
+        .send({ script: '1 + 1' });
+
+      // Either succeeds (200) or returns 500 when extension host is not running in unit test
+      expect([200, 500]).toContain(response.status);
+    });
+
+    test('POST /eval accepts code parameter alias', async () => {
+      const response = await supertest(Server.getInstance().server)
+        .post('/eval')
+        .set('x-hermes-auth', 'local')
+        .send({ code: '1 + 1' });
+
+      expect([200, 500]).toContain(response.status);
+    });
   });
 
   test('POST /mcp without session or initialize should return 400 Bad Request', async () => {

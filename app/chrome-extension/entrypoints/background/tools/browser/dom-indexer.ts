@@ -1,10 +1,16 @@
-import { resolveToolName, type IndexedElement, type PageAsset, type PrunedDOMTreeResult } from 'chrome-mcp-shared';
+import {
+  resolveToolName,
+  type IndexedElement,
+  type PageAsset,
+  type PrunedDOMTreeResult,
+  type ScrollUntilFoundOptions,
+  type ScrollUntilFoundResult,
+} from 'chrome-mcp-shared';
 
 /**
  * Standard structured self-healing guidance when an element is not found or expired
  */
-export const DIAGNOSTIC_REFRESH_GUIDANCE =
-  `ACTION REQUIRED: Please call '${resolveToolName('read_dom')}' to refresh the index tree before re-attempting interaction`;
+export const DIAGNOSTIC_REFRESH_GUIDANCE = `ACTION REQUIRED: Please call '${resolveToolName('read_dom')}' to refresh the index tree before re-attempting interaction`;
 
 /**
  * Isolated symbol to store element index map in the extension's execution context.
@@ -298,14 +304,400 @@ export function deepElementFromPoint(
 }
 
 /**
- * Deep query selector that penetrates all open (and closed when supported) ShadowRoot boundaries.
- * Traverses recursively through both standard light DOM and encapsulated component shadow roots.
+ * Split a string by a single character delimiter unless that delimiter is inside quotes (single or double).
+ * Reference: webdriverio/query-selector-shadow-dom (splitByCharacterUnlessQuoted)
  */
-export function querySelectorAllDeep(
-  selector: string,
-  root: ParentNode = typeof document !== 'undefined' ? document : (null as any),
-): Element[] {
-  if (!root) return [];
+export function splitByCharacterUnlessQuoted(selector: string, character: string): string[] {
+  const matches = selector.match(/\\?.|^$/gs);
+  if (!matches) return [selector];
+  return matches.reduce(
+    (p: { quote: number; sQuote: number; a: string[] }, c: string) => {
+      if (c === '"' && !p.sQuote) {
+        p.quote ^= 1;
+        p.a[p.a.length - 1] += c;
+      } else if (c === "'" && !p.quote) {
+        p.sQuote ^= 1;
+        p.a[p.a.length - 1] += c;
+      } else if (!p.quote && !p.sQuote && c === character) {
+        p.a.push('');
+      } else {
+        p.a[p.a.length - 1] += c;
+      }
+      return p;
+    },
+    { quote: 0, sQuote: 0, a: [''] },
+  ).a;
+}
+
+/**
+ * Traverse across shadow boundaries upwards to find parent element or host element.
+ * Reference: Playwright (parentElementOrShadowHost) & WebdriverIO (findParentOrHost)
+ */
+export function parentElementOrShadowHost(element: Element): Element | null {
+  if (element.parentElement) return element.parentElement;
+  if (!element.parentNode) return null;
+  if (element.parentNode.nodeType === 11 && (element.parentNode as ShadowRoot).host) {
+    return (element.parentNode as ShadowRoot).host as Element;
+  }
+  return null;
+}
+
+/**
+ * Normalizes explicit shadow-piercing combinators ('>>>', '/deep/', and '>>') outside quotes to whitespace.
+ */
+function normalizeExplicitCombinators(selector: string): string {
+  const matches = selector.match(/\\?.|^$/gs) || [];
+  let quote = 0;
+  let sQuote = 0;
+  let result = '';
+
+  for (let i = 0; i < matches.length; i++) {
+    const c = matches[i];
+    if (c === '"' && !sQuote) {
+      quote ^= 1;
+      result += c;
+    } else if (c === "'" && !quote) {
+      sQuote ^= 1;
+      result += c;
+    } else if (!quote && !sQuote) {
+      if (
+        c === '/' &&
+        matches[i + 1] === 'd' &&
+        matches[i + 2] === 'e' &&
+        matches[i + 3] === 'e' &&
+        matches[i + 4] === 'p' &&
+        matches[i + 5] === '/'
+      ) {
+        result += ' ';
+        i += 5;
+        continue;
+      }
+      if (c === '>' && matches[i + 1] === '>' && matches[i + 2] === '>') {
+        result += ' ';
+        i += 2;
+        continue;
+      }
+      if (c === '>' && matches[i + 1] === '>') {
+        result += ' ';
+        i += 1;
+        continue;
+      }
+      result += c;
+    } else {
+      result += c;
+    }
+  }
+  return result;
+}
+
+/**
+ * Atomic in-page client-side auto-scroll until target element is found.
+ * Executes smooth step-by-step scrolling, waits for virtual lists / dynamic DOM recycling
+ * to settle, searches both standard light DOM and encapsulated open/closed ShadowRoots,
+ * centers matched target in the viewport, allocates/refreshes a live 1-based index,
+ * and returns live index and coordinates.
+ */
+export async function inPageScrollUntilFound(
+  options: ScrollUntilFoundOptions,
+): Promise<ScrollUntilFoundResult> {
+  const query = options?.query?.trim();
+  const selector = options?.selector?.trim();
+  if (!query && !selector) {
+    return {
+      found: false,
+      stepsTaken: 0,
+      scrolledPx: 0,
+      message: 'Either query or selector must be provided for scroll_until_found',
+    };
+  }
+
+  const maxSteps = Math.min(Math.max(1, options?.maxSteps ?? 10), 50);
+  const stepPx = Math.min(Math.max(50, options?.stepPx ?? 800), 3000);
+  const direction = options?.direction === 'up' ? 'up' : 'down';
+  const settleMs = Math.min(Math.max(50, options?.settleMs ?? 150), 1000);
+  const timeoutMs = Math.min(Math.max(1000, options?.timeoutMs ?? 15000), 60000);
+  const startTime = Date.now();
+
+  let targetRegex: RegExp | null = null;
+  if (query) {
+    try {
+      targetRegex = options.isRegex
+        ? new RegExp(query, 'i')
+        : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    } catch {
+      targetRegex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    }
+  }
+
+  // Resolve scroll container
+  let container: HTMLElement | Window = window;
+  if (options?.containerSelector) {
+    const el = querySelectorDeep(options.containerSelector);
+    if (el instanceof HTMLElement) {
+      container = el;
+    }
+  }
+
+  function probeTarget(): Element | null {
+    if (typeof document === 'undefined') return null;
+
+    if (selector) {
+      const candidates = querySelectorAllDeep(selector, document);
+      for (const el of candidates) {
+        if (!el || !(el instanceof Element)) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          const style = window.getComputedStyle(el);
+          if (style.display !== 'none' && style.visibility !== 'hidden') {
+            if (!query || (targetRegex && targetRegex.test(el.textContent || ''))) {
+              return el;
+            }
+          }
+        }
+      }
+    }
+
+    if (targetRegex) {
+      const candidates = querySelectorAllDeep(
+        'button, a, input, textarea, select, h1, h2, h3, h4, h5, h6, [role="button"], [role="article"], [role="link"], [data-testid], article, p, span, li, div, section, blockquote, label, td, th, dt, dd, strong, b, i, em, code, pre, figcaption',
+        document,
+      );
+      for (const el of candidates) {
+        if (!el || !(el instanceof Element)) continue;
+        const text = (
+          el.textContent ||
+          el.getAttribute('aria-label') ||
+          (el as HTMLInputElement).placeholder ||
+          (el as HTMLInputElement).value ||
+          ''
+        ).trim();
+        if (text && targetRegex.test(text)) {
+          const rect = el.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            const style = window.getComputedStyle(el);
+            if (style.display !== 'none' && style.visibility !== 'hidden') {
+              return el;
+            }
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function getScrollPos(): number {
+    if (container instanceof Window) {
+      return window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0;
+    }
+    return container.scrollTop;
+  }
+
+  function doScroll(delta: number): void {
+    if (container instanceof Window) {
+      window.scrollBy({ top: delta, left: 0, behavior: 'instant' as any });
+    } else {
+      container.scrollBy({ top: delta, left: 0, behavior: 'instant' as any });
+    }
+  }
+
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  let stepsTaken = 0;
+  let totalScrolledPx = 0;
+  let lastPos = getScrollPos();
+  let stallCount = 0;
+
+  for (let step = 0; step <= maxSteps; step++) {
+    if (Date.now() - startTime > timeoutMs) {
+      break;
+    }
+
+    const hit = probeTarget();
+    if (hit) {
+      try {
+        hit.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' as any });
+      } catch {}
+      await wait(50);
+
+      // Resolve or allocate live 1-based index in isolatedMap
+      let targetIndex: number | undefined;
+      const isolatedMap = getIsolatedIndexMap();
+      for (const [idx, ref] of isolatedMap.entries()) {
+        if (derefElement(ref) === hit) {
+          targetIndex = idx;
+          break;
+        }
+      }
+
+      if (targetIndex === undefined) {
+        const maxIdx = isolatedMap.size > 0 ? Math.max(...isolatedMap.keys()) : 0;
+        targetIndex = maxIdx + 1;
+        isolatedMap.set(targetIndex, wrapElement(hit));
+      }
+
+      const rect = hit.getBoundingClientRect();
+      const coords = {
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2),
+      };
+
+      const matchText = (hit.textContent || hit.getAttribute('aria-label') || '')
+        .trim()
+        .slice(0, 100);
+
+      return {
+        found: true,
+        index: targetIndex,
+        tagName: hit.tagName.toLowerCase(),
+        text: matchText,
+        stepsTaken,
+        scrolledPx: totalScrolledPx,
+        coordinates: coords,
+        message: `Found target "${matchText || query || selector}" at index [${targetIndex}] after ${stepsTaken} step(s) (${totalScrolledPx}px). Element centered in viewport.`,
+      };
+    }
+
+    if (step === maxSteps) {
+      break;
+    }
+
+    const delta = direction === 'up' ? -stepPx : stepPx;
+    doScroll(delta);
+    stepsTaken++;
+    totalScrolledPx += stepPx;
+
+    await wait(settleMs);
+
+    const currentPos = getScrollPos();
+    if (Math.abs(currentPos - lastPos) < 2) {
+      stallCount++;
+      // If initial window scroll did not move, attempt fallback to smart inner container
+      if (stallCount === 1 && container instanceof Window && !options?.containerSelector) {
+        try {
+          const smart = inPageFindSmartScrollTarget({ direction });
+          if (smart && !smart.isWindow && smart.selector) {
+            const el = querySelectorDeep(smart.selector);
+            if (el instanceof HTMLElement) {
+              container = el;
+              lastPos = getScrollPos();
+              stallCount = 0;
+            }
+          }
+        } catch {}
+      } else if (stallCount >= 2) {
+        break;
+      }
+    } else {
+      stallCount = 0;
+    }
+    lastPos = currentPos;
+  }
+
+  return {
+    found: false,
+    stepsTaken,
+    scrolledPx: totalScrolledPx,
+    message: `Target "${query || selector}" not found after ${stepsTaken} step(s) (${totalScrolledPx}px scrolled).`,
+  };
+}
+
+/**
+ * Folds whitespace around standard CSS combinators ('>', '+', '~') outside quotes.
+ */
+function foldCombinatorsUnlessQuoted(selector: string): string {
+  const matches = selector.match(/\\?.|^$/gs) || [];
+  let quote = 0;
+  let sQuote = 0;
+  let currentUnquoted = '';
+  let result = '';
+
+  const flushUnquoted = () => {
+    if (currentUnquoted) {
+      const folded = currentUnquoted
+        .replace(/\s*([+~])\s*/g, '$1')
+        .replace(/(?<!>)\s*>\s*(?!>)/g, '>');
+      result += folded;
+      currentUnquoted = '';
+    }
+  };
+
+  for (let i = 0; i < matches.length; i++) {
+    const c = matches[i];
+    if (c === '"' && !sQuote) {
+      if (!quote) flushUnquoted();
+      quote ^= 1;
+      result += c;
+    } else if (c === "'" && !quote) {
+      if (!sQuote) flushUnquoted();
+      sQuote ^= 1;
+      result += c;
+    } else if (quote || sQuote) {
+      result += c;
+    } else {
+      currentUnquoted += c;
+    }
+  }
+  flushUnquoted();
+  return result;
+}
+
+/**
+ * Safely split a selector by delimiter (default space):
+ * 1. Folds whitespace around child (>), next-sibling (+), and subsequent-sibling (~) combinators outside quotes;
+ * 2. Splits using single/double quote and bracket/paren state machine so whitespace inside quotes,
+ *    attribute brackets [...], and pseudo-classes (...) is preserved;
+ * 3. Supports explicit piercing combinators ' >> ', '>>>', '/deep/'.
+ */
+export function splitSelectorSafely(selector: string, delimiter: string = ' '): string[] {
+  if (!selector) return [];
+  const normalized = normalizeExplicitCombinators(selector);
+  const folded = foldCombinatorsUnlessQuoted(normalized);
+
+  const matches = folded.match(/\\?.|^$/gs);
+  if (!matches) return [folded.trim()].filter(Boolean);
+
+  let quote = 0;
+  let sQuote = 0;
+  let brackets = 0;
+  let parens = 0;
+  const parts: string[] = [''];
+
+  for (let i = 0; i < matches.length; i++) {
+    const c = matches[i];
+    if (c === '"' && !sQuote) {
+      quote ^= 1;
+      parts[parts.length - 1] += c;
+    } else if (c === "'" && !quote) {
+      sQuote ^= 1;
+      parts[parts.length - 1] += c;
+    } else if (!quote && !sQuote) {
+      if (c === '[') brackets++;
+      else if (c === ']' && brackets > 0) brackets--;
+      else if (c === '(') parens++;
+      else if (c === ')' && parens > 0) parens--;
+
+      if (
+        brackets === 0 &&
+        parens === 0 &&
+        (c === delimiter || (delimiter === ' ' && /\s/.test(c)))
+      ) {
+        parts.push('');
+      } else {
+        parts[parts.length - 1] += c;
+      }
+    } else {
+      parts[parts.length - 1] += c;
+    }
+  }
+
+  return parts.map((s) => s.trim()).filter(Boolean);
+}
+
+/**
+ * Single-segment search within a root across all open and closed ShadowRoot boundaries.
+ */
+function querySelectorAllDeepSingle(selector: string, root: ParentNode): Element[] {
   const results: Element[] = [];
   const visitedRoots = new Set<Node>();
 
@@ -320,7 +712,6 @@ export function querySelectorAllDeep(
       }
     } catch {}
 
-    // Find all elements within currentRoot to inspect for attached shadow roots
     let allEls: NodeListOf<Element>;
     try {
       allEls = currentRoot.querySelectorAll('*');
@@ -337,7 +728,6 @@ export function querySelectorAllDeep(
     }
   }
 
-  // If root itself is an Element with a shadowRoot, search that shadowRoot too
   if (typeof Element !== 'undefined' && root instanceof Element) {
     const rootShadow = getShadowRoot(root);
     if (rootShadow) {
@@ -347,6 +737,92 @@ export function querySelectorAllDeep(
 
   search(root);
   return results;
+}
+
+/**
+ * Deep query selector that penetrates all open (and closed when supported) ShadowRoot boundaries.
+ * Traverses recursively through both standard light DOM and encapsulated component shadow roots.
+ * Supports explicit piercing (' >> ', '>>>', '/deep/') and composite descendant selectors
+ * (e.g. 'shreddit-markdown-composer textarea') across shadow boundaries.
+ */
+export function querySelectorAllDeep(
+  selector: string,
+  root: ParentNode = typeof document !== 'undefined' ? document : (null as any),
+): Element[] {
+  if (!root || !selector || typeof selector !== 'string') return [];
+
+  // Comma-separated selector list handling
+  const commaSeparators = splitSelectorSafely(selector, ',');
+  if (commaSeparators.length > 1) {
+    const hasComplexSegment = commaSeparators.some(
+      (sub) => splitSelectorSafely(sub, ' ').length > 1,
+    );
+    if (hasComplexSegment) {
+      const combined: Element[] = [];
+      for (const sub of commaSeparators) {
+        const subMatches = querySelectorAllDeep(sub, root);
+        for (const m of subMatches) {
+          if (!combined.includes(m)) {
+            combined.push(m);
+          }
+        }
+      }
+      return combined;
+    }
+    return querySelectorAllDeepSingle(selector, root);
+  }
+
+  const segments = splitSelectorSafely(selector, ' ');
+  if (segments.length === 0) return [];
+
+  if (segments.length === 1) {
+    return querySelectorAllDeepSingle(segments[0], root);
+  }
+
+  // Multi-segment composite descendant selector piercing across Shadow DOM boundaries:
+  // Each segment is matched across Document and all reachable ShadowRoots.
+  // Between segments, context retains both the element itself and its shadowRoot (for slotted & shadow children).
+  let currentContexts: ParentNode[] = [root];
+  if (typeof Element !== 'undefined' && root instanceof Element) {
+    const rootShadow = getShadowRoot(root);
+    if (rootShadow) {
+      currentContexts.push(rootShadow);
+    }
+  }
+
+  for (let i = 0; i < segments.length; i++) {
+    const subSelector = segments[i];
+    const isLast = i === segments.length - 1;
+    const nextMatches: Element[] = [];
+
+    for (const ctx of currentContexts) {
+      const matched = querySelectorAllDeepSingle(subSelector, ctx);
+      for (const m of matched) {
+        if (!nextMatches.includes(m)) {
+          nextMatches.push(m);
+        }
+      }
+    }
+
+    if (isLast) {
+      return nextMatches;
+    }
+
+    const nextContexts: ParentNode[] = [];
+    for (const m of nextMatches) {
+      if (!nextContexts.includes(m)) {
+        nextContexts.push(m);
+      }
+      const sr = getShadowRoot(m);
+      if (sr && !nextContexts.includes(sr)) {
+        nextContexts.push(sr);
+      }
+    }
+    currentContexts = nextContexts;
+    if (currentContexts.length === 0) return [];
+  }
+
+  return [];
 }
 
 /**
@@ -377,7 +853,19 @@ export interface ElementFingerprint {
   testId?: string;
   ariaLabel?: string;
   role?: string;
+  text?: string;
   inShadowDom?: boolean;
+  scopeHash?: string;
+}
+
+export function computeScopeHash(text: string): string {
+  if (!text) return '';
+  let hash = 5381;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash << 5) + hash + text.charCodeAt(i);
+    hash = hash & hash;
+  }
+  return (hash >>> 0).toString(16);
 }
 
 export function getIndexFingerprintMap(): Map<number, ElementFingerprint> {
@@ -436,6 +924,11 @@ function selfHealInShadowRoots(root: Node, fp: ElementFingerprint): Element | nu
 
 function selfHealFindElement(fp: ElementFingerprint): Element | null {
   if (typeof document === 'undefined') return null;
+  const searchRoot = document.body || document.documentElement || null;
+  if (fp.inShadowDom && searchRoot) {
+    const inShadow = selfHealInShadowRoots(searchRoot, fp);
+    if (inShadow) return inShadow;
+  }
   if (fp.id) {
     const byId = document.getElementById(fp.id);
     if (byId && byId.tagName.toLowerCase() === fp.tag) return byId;
@@ -469,14 +962,35 @@ function selfHealFindElement(fp: ElementFingerprint): Element | null {
     }
     if (fp.ariaLabel) {
       const byRoleAria = document.querySelector(
-        fp.tag + '[role=' + JSON.stringify(fp.role) + '][aria-label=' + JSON.stringify(fp.ariaLabel) + ']',
+        fp.tag +
+          '[role=' +
+          JSON.stringify(fp.role) +
+          '][aria-label=' +
+          JSON.stringify(fp.ariaLabel) +
+          ']',
       );
       if (byRoleAria) return byRoleAria;
     }
     const byRole = document.querySelector(fp.tag + '[role=' + JSON.stringify(fp.role) + ']');
     if (byRole) return byRole;
   }
-  const searchRoot = document.body || document.documentElement || null;
+  if (fp.text && searchRoot) {
+    const selector = fp.tag ? fp.tag : '*';
+    const candidates = Array.from(searchRoot.querySelectorAll(selector));
+    for (const c of candidates) {
+      const cText = (c.textContent || '').trim();
+      if (
+        cText === fp.text ||
+        (cText.length > 0 &&
+          fp.text.length > 0 &&
+          (cText.includes(fp.text) || fp.text.includes(cText)))
+      ) {
+        if (!fp.role || c.getAttribute('role') === fp.role) {
+          return c;
+        }
+      }
+    }
+  }
   return searchRoot ? selfHealInShadowRoots(searchRoot, fp) : null;
 }
 
@@ -540,10 +1054,10 @@ export function findIndexedElement(index: number | string): Element | null {
     }
   }
 
-  // Graceful fallback for mock unit tests that mock document.querySelector
-  if (typeof document !== 'undefined' && typeof document.querySelector === 'function') {
+  // Graceful fallback: deep query across shadow boundaries
+  if (typeof document !== 'undefined') {
     try {
-      const fallback = document.querySelector(`[data-mcp-idx="${index}"]`);
+      const fallback = querySelectorDeep(`[data-mcp-idx="${index}"]`, document);
       if (fallback) return fallback;
     } catch {}
   }
@@ -1154,6 +1668,18 @@ export function detectActiveModalBlocker(win: Window = window): ActiveModalBlock
       ),
     ) as HTMLElement[];
 
+    try {
+      const shadowCandidates = querySelectorAllDeep(
+        'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"], [popover], shreddit-modal, [class*="modal"], [class*="dialog"]',
+        doc,
+      );
+      for (const sc of shadowCandidates) {
+        if (sc instanceof HTMLElement && !positionedCandidates.includes(sc)) {
+          positionedCandidates.push(sc);
+        }
+      }
+    } catch {}
+
     let topBlocker: ActiveModalBlockerInfo | null = null;
 
     for (let i = 0; i < positionedCandidates.length; i++) {
@@ -1249,6 +1775,60 @@ export function detectActiveModalBlocker(win: Window = window): ActiveModalBlock
   } catch {
     return null;
   }
+}
+
+/**
+ * Focus Trap and Modal Focus Guard:
+ * Pulls and locks DOM keyboard focus into the active modal dialog or specified modal root.
+ * Ensures subsequent Tab, Enter, and keyboard shortcuts don't bleed into background DOM.
+ */
+export function inPageEnsureModalFocus(modalEl?: Element): boolean {
+  if (typeof document === 'undefined') return false;
+  let target = modalEl;
+  if (!target) {
+    const blocker = detectActiveModalBlocker(typeof window !== 'undefined' ? window : undefined);
+    if (blocker?.el) {
+      target = blocker.el;
+    }
+  }
+  if (!target) return false;
+
+  // Check if current active element is already inside target
+  if (
+    document.activeElement &&
+    (target === document.activeElement || target.contains(document.activeElement))
+  ) {
+    return true;
+  }
+
+  // Find first focusable element inside the modal (penetrating Shadow DOM)
+  const focusable = querySelectorAllDeep(
+    'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"], a[href]',
+    target,
+  );
+  for (const el of focusable) {
+    if (el instanceof HTMLElement) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        try {
+          el.focus();
+          return true;
+        } catch {}
+      }
+    }
+  }
+
+  // Fallback: focus modal container itself
+  if (target instanceof HTMLElement) {
+    if (!target.hasAttribute('tabindex')) {
+      target.setAttribute('tabindex', '-1');
+    }
+    try {
+      target.focus();
+      return true;
+    } catch {}
+  }
+  return false;
 }
 
 /**
@@ -1370,13 +1950,66 @@ export function flattenCompositeCards(
     primaryCandidate.cardRole = 'card';
     primaryCandidate.aggregatedText = cardSummary;
 
-    // Mark other non-control items as secondary so they are omitted from tree lines
+    const ACTION_TRIGGER_TESTID_REGEX =
+      /(reply|retweet|repost|like|favorite|bookmark|share|upvote|downvote|comment|action|menu|more)/i;
+    const ACTION_TRIGGER_LABEL_REGEX =
+      /(reply|retweet|repost|like|favorite|bookmark|share|upvote|downvote|comment|options|回复|转发|点赞|分享|收藏|评论|投票)/i;
+
+    function detectActionTrigger(
+      node: Element,
+      primaryHref?: string,
+    ): { isTrigger: boolean; type?: string } {
+      if (!node || !(node instanceof Element)) return { isTrigger: false };
+      const tag = node.tagName.toLowerCase();
+      const testId = node.getAttribute?.('data-testid') || '';
+      if (ACTION_TRIGGER_TESTID_REGEX.test(testId)) {
+        const m = testId.match(ACTION_TRIGGER_TESTID_REGEX);
+        return { isTrigger: true, type: m ? m[0].toLowerCase() : 'action' };
+      }
+      const ariaLabel = node.getAttribute?.('aria-label') || '';
+      if (ACTION_TRIGGER_LABEL_REGEX.test(ariaLabel)) {
+        const m = ariaLabel.match(ACTION_TRIGGER_LABEL_REGEX);
+        return { isTrigger: true, type: m ? m[0].toLowerCase() : 'action' };
+      }
+      const role = node.getAttribute?.('role') || '';
+      if (tag === 'button' || role === 'button') {
+        const btnText = (node.textContent || '').trim();
+        if (ACTION_TRIGGER_LABEL_REGEX.test(btnText)) {
+          const m = btnText.match(ACTION_TRIGGER_LABEL_REGEX);
+          return { isTrigger: true, type: m ? m[0].toLowerCase() : 'button' };
+        }
+        return { isTrigger: true, type: 'button' };
+      }
+      if (tag === 'a') {
+        const href = node.getAttribute?.('href') || '';
+        if (
+          href &&
+          primaryHref &&
+          href !== primaryHref &&
+          !href.startsWith('#') &&
+          !href.startsWith('javascript:')
+        ) {
+          return { isTrigger: true, type: 'link' };
+        }
+      }
+      return { isTrigger: false };
+    }
+
+    const primaryHref = primaryCandidate.node.getAttribute?.('href') || undefined;
+
+    // Mark other non-control items as secondary so they are omitted from tree lines,
+    // while explicitly identifying and preserving action triggers (reply, retweet, like, share, etc.)
     for (const it of items) {
       if (it === primaryCandidate) continue;
       const isControl = it.node.matches?.(
         'button, [role="button"], input[type="checkbox"], input[type="radio"], [role="checkbox"]',
       );
-      if (!isControl) {
+      const trigger = detectActionTrigger(it.node, primaryHref);
+      if (trigger.isTrigger) {
+        (it as any).isActionTrigger = true;
+        (it as any).actionTriggerType = trigger.type;
+        it.isInteractive = true;
+      } else if (!isControl) {
         it.isCardSecondary = true;
       }
     }
@@ -1833,6 +2466,16 @@ export function inPageDOMPruner(options?: {
     ) {
       return true;
     }
+    // Task B6: Non-invasive JS dynamic event listener detection (getEventListeners)
+    try {
+      const g = globalThis as any;
+      if (typeof g.getEventListeners === 'function') {
+        const listeners = g.getEventListeners(el);
+        if (listeners && (listeners.click || listeners.mousedown || listeners.pointerdown)) {
+          return true;
+        }
+      }
+    } catch {}
     const cls =
       typeof (el as HTMLElement).className === 'string' ? (el as HTMLElement).className : '';
     if (
@@ -2205,7 +2848,7 @@ export function inPageDOMPruner(options?: {
     const tag = (el.tagName || '').toLowerCase();
     let classSig = '';
     const rawClass =
-      typeof el.className === 'string' ? el.className : (el.getAttribute('class') || '');
+      typeof el.className === 'string' ? el.className : el.getAttribute('class') || '';
     if (rawClass.trim()) {
       const parts = rawClass
         .trim()
@@ -2372,7 +3015,34 @@ export function inPageDOMPruner(options?: {
         node.hasAttribute('role') ||
         (node as HTMLElement).tabIndex >= 0);
 
-    if (!isZeroSize && (interactive || isFile || (informational && hasInfoText) || isClosedHost)) {
+    // Task B7: 2-level form control descendant penetration
+    const hasFormControlDescendant = (element: Element, maxDepth = 2): boolean => {
+      if (maxDepth <= 0 || !element || !element.children) return false;
+      for (const child of Array.from(element.children)) {
+        const childTag = (child.tagName || '').toLowerCase();
+        if (
+          childTag === 'input' ||
+          childTag === 'select' ||
+          childTag === 'textarea' ||
+          childTag === 'button'
+        ) {
+          return true;
+        }
+        if (hasFormControlDescendant(child, maxDepth - 1)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const isWrapperOverFormControl =
+      (tag === 'label' || tag === 'span' || tag === 'div') && hasFormControlDescendant(node, 2);
+
+    if (
+      !isZeroSize &&
+      !isWrapperOverFormControl &&
+      (interactive || isFile || (informational && hasInfoText) || isClosedHost)
+    ) {
       candidates.push({
         node,
         tag,
@@ -2382,6 +3052,28 @@ export function inPageDOMPruner(options?: {
         inShadowDom: insideShadow || (isClosedHost ? true : undefined),
         isClosedShadowHost: isClosedHost ? true : undefined,
       });
+    }
+
+    // Task B4: Native <select> options static flattening into virtual entries
+    if (tag === 'select' && (node as HTMLSelectElement).options) {
+      const selectEl = node as HTMLSelectElement;
+      for (const opt of Array.from(selectEl.options)) {
+        if (opt.disabled || (opt.closest && opt.closest('optgroup[disabled]'))) {
+          continue;
+        }
+        candidates.push({
+          node: opt,
+          tag: 'option',
+          rect,
+          isFile: false,
+          isInteractive: true,
+          inShadowDom: insideShadow,
+          isSelectOption: true,
+          parentSelect: selectEl,
+          optionValue: opt.value,
+          optionLabel: opt.label || opt.text || opt.value,
+        });
+      }
     }
 
     const nextPropagatingRect =
@@ -2531,6 +3223,11 @@ export function inPageDOMPruner(options?: {
     isInteractive: boolean;
     inShadowDom?: boolean;
     isClosedShadowHost?: boolean;
+    isSelectOption?: boolean;
+    parentSelect?: HTMLSelectElement;
+    optionValue?: string;
+    optionLabel?: string;
+    text?: string;
   }> = [];
 
   let roots: Element[] = [];
@@ -2550,8 +3247,8 @@ export function inPageDOMPruner(options?: {
       roots = [];
       selectorMatched = false;
     }
-  } else if (options?.isolateModal) {
-    // Phase 2: Safe Modal Isolation & Portal/Toast Protection
+  } else if (options?.isolateModal !== false) {
+    // Phase 2: Safe Modal Isolation & Portal/Toast Protection (Auto-detected by default)
     const activeBlocker = detectActiveModalBlocker(window);
     if (activeBlocker && activeBlocker.el) {
       modalIsolated = true;
@@ -2565,51 +3262,21 @@ export function inPageDOMPruner(options?: {
         '[data-floating-ui-portal]',
         '[data-headlessui-portal]',
         '[data-portal]',
-        '[data-state="open"]',
-        '[role="dialog"]',
-        '[role="alertdialog"]',
-        '[role="menu"]',
-        '[role="listbox"]',
-        '[role="combobox"]',
-        '[role="tooltip"]',
-        '[role="alert"]',
-        '[role="status"]',
         '#toast-root',
         '#notification-root',
         '#portal-root',
         '.Toastify',
         '.toaster',
         '[data-sonner-toaster]',
-        '[class*="select-dropdown" i]',
-        '[class*="picker-dropdown" i]',
-        '[class*="dropdown-menu" i]',
-        '[class*="dropdown" i]',
-        '[class*="popper" i]',
-        '[class*="tooltip" i]',
-        '[class*="popover" i]',
-        '[class*="modal" i]',
-        '[class*="backdrop" i]',
-        '[class*="mask" i]',
-        '[class*="drawer" i]',
-        '[class*="toast" i]',
-        '[class*="notification" i]',
         '.ant-select-dropdown',
         '.ant-picker-dropdown',
         '.ant-dropdown',
-        '.ant-tooltip',
-        '.ant-popover',
         '.ant-message',
         '.ant-notification',
         '.MuiMenu-root',
         '.MuiPopover-root',
-        '.MuiModal-root',
         '.MuiAutocomplete-popper',
         '.MuiSnackbar-root',
-        '.modal-backdrop',
-        '.ant-modal-mask',
-        '.MuiBackdrop-root',
-        '.el-dialog',
-        '.el-message-box',
         '.el-select-dropdown',
         '.el-dropdown-menu',
         '.el-notification',
@@ -2626,7 +3293,7 @@ export function inPageDOMPruner(options?: {
                 s.visibility !== 'hidden' &&
                 (s.opacity === '' || parseFloat(s.opacity) > 0)
               ) {
-                modalRoots.push(item);
+                if (!modalRoots.includes(item)) modalRoots.push(item);
               }
             }
           }
@@ -2794,6 +3461,32 @@ export function inPageDOMPruner(options?: {
       attributes['visual-shape'] = detectedShape;
     }
 
+    // Task B1: Compute scopeHash for Local Scope Guard
+    let scopeHash = '';
+    try {
+      const container =
+        (cand.node as Element).closest?.(
+          'form,dialog,[role="dialog"],article,li,tr,[role="row"]',
+        ) || cand.node.parentElement;
+      const scopeText = container ? (container.textContent || '').trim().slice(0, 1000) : '';
+      if (scopeText) {
+        scopeHash = computeScopeHash(scopeText);
+        attributes['data-scope-hash'] = scopeHash;
+      }
+    } catch {}
+
+    // Task B4: Select option attributes
+    if (cand.isSelectOption) {
+      if (cand.optionValue !== undefined) {
+        attributes['value'] = cand.optionValue;
+      }
+      attributes['selected'] = (cand.node as HTMLOptionElement).selected ? 'true' : 'false';
+    }
+
+    const candText =
+      cand.text ||
+      (cand.node ? (cand.node.textContent || '').trim().slice(0, 100) : undefined) ||
+      undefined;
     getIndexFingerprintMap().set(assignedIndex, {
       tag: cand.tag,
       id: attributes.id,
@@ -2803,7 +3496,9 @@ export function inPageDOMPruner(options?: {
       testId: attributes['data-testid'],
       ariaLabel: attributes['aria-label'],
       role: attributes.role,
+      text: candText,
       inShadowDom: cand.inShadowDom,
+      scopeHash: scopeHash || undefined,
     });
     if (
       (cand.node as HTMLElement).isContentEditable ||
@@ -2924,11 +3619,27 @@ export function inPageDOMPruner(options?: {
     }
 
     const isCard = (cand as any).isCard === true;
-    const text = isCard
+    let text = isCard
       ? (cand as any).aggregatedText
       : extractCleanElementText(cand.node, maxTextLength);
     const editorSemantics = detectEditorSemantics(cand.node);
-    const role = isCard ? 'card' : (cand.node.getAttribute('role') || undefined);
+    let role = isCard ? 'card' : cand.node.getAttribute('role') || undefined;
+
+    // Task B4: Virtual select option text and role
+    if (cand.isSelectOption) {
+      const parentName =
+        cand.parentSelect?.getAttribute('name') ||
+        cand.parentSelect?.getAttribute('aria-label') ||
+        cand.parentSelect?.getAttribute('id') ||
+        'select';
+      const optText =
+        cand.optionLabel || (cand.node as HTMLOptionElement).text || cand.optionValue || '';
+      text = `${parentName} → ${optText}`;
+      role = 'option';
+      if (!elemValue && cand.optionValue !== undefined) {
+        elemValue = cand.optionValue;
+      }
+    }
 
     const indexedElem: IndexedElement = {
       index: assignedIndex,
@@ -2955,6 +3666,8 @@ export function inPageDOMPruner(options?: {
       isEditor: editorSemantics.isEditor || undefined,
       isSearch: editorSemantics.isSearch || undefined,
       isClosedShadowHost: cand.isClosedShadowHost || undefined,
+      isActionTrigger: (cand as any).isActionTrigger || undefined,
+      actionTriggerType: (cand as any).actionTriggerType || undefined,
     };
 
     indexedElements.push(indexedElem);
@@ -3087,6 +3800,11 @@ export function inPageDOMPruner(options?: {
       ? `[Modal Guidance: CRITICAL CONFIRMATION TRAP DETECTED (${activeModal}). A secondary confirmation dialog is open ("Discard / Confirm" / "放弃帖子？"). You MUST dismiss or confirm this dialog (e.g. click "Discard" or "Cancel") before attempting any other actions on the page.]\n`
       : `[Modal Guidance: Active modal focus trap (${activeModal}). Prioritize interacting with modal elements or dismissing it.]\n`;
     treeString = modalNotice + treeString;
+  }
+
+  if (modalIsolated) {
+    const isolateNotice = `[MODAL_ACTIVE: Focus locked to active modal "${activeModal || 'dialog'}". Background page elements pruned to prevent misclicks. Dismiss modal or submit to return to main page.]\n`;
+    treeString = isolateNotice + treeString;
   }
 
   if (pages_down > 0 || pages_up > 0) {
@@ -3296,6 +4014,7 @@ export function extractElementLocationDetails(el: Element): {
   invalidReason?: string;
   checked?: boolean;
   selected?: boolean;
+  scopeHash?: string;
 } {
   const win = el.ownerDocument?.defaultView || window;
   const initialRect = el.getBoundingClientRect();
@@ -3584,6 +4303,17 @@ export function extractElementLocationDetails(el: Element): {
     invalidReason,
     checked,
     selected,
+    scopeHash: (() => {
+      try {
+        const container =
+          el.closest?.('form,dialog,[role="dialog"],article,li,tr,[role="row"]') ||
+          el.parentElement;
+        const scopeText = container ? (container.textContent || '').trim().slice(0, 1000) : '';
+        return scopeText ? computeScopeHash(scopeText) : undefined;
+      } catch {
+        return undefined;
+      }
+    })(),
   };
 }
 
@@ -3613,6 +4343,9 @@ export function inPageGetElementCoordinates(refOrIndex: number | string): {
   invalidReason?: string;
   checked?: boolean;
   selected?: boolean;
+  scopeHash?: string;
+  warning?: string;
+  isSelectOption?: boolean;
   error?: string;
 } {
   let index: number;
@@ -3635,7 +4368,47 @@ export function inPageGetElementCoordinates(refOrIndex: number | string): {
     };
   }
 
-  const el = findIndexedElement(index);
+  const rawEntry = getIsolatedIndexMap().get(index);
+  const rawEl = derefElement(rawEntry);
+  const fp = getIndexFingerprintMap().get(index);
+
+  let warning: string | undefined;
+  let hadDrift = false;
+
+  if (rawEl && fp) {
+    const isConnected = (rawEl as any).isConnected ?? true;
+    const currentTag = rawEl.tagName?.toLowerCase();
+    const currentRole =
+      rawEl.getAttribute?.('role')?.toLowerCase() || (rawEl as any).role?.toLowerCase();
+    const currentText = (rawEl.textContent || '').trim().slice(0, 100);
+    const tagMismatch = Boolean(fp.tag && currentTag !== fp.tag.toLowerCase());
+    const roleMismatch = Boolean(fp.role && currentRole && currentRole !== fp.role.toLowerCase());
+    const textMismatch = Boolean(
+      fp.text && currentText && !currentText.includes(fp.text) && !fp.text.includes(currentText),
+    );
+    if (!isConnected || tagMismatch || roleMismatch || textMismatch) {
+      hadDrift = true;
+    }
+  } else if (!rawEl && fp) {
+    hadDrift = true;
+  }
+
+  let el = findIndexedElement(index);
+
+  // Task B12: Multi-attribute index drift verification and in-place self-healing (Tag, Role, Text)
+  if (hadDrift && fp) {
+    if (!el || el === rawEl) {
+      const recovered = selfHealFindElement(fp);
+      if (recovered) {
+        el = recovered;
+        getIsolatedIndexMap().set(index, wrapElement(recovered));
+      }
+    }
+    if (el && el !== rawEl) {
+      warning = `Element index drift detected for index [${index}]; auto-healed target using element fingerprint (${fp.tag}${fp.id ? '#' + fp.id : ''}${fp.text ? ' "' + fp.text + '"' : ''})`;
+    }
+  }
+
   if (!el || !(el instanceof Element)) {
     return {
       success: false,
@@ -3643,7 +4416,14 @@ export function inPageGetElementCoordinates(refOrIndex: number | string): {
     };
   }
 
-  return extractElementLocationDetails(el);
+  const details: any = extractElementLocationDetails(el);
+  if (warning) {
+    details.warning = warning;
+  }
+  if (el instanceof HTMLOptionElement || el.tagName.toLowerCase() === 'option') {
+    details.isSelectOption = true;
+  }
+  return details;
 }
 
 /**
@@ -3970,7 +4750,12 @@ export function inPageLocateBySelector(
         targetEl = xRes.singleNodeValue;
       }
     } else if (typeof document !== 'undefined' && typeof document.querySelector === 'function') {
-      targetEl = document.querySelector(selector);
+      try {
+        targetEl = document.querySelector(selector);
+      } catch {
+        // Native querySelector throws DOMException on shadow combinators like '>>>' or '/deep/'
+        targetEl = null;
+      }
       if (!targetEl) {
         targetEl = querySelectorDeep(selector, document);
       }
@@ -4389,6 +5174,25 @@ export function inPageInteractIndex(
   const text = ((el as HTMLElement).innerText || el.textContent || '').trim().slice(0, 100);
 
   if (action === 'click') {
+    // Task B4: Direct single-step selection for HTMLOptionElement
+    if (el instanceof HTMLOptionElement || el.tagName.toLowerCase() === 'option') {
+      const opt = el as HTMLOptionElement;
+      const select = (
+        opt.parentElement instanceof HTMLSelectElement ? opt.parentElement : opt.closest?.('select')
+      ) as HTMLSelectElement | null;
+      if (select) {
+        select.value = opt.value;
+        opt.selected = true;
+        select.dispatchEvent(new Event('input', { bubbles: true }));
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        return {
+          success: true,
+          index,
+          tagName: 'option',
+          text: opt.label || opt.text || opt.value,
+        };
+      }
+    }
     el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
     el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
     (el as HTMLElement).click?.();
@@ -4526,9 +5330,35 @@ export function inPageFillIndex(
   } else if (el instanceof HTMLInputElement && nativeInputValueSetter) {
     if (clear) nativeInputValueSetter.call(el, '');
     nativeInputValueSetter.call(el, textToFill);
+    try {
+      el.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          composed: true,
+          inputType: 'insertText',
+          data: textToFill,
+        }),
+      );
+    } catch {
+      el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    }
+    el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
   } else if (el instanceof HTMLTextAreaElement && nativeTextAreaValueSetter) {
     if (clear) nativeTextAreaValueSetter.call(el, '');
     nativeTextAreaValueSetter.call(el, textToFill);
+    try {
+      el.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          composed: true,
+          inputType: 'insertText',
+          data: textToFill,
+        }),
+      );
+    } catch {
+      el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    }
+    el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
   } else if (el instanceof HTMLSelectElement) {
     let matched = false;
     for (const opt of Array.from(el.options)) {
@@ -4718,6 +5548,39 @@ export function inPageFillIndex(
     ...(verification.diagnostics ? { diagnostics: verification.diagnostics } : {}),
   };
 }
+
+/**
+ * Dispatch bubbling synthetic input and change events to force controlled components
+ * (React/Vue/Angular/Svelte) to commit values updated via native CDP / typing.
+ */
+export function inPageDispatchInputEvents(refOrIndex: number | string): {
+  success: boolean;
+  error?: string;
+} {
+  let index: number;
+  if (typeof refOrIndex === 'string') {
+    const parsed = refOrIndex.startsWith('ref_')
+      ? parseInt(refOrIndex.slice(4), 10)
+      : parseInt(refOrIndex, 10);
+    if (isNaN(parsed)) return { success: false, error: `Invalid index: ${refOrIndex}` };
+    index = parsed;
+  } else {
+    index = refOrIndex;
+  }
+  const el = findIndexedElement(index);
+  if (!el || !(el instanceof Element)) {
+    return { success: false, error: `Element [${index}] not found` };
+  }
+  try {
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+  } catch {
+    el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  }
+  el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+  return { success: true };
+}
+
+export { inPageWaitForDOMSettle } from '@/utils/action-watchdog';
 
 /**
  * Cross-platform Deep Reset Protocol for rich-text editors and form controls.
@@ -4966,25 +5829,32 @@ export function inPageVerifyActiveElement(
   let active = getDeepActive();
 
   // Check if active matches targetEl or is contained within targetEl (e.g. contenteditable or custom input inside wrapper)
-  let isFocused = active === targetEl || Boolean(targetEl.contains && active && targetEl.contains(active));
+  let isFocused =
+    active === targetEl || Boolean(targetEl.contains && active && targetEl.contains(active));
 
   // If focus failed via mouse click, attempt programmatic focus fallback
   if (!isFocused && typeof (targetEl as HTMLElement).focus === 'function') {
     try {
       (targetEl as HTMLElement).focus({ preventScroll: true });
       active = getDeepActive();
-      isFocused = active === targetEl || Boolean(targetEl.contains && active && targetEl.contains(active));
+      isFocused =
+        active === targetEl || Boolean(targetEl.contains && active && targetEl.contains(active));
     } catch {}
   }
 
   // If still not focused and targetEl is a composite container wrapping an input/textarea/contenteditable
   if (!isFocused && typeof targetEl.querySelector === 'function') {
-    const innerFocusable = targetEl.querySelector('input:not([type="hidden"]), textarea, [contenteditable="true"]') as HTMLElement | null;
+    const innerFocusable = targetEl.querySelector(
+      'input:not([type="hidden"]), textarea, [contenteditable="true"]',
+    ) as HTMLElement | null;
     if (innerFocusable && typeof innerFocusable.focus === 'function') {
       try {
         innerFocusable.focus({ preventScroll: true });
         active = getDeepActive();
-        isFocused = active === targetEl || active === innerFocusable || Boolean(targetEl.contains && active && targetEl.contains(active));
+        isFocused =
+          active === targetEl ||
+          active === innerFocusable ||
+          Boolean(targetEl.contains && active && targetEl.contains(active));
       } catch {}
     }
   }
@@ -5099,10 +5969,7 @@ export async function inPageSelectCustomCombobox(
       matched = true;
     }
 
-    const nativeSetter = Object.getOwnPropertyDescriptor(
-      HTMLSelectElement.prototype,
-      'value',
-    )?.set;
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
     if (nativeSetter) {
       nativeSetter.call(selectEl, matchedValue);
     } else {
@@ -5143,7 +6010,7 @@ export async function inPageSelectCustomCombobox(
   // Search candidate options in:
   // a) aria-controls or aria-owns container (with ShadowRoot support)
   const ariaControls = element.getAttribute('aria-controls') || element.getAttribute('aria-owns');
-  let searchRoots: Element[] = [element];
+  const searchRoots: Element[] = [element];
   if (ariaControls) {
     const rootNode = typeof element.getRootNode === 'function' ? element.getRootNode() : null;
     const controlled =
@@ -5179,7 +6046,10 @@ export async function inPageSelectCustomCombobox(
   // Filter out hidden options (e.g. in closed submenus or offscreen inactive portals)
   const visibleCandidates = candidates.filter((el) => {
     if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return false;
-    if (typeof el.closest === 'function' && el.closest('[hidden], [aria-hidden="true"], [style*="display: none"]')) {
+    if (
+      typeof el.closest === 'function' &&
+      el.closest('[hidden], [aria-hidden="true"], [style*="display: none"]')
+    ) {
       return false;
     }
     return true;
@@ -5201,7 +6071,9 @@ export async function inPageSelectCustomCombobox(
   // Pass 1: exact text or value
   for (const opt of activeCandidates) {
     const text = (opt.textContent || '').trim().toLowerCase();
-    const val = (opt.getAttribute('data-value') || opt.getAttribute('value') || '').trim().toLowerCase();
+    const val = (opt.getAttribute('data-value') || opt.getAttribute('value') || '')
+      .trim()
+      .toLowerCase();
     if (text === normTarget || (val && val === normTarget)) {
       matchedOption = opt;
       break;
@@ -5262,7 +6134,9 @@ export async function inPageSelectCustomCombobox(
       (matchedOption as HTMLElement).focus({ preventScroll: true });
     }
     try {
-      matchedOption.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+      matchedOption.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, cancelable: true }),
+      );
     } catch {}
     matchedOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
     matchedOption.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
@@ -5279,9 +6153,7 @@ export async function inPageSelectCustomCombobox(
 
   const selectedText = matchedOption.textContent?.trim() || targetVal;
   const selectedValue =
-    matchedOption.getAttribute('data-value') ||
-    matchedOption.getAttribute('value') ||
-    selectedText;
+    matchedOption.getAttribute('data-value') || matchedOption.getAttribute('value') || selectedText;
 
   return {
     success: true,
@@ -5382,8 +6254,9 @@ export function inPageVerifyInputCommitment(
     if (!container) container = el.ownerDocument.body;
 
     const candidateButtons: Element[] = Array.from(
-      container.querySelectorAll(
+      querySelectorAllDeep(
         'button, [role="button"], input[type="submit"], input[type="button"], a.btn, a[class*="btn" i], a[class*="button" i], a[class*="submit" i], a[href*="doPostBack" i]',
+        container,
       ),
     );
 
@@ -5391,8 +6264,9 @@ export function inPageVerifyInputCommitment(
     const formEl = el.closest('form');
     if (formEl && formEl.id) {
       const extButtons = Array.from(
-        el.ownerDocument.querySelectorAll(
+        querySelectorAllDeep(
           `button[form="${formEl.id}"], input[form="${formEl.id}"]`,
+          el.ownerDocument,
         ),
       );
       for (const eb of extButtons) {
@@ -5400,20 +6274,36 @@ export function inPageVerifyInputCommitment(
       }
     }
 
-    // If still no buttons found and container is narrow, expand search up the DOM tree (up to 5 levels)
+    // If still no buttons found and container is narrow, expand search up the DOM tree (up to 8 levels, penetrating Shadow DOM hosts)
     let currAncestor: Element | null = el.parentElement;
     let upCount = 0;
-    while (currAncestor && upCount < 5 && candidateButtons.length === 0) {
+    while (currAncestor && upCount < 8 && candidateButtons.length === 0) {
       const expanded = Array.from(
-        currAncestor.querySelectorAll(
+        querySelectorAllDeep(
           'button, [role="button"], input[type="submit"], input[type="button"], a.btn, a[class*="btn" i], a[class*="button" i], a[class*="submit" i]',
+          currAncestor,
         ),
       );
       if (expanded.length > 0) {
         candidateButtons.push(...expanded);
         break;
       }
-      currAncestor = currAncestor.parentElement;
+      if (currAncestor.parentElement) {
+        currAncestor = currAncestor.parentElement;
+      } else {
+        const rootNode =
+          typeof currAncestor.getRootNode === 'function' ? currAncestor.getRootNode() : null;
+        if (
+          rootNode &&
+          typeof ShadowRoot !== 'undefined' &&
+          rootNode instanceof ShadowRoot &&
+          (rootNode as any).host
+        ) {
+          currAncestor = (rootNode as any).host;
+        } else {
+          currAncestor = null;
+        }
+      }
       upCount++;
     }
 
@@ -5602,7 +6492,8 @@ export function inPageVerifyInputCommitment(
       el.querySelector('[aria-selected="true"], [data-selected="true"]') ||
       controlled?.querySelector('[aria-selected="true"], [data-selected="true"]');
     if (selectedEl) {
-      ariaSelectedText = selectedEl.textContent?.trim() || selectedEl.getAttribute('data-value') || '';
+      ariaSelectedText =
+        selectedEl.textContent?.trim() || selectedEl.getAttribute('data-value') || '';
     }
 
     const normExp = cleanAndNormalizeText(expectedText).toLowerCase();
@@ -5616,10 +6507,11 @@ export function inPageVerifyInputCommitment(
       (dataVal && cleanAndNormalizeText(dataVal).toLowerCase() === normExp) ||
       (innerVal && cleanAndNormalizeText(innerVal).toLowerCase() === normExp) ||
       (currentText && cleanAndNormalizeText(currentText).toLowerCase() === normExp) ||
-      (currentText && wordRegex.test(cleanAndNormalizeText(currentText)))
+      (currentText && wordRegex.test(cleanAndNormalizeText(currentText))),
     );
 
-    const displayVal = selectedOptionText || ariaSelectedText || innerVal || currentText || ariaVal || dataVal;
+    const displayVal =
+      selectedOptionText || ariaSelectedText || innerVal || currentText || ariaVal || dataVal;
     return {
       committed,
       currentValue: displayVal,
@@ -6014,9 +6906,7 @@ export function inPageQueryChoiceCandidates(): ChoiceCandidateItem[] {
     const text = (el.textContent || '').trim().replace(/\s+/g, ' ');
     const ariaLabel = el.getAttribute('aria-label') || undefined;
     const value =
-      el instanceof HTMLInputElement || el instanceof HTMLButtonElement
-        ? el.value
-        : undefined;
+      el instanceof HTMLInputElement || el instanceof HTMLButtonElement ? el.value : undefined;
     const role = el.getAttribute('role') || undefined;
     const tagName = el.tagName.toLowerCase();
 
@@ -6482,7 +7372,9 @@ export async function inPageExtractDropdownOptions(
             item.classList.contains('active') ||
             item.classList.contains('Mui-selected') ||
             item.classList.contains('ant-select-item-option-selected') ||
-            /(selected|active|checked)/i.test(typeof item.className === 'string' ? item.className : ''),
+            /(selected|active|checked)/i.test(
+              typeof item.className === 'string' ? item.className : '',
+            ),
         });
       }
     });
@@ -6517,7 +7409,9 @@ export async function inPageExtractDropdownOptions(
             item.classList.contains('selected') ||
             item.classList.contains('is-selected') ||
             item.classList.contains('active') ||
-            /(selected|active|checked)/i.test(typeof item.className === 'string' ? item.className : ''),
+            /(selected|active|checked)/i.test(
+              typeof item.className === 'string' ? item.className : '',
+            ),
         });
       }
     });
@@ -7048,7 +7942,10 @@ export async function inPageGetAssetImage(assetIndex: number): Promise<{
   const assets = (globalThis as any)[MAP_KEY];
   const entry = assets && assets[assetIndex - 1];
   if (!entry)
-    return { success: false, reason: `asset ${assetIndex} not found (run ${resolveToolName('read_dom')} first)` };
+    return {
+      success: false,
+      reason: `asset ${assetIndex} not found (run ${resolveToolName('read_dom')} first)`,
+    };
   const rect = entry.el.getBoundingClientRect().toJSON();
   const out: any = {
     success: false,
@@ -7388,6 +8285,8 @@ export function renderCompactElementLine(el: IndexedElement, frameId?: string | 
     role = 'textbox';
   } else if (tag === 'select') {
     role = 'combobox';
+  } else if (tag === 'option') {
+    role = 'option';
   }
 
   let text = el.text ? `"${el.text}"` : '';
@@ -7439,6 +8338,10 @@ export function renderCompactElementLine(el: IndexedElement, frameId?: string | 
 
   if (frameId !== undefined && frameId !== 0 && frameId !== '0') {
     parts.push(`frame="${frameId}"`);
+  }
+
+  if (el.isActionTrigger) {
+    parts.push(`(action-trigger${el.actionTriggerType ? `: ${el.actionTriggerType}` : ''})`);
   }
 
   if (el.isOccluded) {
@@ -8054,9 +8957,7 @@ export interface DismissOverlaysResult {
  * Fast in-page dismiss detector for visible top-level dialogs, marketing popups,
  * promotional modals, and cookie banners.
  */
-export function inPageDismissOverlays(options?: {
-  maxDismissals?: number;
-}): DismissOverlaysResult {
+export function inPageDismissOverlays(options?: { maxDismissals?: number }): DismissOverlaysResult {
   const maxCount = options?.maxDismissals ?? 5;
   const result: DismissOverlaysResult = {
     dismissedCount: 0,
@@ -8176,7 +9077,10 @@ export function inPageDismissOverlays(options?: {
 
     const title =
       el.getAttribute('aria-label') ||
-      el.querySelector('h1, h2, h3, [role="heading"], [class*="title"]')?.textContent?.trim()?.slice(0, 50);
+      el
+        .querySelector('h1, h2, h3, [role="heading"], [class*="title"]')
+        ?.textContent?.trim()
+        ?.slice(0, 50);
 
     qualified.push({
       element: htmlEl,
@@ -8206,9 +9110,7 @@ export function inPageDismissOverlays(options?: {
     // Check if this container or its ancestor/descendant was already dismissed in this pass
     if (
       dismissedContainers.has(container) ||
-      Array.from(dismissedContainers).some(
-        (d) => d.contains(container) || container.contains(d),
-      )
+      Array.from(dismissedContainers).some((d) => d.contains(container) || container.contains(d))
     ) {
       continue;
     }
@@ -8220,7 +9122,7 @@ export function inPageDismissOverlays(options?: {
       continue;
     }
 
-    let candidates: HTMLElement[] = [];
+    const candidates: HTMLElement[] = [];
     function findCandidatesDeep(root: ParentNode, depth = 0): void {
       if (depth > 4) return;
       try {

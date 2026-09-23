@@ -6,6 +6,17 @@ export interface ElementFingerprint {
   role?: string;
   isInteractive: boolean;
   value?: string;
+  scopeHash?: string;
+}
+
+export function computeScopeHash(text: string): string {
+  if (!text) return '';
+  let hash = 5381;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash << 5) + hash + text.charCodeAt(i);
+    hash = hash & hash;
+  }
+  return (hash >>> 0).toString(16);
 }
 
 export interface CachedSnapshot {
@@ -136,19 +147,26 @@ export class SnapshotCacheManager {
       }
 
       if (chrome.tabs?.onUpdated?.addListener) {
-        chrome.tabs.onUpdated.addListener((tabId: number, changeInfo: { url?: string; status?: string }) => {
-          if (changeInfo.url || changeInfo.status === 'loading') {
-            this.invalidate(tabId, `Tab navigation or reload detected (${changeInfo.url || 'loading'})`);
-          }
-        });
+        chrome.tabs.onUpdated.addListener(
+          (tabId: number, changeInfo: { url?: string; status?: string }) => {
+            if (changeInfo.url || changeInfo.status === 'loading') {
+              this.invalidate(
+                tabId,
+                `Tab navigation or reload detected (${changeInfo.url || 'loading'})`,
+              );
+            }
+          },
+        );
       }
 
       if (chrome.webNavigation?.onBeforeNavigate?.addListener) {
-        chrome.webNavigation.onBeforeNavigate.addListener((details: { tabId: number; frameId: number }) => {
-          if (details.frameId === 0) {
-            this.invalidate(details.tabId, 'Main frame navigation initiated');
-          }
-        });
+        chrome.webNavigation.onBeforeNavigate.addListener(
+          (details: { tabId: number; frameId: number }) => {
+            if (details.frameId === 0) {
+              this.invalidate(details.tabId, 'Main frame navigation initiated');
+            }
+          },
+        );
       }
     } catch {
       // Ignore in non-extension environments (e.g. unit tests)
@@ -172,6 +190,10 @@ export class SnapshotCacheManager {
             role: el.role || '',
             isInteractive: Boolean(el.isInteractive),
             value: el.value || '',
+            scopeHash:
+              el.scopeHash ||
+              el.attributes?.['data-scope-hash'] ||
+              (el.scopeText ? computeScopeHash(el.scopeText) : undefined),
           });
         }
       }
@@ -314,6 +336,17 @@ export class SnapshotCacheManager {
   public isSnapshotValid(tabId: number): boolean {
     const s = this.cache.get(tabId);
     return s !== undefined && s.valid === true;
+  }
+
+  public isScopeValid(tabId: number, index: number, currentScopeHash?: string): boolean {
+    const s = this.cache.get(tabId);
+    if (!s || !s.fingerprints) return false;
+    const fp = s.fingerprints.get(index);
+    if (!fp) return false;
+    if (currentScopeHash && fp.scopeHash) {
+      return fp.scopeHash === currentScopeHash;
+    }
+    return Boolean(s.valid);
   }
 
   public invalidate(tabId: number, reason = 'DOM or URL mutated'): void {

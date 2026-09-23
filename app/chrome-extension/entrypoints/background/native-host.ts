@@ -232,10 +232,7 @@ async function getPreferredPort(override?: unknown): Promise<number> {
 
   try {
     const rawResult = await Promise.resolve(
-      chrome?.storage?.local?.get?.([
-        STORAGE_KEYS.NATIVE_SERVER_PORT,
-        STORAGE_KEYS.SERVER_STATUS,
-      ]),
+      chrome?.storage?.local?.get?.([STORAGE_KEYS.NATIVE_SERVER_PORT, STORAGE_KEYS.SERVER_STATUS]),
     ).catch(() => ({}));
     const result: Record<string, any> = rawResult || {};
 
@@ -311,7 +308,10 @@ async function markServerStopped(reason: string): Promise<void> {
  * @param portOverride - Optional explicit port to use
  * @returns Whether the connection is now established
  */
-export async function ensureNativeConnected(trigger: string, portOverride?: unknown): Promise<boolean> {
+export async function ensureNativeConnected(
+  trigger: string,
+  portOverride?: unknown,
+): Promise<boolean> {
   // Concurrency protection: only one ensure flow at a time
   if (ensurePromise) return ensurePromise;
 
@@ -361,8 +361,12 @@ export async function ensureNativeConnected(trigger: string, portOverride?: unkn
   return ensurePromise;
 }
 
-import { safePostMessage, MAX_NATIVE_MESSAGE_BYTES } from '@/utils/safe-post-message';
-export { safePostMessage, MAX_NATIVE_MESSAGE_BYTES };
+import {
+  safePostMessage,
+  MAX_NATIVE_MESSAGE_BYTES,
+  ChunkReassembler,
+} from '@/utils/safe-post-message';
+export { safePostMessage, MAX_NATIVE_MESSAGE_BYTES, ChunkReassembler };
 
 export type FileOperationResponseCallback = (response: any) => void;
 const fileOperationCallbacks = new Map<string, FileOperationResponseCallback>();
@@ -392,7 +396,12 @@ export function cancelFileOperation(requestId: string): void {
 export async function sendJevMatchToNative(
   payload: any,
   timeoutMs = 1500,
-): Promise<{ success: boolean; matchedId?: string | number; confidence?: number; engine?: string } | null> {
+): Promise<{
+  success: boolean;
+  matchedId?: string | number;
+  confidence?: number;
+  engine?: string;
+} | null> {
   if (!nativePort) {
     const connected = await ensureNativeConnected('jev_match').catch(() => false);
     if (!connected || !nativePort) return null;
@@ -443,160 +452,173 @@ export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): bool
 
   try {
     nativePort = chrome.runtime.connectNative(HOST_NAME);
+    const chunkReassembler = new ChunkReassembler();
 
-    nativePort.onMessage.addListener(async (message) => {
-      if (message.type === NativeMessageType.PROCESS_DATA && message.requestId) {
-        const requestId = message.requestId;
-        const requestPayload = message.payload;
+    nativePort.onMessage.addListener(async (rawMessage) => {
+      const handleMessage = async (message: any) => {
+        if (!message) return;
+        if (message.type === NativeMessageType.PROCESS_DATA && message.requestId) {
+          const requestId = message.requestId;
+          const requestPayload = message.payload;
 
-        safePostMessage(nativePort, {
-          responseToRequestId: requestId,
-          payload: {
-            status: 'success',
-            message: SUCCESS_MESSAGES.TOOL_EXECUTED,
-            data: requestPayload,
-          },
-        });
-      } else if (message.type === NativeMessageType.CALL_TOOL && message.requestId) {
-        const requestId = message.requestId;
-        try {
-          const result = await handleCallTool(message.payload);
-          safePostMessage(
-            nativePort,
-            {
-              responseToRequestId: requestId,
-              payload: {
-                status: 'success',
-                message: SUCCESS_MESSAGES.TOOL_EXECUTED,
-                data: result,
-              },
-            },
-            requestId,
-          );
-        } catch (error) {
           safePostMessage(nativePort, {
             responseToRequestId: requestId,
             payload: {
-              status: 'error',
-              message: ERROR_MESSAGES.TOOL_EXECUTION_FAILED,
-              error: formatErrorForAgent(error),
+              status: 'success',
+              message: SUCCESS_MESSAGES.TOOL_EXECUTED,
+              data: requestPayload,
             },
           });
-        }
-      } else if (message.type === 'set_agent_control') {
-        const raw = message.payload?.enabled;
-        const enabled = raw === true || raw === 'true' || raw === 1 || raw === '1';
-        await chrome.storage.session.set({ agentControlEnabled: enabled });
-        if (message.requestId) {
-          safePostMessage(nativePort, {
-            responseToRequestId: message.requestId,
-            payload: { status: 'success', agentControlEnabled: enabled },
-          });
-        }
-      } else if (message.type === 'get_agent_control') {
-        const session = await chrome.storage.session.get('agentControlEnabled');
-        const enabled = session.agentControlEnabled !== false;
-        if (message.requestId) {
-          safePostMessage(nativePort, {
-            responseToRequestId: message.requestId,
-            payload: { status: 'success', agentControlEnabled: enabled },
-          });
-        }
-      } else if (message.type === 'reload_extension') {
-        if (message.requestId) {
-          safePostMessage(nativePort, {
-            responseToRequestId: message.requestId,
-            payload: { status: 'success', message: 'Reloading extension' },
-          });
-        }
-        setTimeout(() => {
-          chrome.runtime.reload();
-        }, 100);
-      } else if (message.type === NativeMessageType.SERVER_STARTED) {
-        clearHandshakeTimer();
-        const port = message.payload?.port;
-        const token = message.payload?.token;
-        currentServerStatus = {
-          isRunning: true,
-          port: port,
-          token: token || currentServerStatus.token,
-          lastUpdated: Date.now(),
-        };
-        await saveServerStatus(currentServerStatus);
-        broadcastServerStatusChange(currentServerStatus);
-        // Server is confirmed running - now we can reset reconnect state
-        resetReconnectState();
-        console.log(`${SUCCESS_MESSAGES.SERVER_STARTED} on port ${port}`);
-      } else if (message.type === 'server_info_response') {
-        if (message.payload) {
+        } else if (message.type === NativeMessageType.CALL_TOOL && message.requestId) {
+          const requestId = message.requestId;
+          try {
+            const result = await handleCallTool(message.payload);
+            safePostMessage(
+              nativePort,
+              {
+                responseToRequestId: requestId,
+                payload: {
+                  status: 'success',
+                  message: SUCCESS_MESSAGES.TOOL_EXECUTED,
+                  data: result,
+                },
+              },
+              requestId,
+            );
+          } catch (error) {
+            safePostMessage(nativePort, {
+              responseToRequestId: requestId,
+              payload: {
+                status: 'error',
+                message: ERROR_MESSAGES.TOOL_EXECUTION_FAILED,
+                error: formatErrorForAgent(error),
+              },
+            });
+          }
+        } else if (message.type === 'set_agent_control') {
+          const raw = message.payload?.enabled;
+          const enabled = raw === true || raw === 'true' || raw === 1 || raw === '1';
+          await chrome.storage.session.set({ agentControlEnabled: enabled });
+          if (message.requestId) {
+            safePostMessage(nativePort, {
+              responseToRequestId: message.requestId,
+              payload: { status: 'success', agentControlEnabled: enabled },
+            });
+          }
+        } else if (message.type === 'get_agent_control') {
+          const session = await chrome.storage.session.get('agentControlEnabled');
+          const enabled = session.agentControlEnabled !== false;
+          if (message.requestId) {
+            safePostMessage(nativePort, {
+              responseToRequestId: message.requestId,
+              payload: { status: 'success', agentControlEnabled: enabled },
+            });
+          }
+        } else if (message.type === 'reload_extension') {
+          if (message.requestId) {
+            safePostMessage(nativePort, {
+              responseToRequestId: message.requestId,
+              payload: { status: 'success', message: 'Reloading extension' },
+            });
+          }
+          setTimeout(() => {
+            chrome.runtime.reload();
+          }, 100);
+        } else if (message.type === NativeMessageType.SERVER_STARTED) {
+          clearHandshakeTimer();
+          const port = message.payload?.port;
+          const token = message.payload?.token;
           currentServerStatus = {
-            isRunning: message.payload.isRunning ?? currentServerStatus.isRunning,
-            port: message.payload.port ?? currentServerStatus.port,
-            token: message.payload.token ?? currentServerStatus.token,
+            isRunning: true,
+            port: port,
+            token: token || currentServerStatus.token,
             lastUpdated: Date.now(),
           };
           await saveServerStatus(currentServerStatus);
           broadcastServerStatusChange(currentServerStatus);
-        }
-      } else if (message.type === NativeMessageType.SERVER_STOPPED) {
-        clearHandshakeTimer();
-        currentServerStatus = {
-          isRunning: false,
-          port: currentServerStatus.port, // Keep last known port for reconnection
-          lastUpdated: Date.now(),
-        };
-        await saveServerStatus(currentServerStatus);
-        broadcastServerStatusChange(currentServerStatus);
-        console.log(SUCCESS_MESSAGES.SERVER_STOPPED);
-      } else if (
-        message.type === NativeMessageType.ERROR_FROM_NATIVE_HOST ||
-        message.type === NativeMessageType.ERROR
-      ) {
-        const errorMsg = message.payload?.message || message.payload || message.error || '';
-        const isBenign =
-          typeof errorMsg === 'string' &&
-          (errorMsg.includes('already running') || errorMsg.includes('EADDRINUSE'));
-        if (isBenign) {
-          console.log('[NativeHost] Server notice (already running / active):', errorMsg);
-        } else {
-          console.error('Error from native host:', errorMsg);
-        }
-        // If error indicates already running or port occupied, self-heal via HTTP /ping probe immediately
-        if (isBenign) {
-          const targetPort = port || currentServerStatus.port || NATIVE_HOST.DEFAULT_PORT;
-          verifyServerViaHttp(targetPort).then(async (isAlive) => {
-            if (isAlive) {
-              clearHandshakeTimer();
-              currentServerStatus = {
-                isRunning: true,
-                port: targetPort,
-                lastUpdated: Date.now(),
-              };
-              await saveServerStatus(currentServerStatus);
-              broadcastServerStatusChange(currentServerStatus);
-              resetReconnectState();
-              console.log(
-                `${LOG_PREFIX} Self-healed existing running server via HTTP /ping on port ${targetPort}`,
-              );
+          // Server is confirmed running - now we can reset reconnect state
+          resetReconnectState();
+          console.log(`${SUCCESS_MESSAGES.SERVER_STARTED} on port ${port}`);
+        } else if (message.type === 'server_info_response') {
+          if (message.payload) {
+            currentServerStatus = {
+              isRunning: message.payload.isRunning ?? currentServerStatus.isRunning,
+              port: message.payload.port ?? currentServerStatus.port,
+              token: message.payload.token ?? currentServerStatus.token,
+              lastUpdated: Date.now(),
+            };
+            await saveServerStatus(currentServerStatus);
+            broadcastServerStatusChange(currentServerStatus);
+          }
+        } else if (message.type === NativeMessageType.SERVER_STOPPED) {
+          clearHandshakeTimer();
+          currentServerStatus = {
+            isRunning: false,
+            port: currentServerStatus.port, // Keep last known port for reconnection
+            lastUpdated: Date.now(),
+          };
+          await saveServerStatus(currentServerStatus);
+          broadcastServerStatusChange(currentServerStatus);
+          console.log(SUCCESS_MESSAGES.SERVER_STOPPED);
+        } else if (
+          message.type === NativeMessageType.ERROR_FROM_NATIVE_HOST ||
+          message.type === NativeMessageType.ERROR
+        ) {
+          const errorMsg = message.payload?.message || message.payload || message.error || '';
+          const isBenign =
+            typeof errorMsg === 'string' &&
+            (errorMsg.includes('already running') || errorMsg.includes('EADDRINUSE'));
+          if (isBenign) {
+            console.log('[NativeHost] Server notice (already running / active):', errorMsg);
+          } else {
+            console.error('Error from native host:', errorMsg);
+          }
+          // If error indicates already running or port occupied, self-heal via HTTP /ping probe immediately
+          if (isBenign) {
+            const targetPort = port || currentServerStatus.port || NATIVE_HOST.DEFAULT_PORT;
+            verifyServerViaHttp(targetPort).then(async (isAlive) => {
+              if (isAlive) {
+                clearHandshakeTimer();
+                currentServerStatus = {
+                  isRunning: true,
+                  port: targetPort,
+                  lastUpdated: Date.now(),
+                };
+                await saveServerStatus(currentServerStatus);
+                broadcastServerStatusChange(currentServerStatus);
+                resetReconnectState();
+                console.log(
+                  `${LOG_PREFIX} Self-healed existing running server via HTTP /ping on port ${targetPort}`,
+                );
+              }
+            });
+          }
+        } else if (message.type === 'file_operation_response') {
+          const reqId = message.responseToRequestId;
+          if (reqId && fileOperationCallbacks.has(reqId)) {
+            const cb = fileOperationCallbacks.get(reqId)!;
+            fileOperationCallbacks.delete(reqId);
+            try {
+              cb(message);
+            } catch (e) {
+              console.error('[NativeHost] Error in file operation callback:', e);
             }
+          }
+          // Forward file operation response back to the requesting tool (compat fallback)
+          chrome.runtime.sendMessage(message).catch(() => {
+            // Ignore if no listeners
           });
         }
-      } else if (message.type === 'file_operation_response') {
-        const reqId = message.responseToRequestId;
-        if (reqId && fileOperationCallbacks.has(reqId)) {
-          const cb = fileOperationCallbacks.get(reqId)!;
-          fileOperationCallbacks.delete(reqId);
-          try {
-            cb(message);
-          } catch (e) {
-            console.error('[NativeHost] Error in file operation callback:', e);
-          }
-        }
-        // Forward file operation response back to the requesting tool (compat fallback)
-        chrome.runtime.sendMessage(message).catch(() => {
-          // Ignore if no listeners
-        });
+      };
+
+      if (
+        chunkReassembler.processMessage(rawMessage, (fullMessage) => {
+          void handleMessage(fullMessage);
+        })
+      ) {
+        return;
       }
+      await handleMessage(rawMessage);
     });
 
     nativePort.onDisconnect.addListener(() => {

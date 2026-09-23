@@ -109,13 +109,12 @@ export function alignToolReferences(text: string, targetPrefix: string = activeP
   const pfx = targetPrefix.endsWith('_') ? targetPrefix : `${targetPrefix}_`;
 
   if (pfx === 'chrome_') {
-    return text
-      .replace(/\bbrowserclaw_([a-zA-Z0-9_]+)\b/g, (_match, tool) => {
-        if (tool === 'get_windows_and_tabs') {
-          return 'get_windows_and_tabs';
-        }
-        return `chrome_${tool}`;
-      });
+    return text.replace(/\bbrowserclaw_([a-zA-Z0-9_]+)\b/g, (_match, tool) => {
+      if (tool === 'get_windows_and_tabs') {
+        return 'get_windows_and_tabs';
+      }
+      return `chrome_${tool}`;
+    });
   }
 
   return text
@@ -126,7 +125,6 @@ export function alignToolReferences(text: string, targetPrefix: string = activeP
       return `${pfx}get_windows_and_tabs`;
     });
 }
-
 
 export const TOOL_NAMES = {
   BROWSER: {
@@ -183,6 +181,7 @@ export const TOOL_NAMES = {
     FORM_PIPELINE: 'chrome_form_pipeline',
     INSERT_MEDIA: 'chrome_insert_media',
     DISMISS_OVERLAY: 'chrome_dismiss_overlay',
+    SCROLL_UNTIL_FOUND: 'chrome_scroll_until_found',
   },
   NATIVE: {
     ACT_TOWARD_GOAL: 'chrome_act_toward_goal',
@@ -299,8 +298,7 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
       idempotentHint: false,
       openWorldHint: true,
     },
-    description:
-      `Use a mouse and keyboard to interact with a web browser, and take screenshots.\n* Whenever you intend to click on an element like an icon, you should consult ${resolveToolName('read_dom')} to determine the index or ref of the element before moving the cursor.\n* If you tried clicking on an element but it failed to load, try taking a screenshot (with visual grid) and adjusting your click location.\n* Universal multimodal coordinate support: Cartesian { x, y } object, [x, y] / [y, x] points, or [ymin, xmin, ymax, xmax] bounding boxes (supports normalized 0~1.0, per-mille 0~1000, and absolute viewport pixels).\n* Make sure to click any buttons, links, icons, etc with the cursor tip in the center of the element. Don't click boxes on their edges unless asked.`,
+    description: `Use a mouse and keyboard to interact with a web browser, and take screenshots.\n* Whenever you intend to click on an element like an icon, you should consult ${resolveToolName('read_dom')} to determine the index or ref of the element before moving the cursor.\n* If you tried clicking on an element but it failed to load, try taking a screenshot (with visual grid) and adjusting your click location.\n* Universal multimodal coordinate support: Cartesian { x, y } object, [x, y] / [y, x] points, or [ymin, xmin, ymax, xmax] bounding boxes (supports normalized 0~1.0, per-mille 0~1000, and absolute viewport pixels).\n* Make sure to click any buttons, links, icons, etc with the cursor tip in the center of the element. Don't click boxes on their edges unless asked.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -3043,6 +3041,20 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
           type: 'number',
           description: 'Maximum matching results to return (default: 20, max: 50)',
         },
+        autoScroll: {
+          type: 'boolean',
+          description:
+            'When true, automatically executes client-side RAF auto-scrolling to probe and detect off-screen virtualized elements (virtual list / infinite scroll streams like X/Twitter). Default: false',
+        },
+        maxSteps: {
+          type: 'number',
+          description:
+            'Maximum scroll iterations to attempt when autoScroll is enabled (default: 10)',
+        },
+        stepPx: {
+          type: 'number',
+          description: 'Pixel distance to scroll on each probing step (default: 800)',
+        },
         tabId: { type: 'number', description: 'Target tab ID (optional)' },
         sessionId: {
           type: 'string',
@@ -3268,6 +3280,77 @@ export const RAW_TOOL_SCHEMAS: Tool[] = [
       required: [],
     },
   },
+  {
+    name: TOOL_NAMES.BROWSER.SCROLL_UNTIL_FOUND,
+    annotations: {
+      title: 'Semantic Auto-Scroll (Scroll Until Found)',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    description:
+      'Performs automated client-side RAF auto-scrolling and live DOM / Shadow-DOM detection to locate target text, regex, or selector without multi-turn LLM polling loops. Designed specifically for infinite scroll and virtualized feeds (e.g. X/Twitter, Reddit, Weibo). Immediately stops when target appears, centers element in viewport, and returns its 1-based interactive index.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Text string or regex pattern to search for during scrolling.',
+        },
+        isRegex: {
+          type: 'boolean',
+          description: 'Whether to evaluate query as a regular expression (default: false).',
+        },
+        selector: {
+          type: 'string',
+          description:
+            'CSS selector for the target element (supports Shadow DOM piercing combinators like >>>).',
+        },
+        role: {
+          type: 'string',
+          description: 'ARIA role to filter matching elements (e.g. "button", "article", "link").',
+        },
+        direction: {
+          type: 'string',
+          enum: ['down', 'up'],
+          description: 'Scroll direction (default: "down").',
+        },
+        stepPx: {
+          type: 'number',
+          description: 'Pixel offset to scroll on each step (default: 800).',
+        },
+        maxSteps: {
+          type: 'number',
+          description: 'Maximum scroll iterations before stopping (default: 10, max: 30).',
+        },
+        scrollDelayMs: {
+          type: 'number',
+          description:
+            'Pause duration in ms after each step to allow virtual list rendering (default: 250ms).',
+        },
+        containerSelector: {
+          type: 'string',
+          description:
+            'Optional CSS selector of specific scrollable container instead of window/document.',
+        },
+        actionOnFound: {
+          type: 'string',
+          enum: ['none', 'scroll_into_view', 'click', 'focus'],
+          description:
+            'Action to perform automatically when element is found (default: "scroll_into_view").',
+        },
+        tabId: { type: 'number', description: 'Target tab ID (optional).' },
+        windowId: { type: 'number', description: 'Target window ID (optional).' },
+        sessionId: {
+          type: 'string',
+          description: 'Session identifier for tab affinity (optional).',
+        },
+        sessionContext: { type: 'string', description: 'Session context alias (optional).' },
+      },
+      required: [],
+    },
+  },
 ];
 
 function alignSchemaDescriptions(schema: any): any {
@@ -3299,4 +3382,3 @@ export const PURGED_TOOL_NAMES = new Set([
 export const TOOL_SCHEMAS: Tool[] = RAW_TOOL_SCHEMAS.filter(
   (tool) => !PURGED_TOOL_NAMES.has(tool.name),
 ).map((tool) => alignSchemaDescriptions(tool));
-

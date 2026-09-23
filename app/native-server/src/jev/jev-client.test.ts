@@ -262,6 +262,20 @@ describe('Jev Client & Helper Unit Tests', () => {
       expect(isDestructiveTarget('[15] button "repay"')).toBe(false);
       expect(isDestructiveTarget('[16] textbox "taxpayer"')).toBe(false);
     });
+
+    test('matches visible text only, never id/class/href (kebab-case false positives)', () => {
+      // Reddit "Add tags" button: benign label, but id "#reddit-post-flair-button"
+      // contains kebab-case "post" that must NOT be treated as destructive.
+      expect(isDestructiveTarget('[20] button "Add tags" #reddit-post-flair-button')).toBe(false);
+      expect(isDestructiveTarget('[21] textbox "Title" #post-title')).toBe(false);
+      expect(isDestructiveTarget('[22] link "View Comments" #post-comments-count')).toBe(false);
+      expect(isDestructiveTarget('[23] button "Cancel" #post-cancel-btn')).toBe(false);
+
+      // Real destructive visible text still blocks reliably.
+      expect(isDestructiveTarget('[24] button "Post" #reddit-post-flair-button')).toBe(true);
+      expect(isDestructiveTarget('[25] button "Submit Post" #btn-123')).toBe(true);
+      expect(isDestructiveTarget('[26] button "发布" #post-btn')).toBe(true);
+    });
   });
 
   describe('7. Top-3 probability distribution (§5.6)', () => {

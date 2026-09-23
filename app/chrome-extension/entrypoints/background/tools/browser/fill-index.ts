@@ -153,7 +153,9 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
         );
 
         const submitAlreadyHandled = Boolean(
-          args.submit === true && outcome.autoSubmitHandled && (outcome.submitted || outcome.submitMethod === 'click'),
+          args.submit === true &&
+          outcome.autoSubmitHandled &&
+          (outcome.submitted || outcome.submitMethod === 'click'),
         );
 
         if (
@@ -175,6 +177,7 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
               index: btnIdx,
               action: 'click',
               tabId: targetTabId,
+              skipLock: true,
               sessionId: args.sessionId || args.sessionContext,
               waitForSettle: args.waitForSettle !== false,
               settleTimeoutMs: args.settleTimeoutMs,
@@ -199,7 +202,10 @@ export class FillIndexTool extends BaseBrowserToolExecutor {
               urlChanged = Boolean(previousUrl && currentUrl && previousUrl !== currentUrl);
             } catch {}
           } catch (autoClickErr) {
-            console.warn(`[${resolveToolName('fill_index')}] Failed to auto-click submit button:`, autoClickErr);
+            console.warn(
+              `[${resolveToolName('fill_index')}] Failed to auto-click submit button:`,
+              autoClickErr,
+            );
           }
         }
 

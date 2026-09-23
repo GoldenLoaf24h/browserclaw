@@ -82,6 +82,22 @@ export async function resolveTargetLocation(
       }
 
       if (match?.success && typeof match.x === 'number' && typeof match.y === 'number') {
+        let warningToReport = invalidationWarning;
+        const numericRef =
+          typeof rawRef === 'number' ? rawRef : parseInt(String(rawRef).replace(/^#/, ''), 10);
+        if (warningToReport && !isNaN(numericRef)) {
+          const currentScopeHash =
+            match.attributes?.['data-scope-hash'] || (match as any).scopeHash;
+          if (snapshotCacheManager.isScopeValid(tabId, numericRef, currentScopeHash)) {
+            warningToReport = undefined;
+          }
+        }
+        if ((match as any).warning) {
+          warningToReport = warningToReport
+            ? `${warningToReport}; ${(match as any).warning}`
+            : (match as any).warning;
+        }
+
         return {
           success: true,
           x: match.x,
@@ -101,7 +117,9 @@ export async function resolveTargetLocation(
           isComposer: (match as any).isComposer,
           isEditor: (match as any).isEditor,
           isSearch: (match as any).isSearch,
-          warning: invalidationWarning,
+          isSelectOption: Boolean((match as any).isSelectOption || match.tagName === 'option'),
+          scopeHash: (match as any).scopeHash,
+          warning: warningToReport,
         };
       }
     } catch (e) {

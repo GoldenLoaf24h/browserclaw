@@ -24,6 +24,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { randomUUID } from 'node:crypto';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { mcpSessionManager } from '../mcp/session-manager';
+import { NativeMessageType } from 'chrome-mcp-shared';
 
 import { resolveBridgeToken, getBridgeToken, isValidBridgeToken } from './token';
 export { resolveBridgeToken, getBridgeToken, isValidBridgeToken };
@@ -142,6 +143,28 @@ export class Server {
         return;
       }
 
+      const isLoopback =
+        request.ip === '127.0.0.1' ||
+        request.ip === '::1' ||
+        request.socket.remoteAddress === '127.0.0.1' ||
+        request.socket.remoteAddress === '::1' ||
+        request.socket.remoteAddress === '::ffff:127.0.0.1';
+
+      if (pathOnly === '/token' && isLoopback) {
+        return;
+      }
+
+      // Mutual trust for local host Hermes agent / automation scripts on loopback
+      const hasLocalTrust =
+        isLoopback &&
+        (request.headers['x-hermes-auth'] === 'local' ||
+          request.headers['x-hermes-auth'] === 'true' ||
+          request.headers['x-local-trust'] === 'true');
+
+      if (hasLocalTrust && (pathOnly === '/eval' || pathOnly === '/execute-script')) {
+        return;
+      }
+
       // 3. Extract candidate token
       let candidateToken: string | undefined;
       const authHeader = request.headers['authorization'];
@@ -183,6 +206,27 @@ export class Server {
       reply.status(HTTP_STATUS.OK).send({
         status: 'ok',
         message: 'pong',
+      });
+    });
+
+    // GET /token: Return current active bridge token for loopback clients (Hermes, local scripts)
+    this.fastify.get('/token', async (request: FastifyRequest, reply: FastifyReply) => {
+      const isLoopback =
+        request.ip === '127.0.0.1' ||
+        request.ip === '::1' ||
+        request.socket.remoteAddress === '127.0.0.1' ||
+        request.socket.remoteAddress === '::1' ||
+        request.socket.remoteAddress === '::ffff:127.0.0.1';
+
+      if (!isLoopback) {
+        return reply.status(HTTP_STATUS.FORBIDDEN || 403).send({
+          error: 'Forbidden: /token is only accessible from local loopback (127.0.0.1)',
+        });
+      }
+
+      return reply.status(HTTP_STATUS.OK).send({
+        status: 'ok',
+        token: getBridgeToken(),
       });
     });
   }
@@ -344,6 +388,56 @@ export class Server {
         return reply.status(404).send({ error: 'No media content' });
       },
     );
+
+    // POST /eval and POST /execute-script: High-privilege script evaluation for local Hermes / scripts
+    const handleScriptEval = async (
+      request: FastifyRequest<{ Body: { script: string; tabId?: number; timeoutMs?: number } }>,
+      reply: FastifyReply,
+    ) => {
+      if (!this.nativeHost) {
+        return reply
+          .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+          .send({ error: ERROR_MESSAGES.NATIVE_HOST_NOT_AVAILABLE });
+      }
+      if (!this.isRunning) {
+        return reply
+          .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+          .send({ error: ERROR_MESSAGES.SERVER_NOT_RUNNING });
+      }
+
+      const script = (request.body as any)?.script ?? (request.body as any)?.code;
+      if (!script || typeof script !== 'string') {
+        return reply
+          .status(HTTP_STATUS.BAD_REQUEST || 400)
+          .send({ error: 'script or code parameter is required in request body' });
+      }
+
+      try {
+        const timeoutMs = (request.body as any)?.timeoutMs || 30000;
+        const response = await this.nativeHost.sendRequestToExtensionAndWait(
+          {
+            name: 'chrome_javascript',
+            args: {
+              code: script,
+              script,
+              ...((request.body as any)?.tabId ? { tabId: (request.body as any).tabId } : {}),
+            },
+          },
+          NativeMessageType.CALL_TOOL,
+          timeoutMs,
+        );
+        return reply.status(HTTP_STATUS.OK).send({ status: 'success', data: response });
+      } catch (error: unknown) {
+        const err = error as Error;
+        return reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
+          status: 'error',
+          message: `Failed to evaluate script: ${err.message}`,
+        });
+      }
+    };
+
+    this.fastify.post('/eval', handleScriptEval);
+    this.fastify.post('/execute-script', handleScriptEval);
   }
 
   // ============================================================

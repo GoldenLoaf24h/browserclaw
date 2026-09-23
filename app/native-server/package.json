@@ -1,6 +1,6 @@
 {
   "name": "mcp-chrome-bridge",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Chrome Native-Messaging host (Node)",
   "main": "dist/index.js",
   "bin": {

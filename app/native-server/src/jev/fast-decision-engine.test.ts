@@ -818,5 +818,56 @@ describe('Fast Decision Engine Integration Tests (§4, §5, §6)', () => {
       expect(clickedTarget).toBe(1);
       expect(result.status).not.toBe('paused');
     });
+
+    test('26. Parallel speculative decision protocol: populates speculativeTargets for click, type, and select in one RTT (§B10)', async () => {
+      process.env.TYPESAFE_API_KEY = 'test_key';
+      const engine = new FastDecisionEngine();
+
+      (engine as any).jevClient.query = async () => {
+        return {
+          result: {
+            model: 'jev-latest',
+            answers: createMockJevAnswers({
+              click_target: {
+                type: 'choice',
+                choice: '12',
+                confidence: 0.95,
+                probabilities: { '1': 0.02, '12': 0.95, '15': 0.03, none: 0.0 },
+              },
+              type_target: {
+                type: 'choice',
+                choice: '15',
+                confidence: 0.9,
+                probabilities: { '1': 0.05, '12': 0.05, '15': 0.9, none: 0.0 },
+              },
+              select_target: {
+                type: 'choice',
+                choice: '1',
+                confidence: 0.88,
+                probabilities: { '1': 0.88, '12': 0.06, '15': 0.06, none: 0.0 },
+              },
+            }),
+            usage: { input_tokens: 300, output_tokens: 20 },
+          },
+          errorReason: null,
+        };
+      };
+
+      const result = await engine.run(
+        { goal: '点击登录按钮', maxSteps: 1 },
+        createMockInternalCaller(),
+      );
+
+      expect(result.steps.length).toBe(1);
+      const step = result.steps[0];
+      expect(step.jevSuggestion).toBeDefined();
+      expect(step.jevSuggestion?.action).toBe('click');
+      expect(step.jevSuggestion?.target).toBe('12');
+      expect(step.jevSuggestion?.speculativeTargets).toEqual({
+        click: '12',
+        type: '15',
+        select: '1',
+      });
+    });
   });
 });

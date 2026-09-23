@@ -8,7 +8,7 @@ export const GITHUB_REPO_OWNER = 'GoldenLoaf24h';
 export const GITHUB_REPO_NAME = 'browserclaw';
 export const GITHUB_REPO_URL = `https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}`;
 export const GITHUB_API_LATEST_RELEASE_URL = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/releases/latest`;
-export const CURRENT_VERSION = '3.0.0';
+export const CURRENT_VERSION = '3.1.0';
 export const DEFAULT_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour sliding TTL
 export const DEFAULT_MAX_SLIDING_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours maximum sliding window
 
@@ -232,7 +232,13 @@ export async function checkVersionUpdate(
   // slide expiration and return cached entry immediately without making a network call.
   // When beyond maxSlidingWindowMs or forceRefresh is true, proceed to revalidate with ETag.
   const isWithinMaxWindow = !cached?.lastChecked || now - cached.lastChecked < maxSlidingWindowMs;
-  if (!forceRefresh && cached && now < cached.expiresAt && isWithinMaxWindow && cached.latestVersion) {
+  if (
+    !forceRefresh &&
+    cached &&
+    now < cached.expiresAt &&
+    isWithinMaxWindow &&
+    cached.latestVersion
+  ) {
     cached.expiresAt = Math.min(
       now + ttlMs,
       cached.lastChecked ? cached.lastChecked + maxSlidingWindowMs : now + ttlMs,
@@ -414,9 +420,10 @@ export async function checkVersionUpdate(
  * Format the update notice to be presented to the agent.
  */
 export function formatAgentUpdateNotice(latestVersion: string, releaseUrl: string): string {
-  const cleanVer = latestVersion.startsWith('v') || latestVersion.startsWith('V')
-    ? latestVersion
-    : `v${latestVersion}`;
+  const cleanVer =
+    latestVersion.startsWith('v') || latestVersion.startsWith('V')
+      ? latestVersion
+      : `v${latestVersion}`;
   return `[System Notice: A new version of BrowserClaw is available (${cleanVer}). It is recommended to update to the latest release for new features and improvements: ${releaseUrl}]`;
 }
 
@@ -429,7 +436,9 @@ export class AgentUpdateNotifier {
   private hasNotified = false;
   private inFlightPromise: Promise<string | null> | null = null;
 
-  public async maybeGetFirstCallNotice(options?: CheckVersionUpdateOptions): Promise<string | null> {
+  public async maybeGetFirstCallNotice(
+    options?: CheckVersionUpdateOptions,
+  ): Promise<string | null> {
     // If the first call has already been checked/evaluated, STRICTLY return null.
     if (this.hasCheckedFirstCall) {
       return null;

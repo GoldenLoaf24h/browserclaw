@@ -116,9 +116,7 @@ export function getNativeValueSetter(
 /**
  * Get native checked setter by climbing the element's prototype chain.
  */
-export function getNativeCheckedSetter(
-  element: HTMLInputElement,
-): ((v: boolean) => void) | null {
+export function getNativeCheckedSetter(element: HTMLInputElement): ((v: boolean) => void) | null {
   if (!element || typeof element !== 'object') return null;
   let proto = Object.getPrototypeOf(element);
   while (proto) {
@@ -267,14 +265,7 @@ export function fastSnapshot(options?: FastSnapshotOptions): FastSnapshotResult 
     window.innerHeight,
     [...document.querySelectorAll('input,textarea,select')]
       .filter(safe)
-      .map((e: any) => [
-        identity(e),
-        e.value,
-        e.checked,
-        e.selectedIndex,
-        e.disabled,
-        e.readOnly,
-      ]),
+      .map((e: any) => [identity(e), e.value, e.checked, e.selectedIndex, e.disabled, e.readOnly]),
   ];
 
   cache.guard = (e: any) => {
@@ -416,7 +407,9 @@ export function fastSnapshot(options?: FastSnapshotOptions): FastSnapshotResult 
   }
 
   const text = words.join('\n').slice(0, 6000);
-  const height = document.documentElement ? document.documentElement.scrollHeight : document.body.scrollHeight;
+  const height = document.documentElement
+    ? document.documentElement.scrollHeight
+    : document.body.scrollHeight;
   const page_key = cache.pageKey();
   const guards: Record<string | number, any> = {};
 
@@ -540,21 +533,112 @@ export function inPageCheckOcclusion(action: {
   const r = e.getBoundingClientRect();
   const x = r.x + r.width / 2;
   const y = r.y + r.height / 2;
-  if (!r.width || !r.height || x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) {
+  if (
+    !r.width ||
+    !r.height ||
+    x < 0 ||
+    y < 0 ||
+    x >= window.innerWidth ||
+    y >= window.innerHeight
+  ) {
     return null;
   }
 
-  // Piercing patch: if hit element is pointer-events: none, pierce up to 3 parent layers
-  let hit = document.elementFromPoint(x, y);
+  // Helper: Deep shadow-piercing elementFromPoint
+  const deepElementFromPoint = (
+    root: Document | ShadowRoot,
+    px: number,
+    py: number,
+  ): Element | null => {
+    let el =
+      typeof (root as any).elementFromPoint === 'function'
+        ? (root as any).elementFromPoint(px, py)
+        : null;
+    let sDepth = 0;
+    while (el && (el as any).shadowRoot && sDepth < 20) {
+      const sr = (el as any).shadowRoot;
+      if (typeof sr.elementFromPoint !== 'function') break;
+      const inner = sr.elementFromPoint(px, py);
+      if (!inner || inner === el) break;
+      el = inner;
+      sDepth++;
+    }
+    return el;
+  };
+
+  // Helper: Composed hierarchy containment check (traverses parentNode and shadow host)
+  const deepContains = (parent: Element, child: Element): boolean => {
+    if (parent === child) return true;
+    if (typeof parent.contains === 'function' && parent.contains(child)) return true;
+    let curr: Node | null = child;
+    while (curr) {
+      if (curr === parent) return true;
+      if ((curr as any).host) {
+        curr = (curr as any).host;
+      } else {
+        curr = curr.parentNode;
+      }
+    }
+    return false;
+  };
+
+  // Piercing patch: penetrate shadow roots and pierce pointer-events: none layers
+  let hit = deepElementFromPoint(document, x, y);
   let depth = 0;
-  while (hit && window.getComputedStyle(hit).pointerEvents === 'none' && depth < 3) {
-    hit = hit.parentElement;
-    depth++;
+  while (hit && depth < 5) {
+    const pe =
+      typeof window.getComputedStyle === 'function'
+        ? window.getComputedStyle(hit).pointerEvents
+        : '';
+    if (pe === 'none') {
+      hit = hit.parentElement || ((hit.parentNode as any)?.host as Element) || null;
+      depth++;
+    } else {
+      break;
+    }
   }
   if (!hit) return null;
 
-  // Click target must contain the hit element (the target itself or a child element like text/icon)
-  if (!e.contains(hit)) {
+  // Click target must contain the hit element (the target itself, host, or child element like text/icon)
+  let isHit = deepContains(e, hit) || hit === e;
+
+  // Check if hit element is a label targeting e
+  if (!isHit && hit.tagName === 'LABEL') {
+    if ((hit as HTMLLabelElement).control === e || (hit as HTMLLabelElement).htmlFor === e.id) {
+      isHit = true;
+    }
+  }
+
+  // Backdrop / transparent mask piercing tolerance:
+  // If hit is an overlay/backdrop and not e, check if temporarily ignoring it hits e
+  if (!isHit && hit instanceof HTMLElement) {
+    const cls = (
+      hit.className && typeof hit.className === 'string' ? hit.className : ''
+    ).toLowerCase();
+    const role = (hit.getAttribute?.('role') || '').toLowerCase();
+    const isOverlayOrBackdrop =
+      cls.includes('backdrop') ||
+      cls.includes('overlay') ||
+      cls.includes('mask') ||
+      cls.includes('scrim') ||
+      cls.includes('dimmer') ||
+      role === 'presentation';
+
+    if (isOverlayOrBackdrop && hit !== document.body && hit !== document.documentElement) {
+      const prevPE = hit.style.pointerEvents;
+      try {
+        hit.style.pointerEvents = 'none';
+        const nextHit = deepElementFromPoint(document, x, y);
+        if (nextHit && (deepContains(e, nextHit) || nextHit === e)) {
+          isHit = true;
+        }
+      } finally {
+        hit.style.pointerEvents = prevPE;
+      }
+    }
+  }
+
+  if (!isHit) {
     return null;
   }
 

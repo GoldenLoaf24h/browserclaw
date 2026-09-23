@@ -1,6 +1,7 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
+import { scrubUrl } from '@/utils/url-sanitizer';
 
 class WindowTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.GET_WINDOWS_AND_TABS;
@@ -15,7 +16,7 @@ class WindowTool extends BaseBrowserToolExecutor {
             tabCount++;
             return {
               tabId: tab.id || 0,
-              url: tab.url || '',
+              url: scrubUrl(tab.url || ''),
               title: tab.title || '',
               active: tab.active || false,
               // 'unloaded'/'loading'/'complete' distinguishes blank placeholders

@@ -118,7 +118,12 @@ export const TOOL_CATEGORIES: Record<string, string> = {
     'chrome_form_pipeline',
     'chrome_dismiss_overlay',
   ].join(' '),
-  observe: ['chrome_screenshot', 'chrome_smart_scroll', 'chrome_console'].join(' '),
+  observe: [
+    'chrome_screenshot',
+    'chrome_smart_scroll',
+    'chrome_scroll_until_found',
+    'chrome_console',
+  ].join(' '),
   manage: [
     'chrome_history',
     'chrome_bookmark_search',

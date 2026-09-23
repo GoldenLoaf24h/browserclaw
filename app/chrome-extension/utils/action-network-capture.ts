@@ -11,6 +11,7 @@
 
 import { cdpSessionManager } from './cdp-session-manager';
 import { sanitizeValue, DEFAULT_MAX_OUTPUT_BYTES } from './output-sanitizer';
+import { scrubUrl } from './url-sanitizer';
 import type { CaptureNetworkOptions, CapturedNetworkResult } from 'chrome-mcp-shared';
 
 const MAX_BODY_BYTES = Math.min(50 * 1024, DEFAULT_MAX_OUTPUT_BYTES);
@@ -126,13 +127,15 @@ export function startActionNetworkCapture(
   const pattern = options.urlPattern.trim();
   const expectedMethod = options.method?.toUpperCase();
   const expectedStatuses = options.statusCodes;
-  const timeoutMs = typeof options.timeoutMs === 'number' && options.timeoutMs > 0
-    ? options.timeoutMs
-    : DEFAULT_TIMEOUT_MS;
+  const timeoutMs =
+    typeof options.timeoutMs === 'number' && options.timeoutMs > 0
+      ? options.timeoutMs
+      : DEFAULT_TIMEOUT_MS;
 
   const startTime = Date.now();
   let disposed = false;
-  let listener: ((source: chrome.debugger.Debuggee, method: string, params?: any) => void) | null = null;
+  let listener: ((source: chrome.debugger.Debuggee, method: string, params?: any) => void) | null =
+    null;
   let timeoutTimer: any = null;
   let resolvePromise: ((value: CapturedNetworkResult | undefined) => void) | null = null;
 
@@ -169,17 +172,12 @@ export function startActionNetworkCapture(
 
   const capturePromise = new Promise<CapturedNetworkResult | undefined>((resolve) => {
     resolvePromise = resolve;
-    const fetchAndResolve = async (
-      meta: PendingResponseMeta,
-      fromFallback = false,
-    ) => {
+    const fetchAndResolve = async (meta: PendingResponseMeta, fromFallback = false) => {
       if (disposed) return;
       try {
-        const bodyObj: any = await cdpSessionManager.sendCommand(
-          tabId,
-          'Network.getResponseBody',
-          { requestId: meta.requestId },
-        );
+        const bodyObj: any = await cdpSessionManager.sendCommand(tabId, 'Network.getResponseBody', {
+          requestId: meta.requestId,
+        });
 
         const r = resolvePromise;
         resolvePromise = null;
@@ -209,7 +207,7 @@ export function startActionNetworkCapture(
 
         if (r) {
           r({
-            url: meta.url,
+            url: scrubUrl(meta.url),
             status: meta.status,
             data: sanitized,
             mimeType: meta.mimeType,
@@ -223,7 +221,7 @@ export function startActionNetworkCapture(
           cleanup();
           if (r) {
             r({
-              url: meta.url,
+              url: scrubUrl(meta.url),
               status: meta.status,
               data: { error: err?.message || 'Failed to retrieve response body' },
               mimeType: meta.mimeType,
@@ -303,7 +301,7 @@ export function startActionNetworkCapture(
         cleanup();
         if (r) {
           r({
-            url: meta.url,
+            url: scrubUrl(meta.url),
             status: meta.status,
             data: { error: params.errorText || 'loadingFailed' },
             mimeType: meta.mimeType,

@@ -203,7 +203,14 @@ export class FastDecisionEngine {
         const lastOutcome = history.length > 0 ? history[history.length - 1].outcome : '';
         const urlChangedInLastStep = /urlChanged:true/i.test(lastOutcome);
         const mutatedInLastStep = /mutated:true/i.test(lastOutcome);
-        if (this.heuristicEngine.isGoalDone(params.goal, currentElements, urlChangedInLastStep, mutatedInLastStep)) {
+        if (
+          this.heuristicEngine.isGoalDone(
+            params.goal,
+            currentElements,
+            urlChangedInLastStep,
+            mutatedInLastStep,
+          )
+        ) {
           return this.formatResult(
             'done',
             engine,
@@ -500,6 +507,11 @@ export class FastDecisionEngine {
               target: chosen,
               confidence: targetConf,
               probabilities: getTop3Probabilities(targetAnswer.probabilities),
+              speculativeTargets: {
+                click: answers.click_target?.choice,
+                type: answers.type_target?.choice,
+                select: answers.select_target?.choice,
+              },
             };
           } else {
             // Non-targeting actions (scroll_down, scroll_up, wait, back) (§5.6)
@@ -507,6 +519,11 @@ export class FastDecisionEngine {
               action: actionToTake,
               confidence,
               probabilities: getTop3Probabilities(answers.action?.probabilities || {}),
+              speculativeTargets: {
+                click: answers.click_target?.choice,
+                type: answers.type_target?.choice,
+                select: answers.select_target?.choice,
+              },
             };
           }
         }

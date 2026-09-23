@@ -106,7 +106,7 @@ The micro-loop evaluates guard conditions in strict priority order:
 
 1. **Safety Breakpoint Guard (`pauseBeforeKeywords`)**: Evaluated _before_ destructive guard. If the proposed element matches any keyword in `pauseBeforeKeywords`, execution immediately halts with `status: "paused"`, populating `pausedBeforeAction` and fresh `currentElements` while leaving page state untouched.
 2. **Low Confidence**: `action confidence < 0.55` or `target confidence < 0.45`.
-3. **Destructive Guard**: Detects actions matching protected keywords (`pay`, `delete`, `purchase`, `buy`, `submit`, `confirm`) or Jev `destructive >= 0.50`.
+3. **Destructive Guard**: Detects actions matching protected keywords (`pay`, `delete`, `purchase`, `buy`, `submit`, `confirm`) or Jev `destructive >= 0.50`. The keyword match runs against the element's **human-visible text/label only** — never its `id`, `class`, or `href`. This prevents kebab-case false positives (e.g. the Reddit "Add tags" button with `id="#reddit-post-flair-button"` is NOT treated as destructive; only a button whose visible text actually says "Post"/"Submit" is).
 4. **Stuck Circuit-Breaker**: 3 consecutive unchanged steps ($mutated=false$, $urlChanged=false$, $visualDiff \le 0.01$).
 5. **Ambiguous Input**: Typing required but text payload cannot be determined.
 

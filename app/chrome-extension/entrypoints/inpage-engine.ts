@@ -59,6 +59,9 @@ import {
   inPageDismissOverlays,
   inPageVerifyActiveElement,
   inPageSelectCustomCombobox,
+  inPageScrollUntilFound,
+  inPageEnsureModalFocus,
+  inPageDispatchInputEvents,
 } from './background/tools/browser/dom-indexer';
 import { inPageWaitForDOMSettle } from '../utils/action-watchdog';
 import {
@@ -78,7 +81,7 @@ export default defineUnlistedScript(() => {
   // namespace only when the version string differs, so a stale page-side
   // engine (surviving extension reloads in the same tab) would otherwise keep
   // missing newly registered entrypoints.
-  const ENGINE_VERSION = '2026-09-21.3';
+  const ENGINE_VERSION = '2026-09-22.2';
   const g = globalThis as any;
   if (g.__MCP_INPAGE__ && g.__MCP_INPAGE_VERSION__ === ENGINE_VERSION) {
     return;
@@ -133,6 +136,9 @@ export default defineUnlistedScript(() => {
     inPageDismissOverlays,
     inPageVerifyActiveElement,
     inPageSelectCustomCombobox,
+    inPageScrollUntilFound,
+    inPageEnsureModalFocus,
+    inPageDispatchInputEvents,
     inPageFastSnapshot: fastSnapshot,
     snapshot: fastSnapshot,
     inPageCheckOcclusion,

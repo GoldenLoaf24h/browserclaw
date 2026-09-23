@@ -17,6 +17,10 @@ interface PendingRequest {
 export class NativeMessagingHost {
   private associatedServer: Server | null = null;
   private pendingRequests: Map<string, PendingRequest> = new Map();
+  private incomingChunks: Map<
+    string,
+    { total: number; received: Map<number, string>; timer: NodeJS.Timeout }
+  > = new Map();
   public isConnected = false;
 
   public setServer(serverInstance: Server): void {
@@ -116,6 +120,39 @@ export class NativeMessagingHost {
   private async handleMessage(message: any): Promise<void> {
     if (!message || typeof message !== 'object') {
       this.sendError('Invalid message format');
+      return;
+    }
+
+    // Task B8: Reassemble chunked incoming messages
+    if (message.__chunked__) {
+      const { chunkId, index, total, chunk } = message;
+      let record = this.incomingChunks.get(chunkId);
+      if (!record) {
+        record = {
+          total,
+          received: new Map(),
+          timer: setTimeout(() => {
+            this.incomingChunks.delete(chunkId);
+          }, 30000),
+        };
+        this.incomingChunks.set(chunkId, record);
+      }
+      record.received.set(index, chunk);
+      if (record.received.size === total) {
+        clearTimeout(record.timer);
+        this.incomingChunks.delete(chunkId);
+        const pieces: string[] = [];
+        for (let i = 0; i < total; i++) {
+          pieces.push(record.received.get(i) || '');
+        }
+        try {
+          const fullMessage = JSON.parse(pieces.join(''));
+          return this.handleMessage(fullMessage);
+        } catch (e: any) {
+          this.sendError(`Failed to parse chunked message: ${e.message}`);
+          return;
+        }
+      }
       return;
     }
 
@@ -253,46 +290,46 @@ export class NativeMessagingHost {
     try {
       const jevClient = new JevClientWrapper();
       if (jevClient.isAvailable()) {
-          const targetCriteria: Record<string, string | null> = {};
-          for (const cand of candidates) {
-            targetCriteria[String(cand.id)] = cand.text;
-          }
-          targetCriteria['none'] = 'None of the above candidates match';
-
-          const prompt =
-            matchType === 'choice'
-              ? `Which candidate option best matches the desired choice "${value}" for query "${query}"?`
-              : matchType === 'input'
-                ? `Which input element best corresponds to the field "${query}"?`
-                : `Which field best corresponds to the current screen question: "${query}"?`;
-
-          const questions = {
-            matched_target: choice(prompt, targetCriteria),
-          };
-
-          const state = buildState(
-            `Match form field or option: ${query}`,
-            '',
-            '',
-            candidates.map((c) => `[${c.id}] ${c.text}`),
-            [],
-          );
-
-          const { result } = await jevClient.query(state, questions);
-          const answer = (result?.answers as any)?.matched_target;
-          if (answer && answer.choice && answer.choice !== 'none') {
-            const originalCand = candidates.find((c) => String(c.id) === String(answer.choice));
-            sendResponse({
-              success: true,
-              engine: 'jev',
-              matchedId: originalCand ? originalCand.id : answer.choice,
-              confidence: answer.confidence || 0.85,
-              probabilities: answer.probabilities,
-            });
-            return;
-          }
+        const targetCriteria: Record<string, string | null> = {};
+        for (const cand of candidates) {
+          targetCriteria[String(cand.id)] = cand.text;
         }
-      } catch (err) {
+        targetCriteria['none'] = 'None of the above candidates match';
+
+        const prompt =
+          matchType === 'choice'
+            ? `Which candidate option best matches the desired choice "${value}" for query "${query}"?`
+            : matchType === 'input'
+              ? `Which input element best corresponds to the field "${query}"?`
+              : `Which field best corresponds to the current screen question: "${query}"?`;
+
+        const questions = {
+          matched_target: choice(prompt, targetCriteria),
+        };
+
+        const state = buildState(
+          `Match form field or option: ${query}`,
+          '',
+          '',
+          candidates.map((c) => `[${c.id}] ${c.text}`),
+          [],
+        );
+
+        const { result } = await jevClient.query(state, questions);
+        const answer = (result?.answers as any)?.matched_target;
+        if (answer && answer.choice && answer.choice !== 'none') {
+          const originalCand = candidates.find((c) => String(c.id) === String(answer.choice));
+          sendResponse({
+            success: true,
+            engine: 'jev',
+            matchedId: originalCand ? originalCand.id : answer.choice,
+            confidence: answer.confidence || 0.85,
+            probabilities: answer.probabilities,
+          });
+          return;
+        }
+      }
+    } catch (err) {
       console.warn('[NativeHost] Jev semantic evaluation error:', err);
     }
 
@@ -300,9 +337,7 @@ export class NativeMessagingHost {
     try {
       const heuristicEngine = new HeuristicEngine();
       const targetQuery = matchType === 'choice' && value ? value : query;
-      const elements = candidates.map(
-        (cand, idx) => `[${idx}] button "${cand.text}"`,
-      );
+      const elements = candidates.map((cand, idx) => `[${idx}] button "${cand.text}"`);
       const decision = heuristicEngine.evaluate(targetQuery, elements, []);
 
       if (decision && decision.targetIndex !== undefined && decision.confidence >= 0.3) {
@@ -443,40 +478,27 @@ export class NativeMessagingHost {
       const messageString = JSON.stringify(message);
       const messageBuffer = Buffer.from(messageString);
 
-      // Chrome Native Messaging hard limit is 1MB (1024 * 1024 bytes).
-      // Writing >= 1MB payload to stdout terminates the process immediately.
-      // We enforce a safe 1000KB boundary to protect the pipe and process lifecycle.
-      const SAFE_MESSAGE_LIMIT_BYTES = 1000 * 1024;
-      if (messageBuffer.length >= SAFE_MESSAGE_LIMIT_BYTES) {
-        console.error(
-          `[NativeHost] Blocked outgoing message exceeding 1MB ceiling: ${messageBuffer.length} bytes`,
-        );
-        if (
-          message &&
-          typeof message === 'object' &&
-          message.requestId &&
-          this.pendingRequests.has(message.requestId)
-        ) {
-          const pending = this.pendingRequests.get(message.requestId)!;
-          this.pendingRequests.delete(message.requestId);
-          clearTimeout(pending.timeoutId);
-          pending.reject(
-            new Error(
-              `Outgoing request payload (${messageBuffer.length} bytes) exceeds Chrome Native Messaging 1MB ceiling.`,
-            ),
-          );
-          return;
-        }
-        if (message && typeof message === 'object' && message.responseToRequestId) {
-          const errMsg = {
-            type: message.type || 'error',
+      // Task B8: Transparent chunking for messages >= 950KB
+      const CHUNK_THRESHOLD_BYTES = 950 * 1024;
+      const CHUNK_SIZE = 850 * 1024;
+      if (messageBuffer.length >= CHUNK_THRESHOLD_BYTES) {
+        const chunkId = uuidv4();
+        const total = Math.ceil(messageString.length / CHUNK_SIZE);
+        for (let i = 0; i < total; i++) {
+          const slice = messageString.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+          const chunkMsg = {
+            __chunked__: true,
+            chunkId,
+            index: i,
+            total,
+            chunk: slice,
             responseToRequestId: message.responseToRequestId,
-            error: `Response payload (${messageBuffer.length} bytes) exceeds Chrome Native Messaging 1MB ceiling. Please access via local file path or stream.`,
+            requestId: message.requestId,
           };
-          const errBuf = Buffer.from(JSON.stringify(errMsg));
-          const errHdr = Buffer.alloc(4);
-          errHdr.writeUInt32LE(errBuf.length, 0);
-          stdout.write(Buffer.concat([errHdr, errBuf]));
+          const chunkBuf = Buffer.from(JSON.stringify(chunkMsg));
+          const chunkHdr = Buffer.alloc(4);
+          chunkHdr.writeUInt32LE(chunkBuf.length, 0);
+          stdout.write(Buffer.concat([chunkHdr, chunkBuf]));
         }
         return;
       }
@@ -515,6 +537,8 @@ export class NativeMessagingHost {
       pending.reject(new Error('Native host is shutting down or Chrome disconnected.'));
     });
     this.pendingRequests.clear();
+    this.incomingChunks.forEach((record) => clearTimeout(record.timer));
+    this.incomingChunks.clear();
 
     // 1000ms unref'd watchdog exit timer to prevent orphaned processes from holding port 12306 on Windows
     setTimeout(() => process.exit(0), 1000).unref();

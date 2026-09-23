@@ -1203,5 +1203,67 @@
       },
       "required": []
     }
+  },
+  "chrome_scroll_until_found": {
+    "description": "Performs client-side step-by-step scrolling until an element matching a text query, regex, or selector is found. Waits for virtual lists (DOM recycling) to settle at each step, searches light and shadow DOM, centers the target in the viewport, and returns its 1-based index and safe coordinates.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Text query or keyword to search for during scrolling"
+        },
+        "selector": {
+          "type": "string",
+          "description": "CSS selector to search for during scrolling (supports >>> and /deep/ shadow piercing)"
+        },
+        "isRegex": {
+          "type": "boolean",
+          "description": "Treat query as a regular expression pattern (default: false)"
+        },
+        "maxSteps": {
+          "type": "number",
+          "description": "Maximum number of scroll steps before giving up (default: 10, max: 50)"
+        },
+        "stepPx": {
+          "type": "number",
+          "description": "Scroll distance in pixels per step (default: 800)"
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["down", "up"],
+          "description": "Scroll direction (default: \"down\")"
+        },
+        "timeoutMs": {
+          "type": "number",
+          "description": "Timeout in milliseconds for the overall scrolling operation (default: 15000)"
+        },
+        "containerSelector": {
+          "type": "string",
+          "description": "CSS selector for a custom scrollable container (defaults to window)"
+        },
+        "settleMs": {
+          "type": "number",
+          "description": "Delay in milliseconds to wait for virtual lists / DOM recycling after each scroll (default: 150)"
+        },
+        "tabId": {
+          "type": "number",
+          "description": "Target tab ID (optional, defaults to active tab)"
+        },
+        "windowId": {
+          "type": "number",
+          "description": "Target window ID (optional)"
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "Session identifier for tab affinity binding"
+        },
+        "sessionContext": {
+          "type": "string",
+          "description": "Optional alias for sessionId"
+        }
+      },
+      "required": []
+    }
   }
 }

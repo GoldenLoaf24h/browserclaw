@@ -3,6 +3,7 @@ import { BaseBrowserToolExecutor } from '../base-browser';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { NETWORK_FILTERS } from '@/common/constants';
 import { isPopupUrl } from '@/utils/popup-guard';
+import { scrubUrl } from '@/utils/url-sanitizer';
 
 interface NetworkDebuggerStartToolParams {
   url?: string; // URL to navigate to or focus. If not provided, uses active tab.
@@ -207,7 +208,7 @@ class NetworkDebuggerStartTool extends BaseBrowserToolExecutor {
       // Initialize capture data
       this.captureData.set(tabId, {
         startTime: Date.now(),
-        tabUrl: tab.url,
+        tabUrl: scrubUrl(tab.url),
         tabTitle: tab.title,
         maxCaptureTime,
         inactivityTimeout,
@@ -488,7 +489,7 @@ class NetworkDebuggerStartTool extends BaseBrowserToolExecutor {
       // Or check based on loaderId as well if needed
       captureInfo.requests[requestId] = {
         requestId,
-        url: request.url,
+        url: scrubUrl(request.url),
         method: request.method,
         requestHeaders: request.headers, // Temporary, will be processed
         requestTime: timestamp * 1000, // Convert seconds to milliseconds
@@ -507,7 +508,7 @@ class NetworkDebuggerStartTool extends BaseBrowserToolExecutor {
       // Chrome often issues a new `requestWillBeSent` for redirects with the same `requestId` but a new `loaderId`.
       // console.log(`NetworkDebuggerStartTool: Request ${requestId} updated (likely redirect) for tab ${tabId} to URL: ${request.url}`);
       const existingRequest = captureInfo.requests[requestId];
-      existingRequest.url = request.url; // Update URL due to redirect
+      existingRequest.url = scrubUrl(request.url); // Update URL due to redirect
       existingRequest.requestTime = timestamp * 1000; // Update time for the redirected request
       if (request.headers) existingRequest.requestHeaders = request.headers;
       if (request.postData) existingRequest.requestBody = request.postData;
@@ -776,7 +777,9 @@ class NetworkDebuggerStartTool extends BaseBrowserToolExecutor {
     processedRequests.sort((a, b) => (a.requestTime || 0) - (b.requestTime || 0));
 
     // WebSocket connections with their frame logs (text payloads only).
-    const webSocketConnections = Object.values(captureInfo.webSockets || {}) as WebSocketConnectionInfo[];
+    const webSocketConnections = Object.values(
+      captureInfo.webSockets || {},
+    ) as WebSocketConnectionInfo[];
     const webSocketFrameCount = webSocketConnections.reduce((sum, c) => sum + c.frames.length, 0);
 
     const resultData = {
@@ -931,7 +934,10 @@ class NetworkDebuggerStartTool extends BaseBrowserToolExecutor {
             await chrome.tabs.update(tabToOperateOn.id!, { active: true });
           }
         } else {
-          tabToOperateOn = await chrome.tabs.create({ url: targetUrl, active: (args as any).background === false });
+          tabToOperateOn = await chrome.tabs.create({
+            url: targetUrl,
+            active: (args as any).background === false,
+          });
           // Wait for tab to be somewhat ready.
           await new Promise((resolve) => setTimeout(resolve, 500));
         }

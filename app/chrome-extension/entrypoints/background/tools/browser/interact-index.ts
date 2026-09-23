@@ -54,6 +54,10 @@ export interface InteractIndexParams {
   includeDelta?: boolean;
   sessionId?: string;
   sessionContext?: string;
+  /** Internal: skip acquiring the per-tab mutex. Only pass true when the caller
+   *  already holds sessionTabAffinity.runSerialized for this tabId (prevents
+   *  non-reentrant re-entrant deadlock). Not exposed in the MCP schema. */
+  skipLock?: boolean;
   autoSnap?: boolean;
   /** Automatically pierce non-opaque, transient, or presentation backdrop masks */
   pierceOverlay?: boolean;
@@ -334,7 +338,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         return createErrorResponse(`No active tab found for ${resolveToolName('interact_index')}`);
       }
 
-      return await sessionTabAffinity.runSerialized(tabId, async () => {
+      const runAction = async () => {
         const previousUrl = tab.url || '';
         tabFaviconManager.markTabActive(tabId);
 
@@ -551,6 +555,9 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         let targetFrameId: number | undefined;
         let coordResult: any = undefined;
         let isFallback = false;
+        let isSelectOptionInteracted = false;
+        let usedNativeCDP = false;
+        let coordWarning: string | undefined = undefined;
 
         if (hasCoord && !hasIndex) {
           const projected = projectCoord(args.coordinate!);
@@ -624,6 +631,22 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             y = coordResult.y!;
             tagName = coordResult.tagName;
             text = coordResult.text;
+            if (coordResult.warning) {
+              coordWarning = coordResult.warning;
+            }
+            if (coordResult.isSelectOption && (action === 'click' || !action)) {
+              const selectRes = (
+                await executeInPage(
+                  targetFrameId ? { tabId, frameIds: [targetFrameId] } : { tabId },
+                  'inPageInteractIndex',
+                  [args.index!, 'click'],
+                )
+              )?.[0]?.result;
+              if (selectRes?.success) {
+                isSelectOptionInteracted = true;
+                usedNativeCDP = false;
+              }
+            }
           }
         }
 
@@ -670,7 +693,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         }
 
         const modifierMask = computeModifierMask(args.modifiers);
-        let usedNativeCDP = false;
+        usedNativeCDP = false;
         // 2. Compensate cumulative frame offset if target is inside a nested or cross-origin subframe
         if (targetFrameId !== undefined && targetFrameId !== 0 && !isFallback) {
           const offset = await getSubframeViewportOffset(tabId, targetFrameId);
@@ -870,6 +893,8 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
             }
           });
           usedNativeCDP = true;
+        } else if (isSelectOptionInteracted) {
+          // Task B4: Direct in-page select option interaction complete, skip CDP mouse dispatch
         } else {
           // Primary path: Native CDP Mouse Event Dispatch (isTrusted=true)
           try {
@@ -1186,6 +1211,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
                   action,
                   tagName,
                   text,
+                  ...(coordWarning ? { warning: coordWarning } : {}),
                   ...(networkResult ? { networkResult } : {}),
                   isTrusted: usedNativeCDP,
                   coordinates: { x, y },
@@ -1219,7 +1245,11 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           ],
           isError: false,
         };
-      });
+      };
+
+      return args.skipLock
+        ? await runAction()
+        : await sessionTabAffinity.runSerialized(tabId, runAction);
     } catch (error) {
       if (error instanceof DialogOpenedError) {
         return createDialogInterruptResponse(error);

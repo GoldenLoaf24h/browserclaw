@@ -119,7 +119,8 @@ class ClickTool extends BaseBrowserToolExecutor {
 
     if (!hasRef && !hasSelector && !hasTextOrRole && !hasCoords) {
       return createErrorResponse(
-        ERROR_MESSAGES.INVALID_PARAMETERS + ': Provide ref, index, selector, text/role, or coordinate',
+        ERROR_MESSAGES.INVALID_PARAMETERS +
+          ': Provide ref, index, selector, text/role, or coordinate',
       );
     }
 
@@ -138,7 +139,11 @@ class ClickTool extends BaseBrowserToolExecutor {
       }
       const tabId = tab.id;
 
-      const clickAffinityWarning = await resolveAffinityWarning(args, tabId, clickHadPreexistingBinding);
+      const clickAffinityWarning = await resolveAffinityWarning(
+        args,
+        tabId,
+        clickHadPreexistingBinding,
+      );
 
       let finalRef = args.ref;
       let finalSelector = selector;
@@ -184,6 +189,39 @@ class ClickTool extends BaseBrowserToolExecutor {
       });
 
       if (loc.success) {
+        // Task B4: Direct single-step selection for select-option entries
+        if ((loc as any).isSelectOption || loc.tagName === 'option') {
+          const targetIndex = args.index ?? loc.index;
+          if (targetIndex !== undefined) {
+            const selectRes = (
+              await executeInPage(
+                loc.frameId ? { tabId, frameIds: [loc.frameId] } : { tabId },
+                'inPageInteractIndex',
+                [targetIndex, 'click'],
+              )
+            )?.[0]?.result;
+            if (selectRes?.success) {
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      success: true,
+                      message: 'Select option selected successfully',
+                      clickMethod: 'select_option_inpage',
+                      resolutionPath: loc.resolutionPath,
+                      tagName: loc.tagName,
+                      text: loc.text,
+                      ...(loc.warning ? { warning: loc.warning } : {}),
+                    }),
+                  },
+                ],
+                isError: false,
+              };
+            }
+          }
+        }
+
         let isTrusted = false;
         let deliveryVerified: boolean | undefined;
         // CDP modifier bitmask (Alt=1, Ctrl=2, Meta=4, Shift=8). Without this the
@@ -375,12 +413,15 @@ class FillTool extends BaseBrowserToolExecutor {
 
     if (!hasRef && !hasSelector && !hasTargetTextOrRole && !hasCoords) {
       return createErrorResponse(
-        ERROR_MESSAGES.INVALID_PARAMETERS + ': Provide ref, index, selector, targetText/role, or coordinate',
+        ERROR_MESSAGES.INVALID_PARAMETERS +
+          ': Provide ref, index, selector, targetText/role, or coordinate',
       );
     }
 
     if (value === undefined || value === null) {
-      return createErrorResponse(ERROR_MESSAGES.INVALID_PARAMETERS + ': Text or value must be provided');
+      return createErrorResponse(
+        ERROR_MESSAGES.INVALID_PARAMETERS + ': Text or value must be provided',
+      );
     }
 
     try {
@@ -397,7 +438,11 @@ class FillTool extends BaseBrowserToolExecutor {
       }
       const tabId = tab.id;
 
-      const fillAffinityWarning = await resolveAffinityWarning(args, tabId, fillHadPreexistingBinding);
+      const fillAffinityWarning = await resolveAffinityWarning(
+        args,
+        tabId,
+        fillHadPreexistingBinding,
+      );
 
       let finalRef = ref;
       let finalSelector = selector;
