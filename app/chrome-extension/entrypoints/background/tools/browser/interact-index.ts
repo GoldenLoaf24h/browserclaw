@@ -338,7 +338,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         return createErrorResponse(`No active tab found for ${resolveToolName('interact_index')}`);
       }
 
-      const runAction = async () => {
+      const runAction = async (): Promise<ToolResult> => {
         const previousUrl = tab.url || '';
         tabFaviconManager.markTabActive(tabId);
 
@@ -527,7 +527,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
           return {
             content: [
               {
-                type: 'text',
+                type: 'text' as const,
                 text: JSON.stringify(
                   {
                     success: true,
@@ -1200,7 +1200,7 @@ export class InteractIndexTool extends BaseBrowserToolExecutor {
         return {
           content: [
             {
-              type: 'text',
+              type: 'text' as const,
               text: JSON.stringify(
                 {
                   success: true,
