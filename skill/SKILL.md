@@ -1,4 +1,4 @@
-﻿---
+---
 name: browserclaw
 description: High-efficiency, zero-hallucination Chrome browser control and automation via BrowserClaw MCP server. Hierarchical Dual-Brain architecture (Macro Planner System 2 + Fast Semantic Micro-Loop System 1 Jev) with dual-engine perception (DOM-First 1-based indexing + Visual-Fallback PCIE). Dispatches native CDP events (isTrusted=true) with full support for React/Vue/Angular, Shadow DOM, and background tab isolation.
 ---
